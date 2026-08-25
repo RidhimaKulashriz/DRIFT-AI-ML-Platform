@@ -25,6 +25,14 @@ The existing Render PostgreSQL service must not be attached to this Node backend
 
 The Vercel production entry bundle was checked after commit `0ee5433`. It contains the DRIFT coordinate-map implementation and contains neither the `forge.butterfly-effect.dev` proxy URL nor the `Map provider unavailable` failure copy. `https://drift-ai-ml-platform.vercel.app/favicon.svg` returned HTTP `200`. The public release therefore uses the built-in interactive coordinate plot, including severity markers, telemetry traces, and finding-register controls, without a Manus-hosted Google Maps script or an unconfigured browser API key.
 
+## Public interaction audit
+
+The production client was rechecked after Vercel deployed commit `f13bc19`. Operations, Defect Control, Evidence Vault, Reports, and Hardware Bridge all switched workspaces successfully. The public dataset preview action was verified from Hardware Bridge and opened its labelled modal with the original external sample, licence provenance, an `OPEN ORIGINAL` link, and a `DOWNLOAD` link. The `OPEN EVIDENCE VAULT` action switched correctly to Evidence Vault. Database- and authentication-dependent actions remain visibly disabled or sign-in-gated with an explicit explanation, rather than attempting a request that cannot complete in the current external configuration.
+
+## AI availability
+
+On the public Operations workspace, DRIFT AI was asked what an engineer should verify before accepting a road-crack finding from a public training-dataset image. The rendered status changed to `GEMINI CONNECTED` and it returned a question-specific, context-grounded engineer checklist. The response kept the public dataset in its proper role as non-field training/demo material and did not imply a drone capture, GPS location, or accepted engineering finding.
+
 ## Security follow-up
 
 The previously chat-exposed Gemini and OpenAI keys must be revoked and replaced before live AI use. A rotated `GEMINI_API_KEY`, an unexposed `DRIFT_INGEST_TOKEN`, and a compatible database connection belong only in Render server environment variables, never in Vercel client configuration or GitHub. External OAuth is deliberately disabled by default; do not set `DRIFT_EXTERNAL_OAUTH_ENABLED=true` until a non-Manus identity provider, its server-side endpoint, and the corresponding portal/app values are configured and tested.
