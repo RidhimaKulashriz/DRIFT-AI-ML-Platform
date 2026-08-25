@@ -286,20 +286,23 @@
 - [x] Display public-dataset samples with dataset, licence, source URL, and explicit non-field/non-drone evidence labels.
 - [x] Keep public-dataset samples out of real UAV evidence claims while allowing them to exercise demo inference, maps, and report workflows.
 - [ ] Confirm the canonical public repository contains the latest validated DRIFT release before external deployment.
-- [ ] Create/update the Vercel frontend project from `RidhimaKulashriz/DRIFT-AI-ML-Platform` and capture its deployment URL.
-- [ ] Create/update the Render Node/tRPC backend from `RidhimaKulashriz/DRIFT-AI-ML-Platform` using secure server-only environment variables.
+- [x] Create/update the Vercel frontend project from `RidhimaKulashriz/DRIFT-AI-ML-Platform` and capture its deployment URL.
+- [x] Create/update the Render Node/tRPC backend from `RidhimaKulashriz/DRIFT-AI-ML-Platform` using secure server-only environment variables.
 - [ ] Configure frontend API origin and backend CORS, then validate map, AI, simulator, evidence, and report paths across the live Vercel/Render deployment.
 - [x] Surface clearly labelled public-dataset demo media in Operations and Reports in addition to the Evidence Vault, without using it as real-UAV/site evidence.
 - [x] Verify cross-workspace public-dataset media actions, labels, and exclusion from site-specific map markers and report findings.
-- [ ] Verify the Vercel production frontend at its assigned external URL and record the exact origin for backend CORS.
-- [ ] Configure the canonical Node/tRPC backend as a Render web service with production-safe build and start commands.
+- [x] Verify the Vercel production frontend at its assigned external URL and record the exact origin for backend CORS.
+- [x] Configure the canonical Node/tRPC backend as a Render web service with production-safe build and start commands.
 - [ ] Add the Vercel production origin to the Render backend CORS allowlist, set the Vercel API base, and validate live cross-origin application flows.
 - [x] Deploy and externally verify the Vercel frontend at `https://drift-ai-ml-platform.vercel.app` with the latest public-dataset visuals.
-- [ ] Resume the free Render Node/tRPC service creation after the account’s mandatory card-verification gate is cleared; do not enter payment details on the user’s behalf.
+- [x] Resume the free Render Node/tRPC service creation after the account’s mandatory card-verification gate is cleared; do not enter payment details on the user’s behalf.
 - [ ] Set `VITE_BACKEND_URL` in Vercel and verify CORS, live map data, AI, simulator, evidence, and report flows after the Render API URL exists.
 - [ ] Deploy the canonical DRIFT frontend from `DRIFT-AI-ML-Platform` to Vercel and record the production URL.
 - [ ] Deploy the canonical DRIFT Node/tRPC backend to Render with server-only provider and ingress secrets, then record the API URL.
 - [ ] Configure Vercel-to-Render CORS, frontend API origin, and secure production environment variables without committing credentials.
 - [ ] Verify the deployed map, DRIFT AI provider status, simulator, original-media upload route, and report flow against the live external services.
 - [ ] Keep real photo/video evidence limited to operator/drone-original uploads or authenticated bridge capture, with simulator-only demo labels and no external internet images.
-- [ ] Replace public-dataset image and crack-mask references that use internal storage paths with externally hosted, licence-attributed source URLs and verify they load from the Vercel deployment.
+- [x] Replace public-dataset image and crack-mask references that use internal storage paths with externally hosted, licence-attributed source URLs and verify they load from the Vercel deployment.
+- [x] Configure the Vercel production `VITE_BACKEND_URL` and confirm browser tRPC traffic plus CORS reach `https://drift-node-api.onrender.com`.
+- [ ] Provision a compatible external MySQL/TiDB database with TLS for the Node/Drizzle MySQL driver, or deliberately port the persistence layer to PostgreSQL; do not connect the incompatible existing Render PostgreSQL URL.
+- [ ] Replace Manus-backed dynamic evidence/report storage with an external S3/R2/Vercel Blob-compatible object store before treating uploaded media and PDF evidence as externally portable production data.
