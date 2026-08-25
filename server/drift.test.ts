@@ -9,6 +9,8 @@ import { scoreZeroError } from "./services/scoring";
 import { buildSimulatorMission } from "./services/simulator";
 import { summarizeSeverity, toMapMarker } from "./services/reportPresentation";
 
+const hasPostgresTestDatabase = /^(postgres|postgresql):\/\//.test(process.env.DATABASE_URL ?? "");
+
 describe("ZeroError scoring", () => {
   it("prioritizes a high-confidence structural finding above routine defects", () => {
     const critical = scoreZeroError({ defectType: "structural", confidence: 0.94, latitude: 28.61, longitude: 77.2, priorOpenDefects: 2, assetCriticality: 5 });
@@ -135,6 +137,10 @@ describe("report presentation contracts", () => {
 describe("report generation", () => {
   it("generates an evidence-linked report through the protected application procedure", async () => {
     const ctx = { user: { id: 1, role: "engineer" }, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
+    if (!hasPostgresTestDatabase) {
+      await expect(appRouter.createCaller(ctx).drift.reports.generate({ missionId: 120001 })).rejects.toThrow(/Database is unavailable/);
+      return;
+    }
     const result = await appRouter.createCaller(ctx).drift.reports.generate({ missionId: 120001 });
     expect(result.title).toContain("Evidence-linked inspection report");
     expect(result.body).toContain("mission:120001:real-image-pass-02");
@@ -146,6 +152,10 @@ describe("report generation", () => {
 
   it("fails explicitly when the requested mission is not present", async () => {
     const ctx = { user: { id: 1, role: "engineer" }, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
+    if (!hasPostgresTestDatabase) {
+      await expect(appRouter.createCaller(ctx).drift.reports.generate({ missionId: 999999999 })).rejects.toThrow(/Database is unavailable/);
+      return;
+    }
     await expect(appRouter.createCaller(ctx).drift.reports.generate({ missionId: 999999999 })).rejects.toThrow(/Mission does not exist/);
   });
 });
@@ -163,7 +173,7 @@ describe("tRPC operations", () => {
       caller.drift.reports.list(),
       caller.drift.evidence.demoList({ missionId: 60001 }),
     ]);
-    expect(overview.persistence).toEqual(expect.objectContaining({ available: expect.any(Boolean), configured: expect.any(Boolean), driver: "mysql2", message: expect.any(String) }));
+    expect(overview.persistence).toEqual(expect.objectContaining({ available: expect.any(Boolean), configured: expect.any(Boolean), driver: "postgresql", message: expect.any(String) }));
     expect(["offline", "connected", "retrying", "degraded"]).toContain(hardware.status);
     expect(Array.isArray(defects)).toBe(true);
     expect(Array.isArray(mapData)).toBe(true);
@@ -182,6 +192,10 @@ describe("tRPC operations", () => {
     const ctx = { user: null, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
     const caller = appRouter.createCaller(ctx);
     const rows = await caller.drift.evidence.demoList({ missionId: 120001 });
+    if (!hasPostgresTestDatabase) {
+      expect(rows).toEqual([]);
+      return;
+    }
     const reference = rows.find(item => item.fileName === "public-domain-pothole-reference.jpg");
     expect(reference?.source).toBe("simulator");
     expect(reference?.provenance).toEqual(expect.objectContaining({ kind: "reference-image", author: "Uncl3dad", license: "Public domain dedication", sourceUrl: "https://commons.wikimedia.org/wiki/File:Pothole_Big.jpg" }));
