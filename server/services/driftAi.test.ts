@@ -19,6 +19,8 @@ describe("DRIFT AI", () => {
   });
 
   it("routes common questions to distinct grounded answers", async () => {
+    const previous = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
     const location = await askDriftAi("Where is this finding?", context);
     const severity = await askDriftAi("How serious is this finding?", context);
     const evidence = await askDriftAi("What is the evidence quality?", context);
@@ -32,12 +34,16 @@ describe("DRIFT AI", () => {
     expect(evidence.answer).toContain("Quality gate");
     expect(comparison.answer).toContain("Historical/comparative context");
     expect(new Set([location.answer, severity.answer, evidence.answer, comparison.answer]).size).toBe(4);
+    if (previous) process.env.OPENAI_API_KEY = previous;
   });
 
   it("normalizes short typo-filled inspection questions", async () => {
+    const previous = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
     const result = await askDriftAi("whre is this critial finding locat?", context);
     expect(result.source).toBe("deterministic-intent");
     expect(result.answer).toContain("28.6139, 77.2090");
+    if (previous) process.env.OPENAI_API_KEY = previous;
   });
 
   it("sends general questions to the provider even when no finding is selected", async () => {
@@ -57,12 +63,14 @@ describe("DRIFT AI", () => {
     process.env.OPENAI_API_KEY = "test-only-server-secret";
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: "The coordinate and critical priority require engineer verification." } }] }) });
     vi.stubGlobal("fetch", fetchMock);
-    const result = await askDriftAi("Please respond as a concise field note.", context);
+    const result = await askDriftAi("Please respond as a concise field note.", context, [{ role: "user", content: "What changed since the last pass?" }, { role: "assistant", content: "The prior pass had no linked evidence." }]);
     expect(result.source).toBe("openai");
     expect(result.answer).toContain("engineer verification");
     const request = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as { messages: Array<{ content: string }> };
-    expect(request.messages[1]?.content).toContain("28.6139");
-    expect(request.messages[1]?.content.length).toBeLessThan(13000);
+    expect(request.messages[1]?.content).toContain("What changed since the last pass?");
+    expect(request.messages[2]?.content).toContain("The prior pass had no linked evidence.");
+    expect(request.messages[3]?.content).toContain("28.6139");
+    expect(request.messages[3]?.content.length).toBeLessThan(13000);
     if (previous) process.env.OPENAI_API_KEY = previous; else delete process.env.OPENAI_API_KEY;
   });
 
@@ -84,6 +92,17 @@ describe("DRIFT AI", () => {
     expect(result.source).toBe("deterministic-fallback");
     expect(result.providerStatus).toBe("network-error");
     expect(result.answer).toContain("What is the operational context for this inspection?");
+    if (previous) process.env.OPENAI_API_KEY = previous; else delete process.env.OPENAI_API_KEY;
+  });
+
+  it("labels an OpenAI quota failure distinctly", async () => {
+    const previous = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "test-only-server-secret";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 429 }));
+    const result = await askDriftAi("Can you explain this finding?", context);
+    expect(result.source).toBe("deterministic-fallback");
+    expect(result.providerStatus).toBe(429);
+    expect(result.answer).toContain("OpenAI quota exhausted");
     if (previous) process.env.OPENAI_API_KEY = previous; else delete process.env.OPENAI_API_KEY;
   });
 
