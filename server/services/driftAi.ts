@@ -58,10 +58,35 @@ function inspectionMetrics(context: DriftAiContext) {
   return { findings, counts, exposureCents, healthScore, risk };
 }
 
+function normalizeQuestion(question: string) {
+  const replacements: Record<string, string> = {
+    critial: "critical",
+    severty: "severity",
+    serius: "serious",
+    locat: "location",
+    loction: "location",
+    cordinate: "coordinate",
+    coordnate: "coordinate",
+    evidnce: "evidence",
+    evidance: "evidence",
+    compar: "compare",
+    comparision: "comparison",
+    inspecton: "inspection",
+    inspec: "inspect",
+    repor: "report",
+    summry: "summary",
+    saftey: "safety",
+    whre: "where",
+    wht: "what",
+    hw: "how",
+  };
+  return question.toLowerCase().replace(/[a-z]+/g, token => replacements[token] ?? token);
+}
+
 function deterministicIntentAnswer(question: string, context: DriftAiContext) {
   const selected = context.selectedFinding;
   if (!selected) return fallbackAnswer(question, context);
-  const normalized = question.toLowerCase();
+  const normalized = normalizeQuestion(question);
   const location = selected.latitude != null && selected.longitude != null ? `${selected.latitude}, ${selected.longitude}` : "not recorded";
   const prefix = `## DRIFT AI — direct inspection answer\n\n${selectedContextSummary(selected)}\n\n`;
   const metrics = inspectionMetrics(context);

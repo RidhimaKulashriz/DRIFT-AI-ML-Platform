@@ -34,6 +34,12 @@ describe("DRIFT AI", () => {
     expect(new Set([location.answer, severity.answer, evidence.answer, comparison.answer]).size).toBe(4);
   });
 
+  it("normalizes short typo-filled inspection questions", async () => {
+    const result = await askDriftAi("whre is this critial finding locat?", context);
+    expect(result.source).toBe("deterministic-intent");
+    expect(result.answer).toContain("28.6139, 77.2090");
+  });
+
   it("sends bounded inspection context to the server-side provider and returns its answer", async () => {
     const previous = process.env.OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = "test-only-server-secret";
