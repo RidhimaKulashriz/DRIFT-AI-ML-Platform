@@ -243,11 +243,11 @@
 - [ ] Deploy the previously built React/tRPC DRIFT AI frontend on Vercel and its Node/tRPC backend on Render, separate from the FastAPI/ML service.
 - [ ] Verify DRIFT AI’s server-side provider/fallback, map markers, reports, and API origin against the deployed Node backend.
 - [x] Create private GitHub repository `DRIFT-AI-ML-Platform` and import the working preview source as the clean canonical project; repository is now public by explicit request.
-- [ ] Preserve and document real drone/Jetson connection, simulator fallback, telemetry, media, inference, geospatial, report, and audit workflows in the new repository.
+- [x] Preserve and document real drone/Jetson connection, simulator fallback, telemetry, media, inference, geospatial, report, and audit workflows in the new repository.
 - [ ] Harden DRIFT AI for typo-tolerant, short, varied, context-grounded questions with clarification and safe engineer-review boundaries.
 - [ ] Run full validation and record deployment prerequisites and live hosting status for the new canonical repository.
-- [ ] Add and document safe drone connectivity options: MAVLink over UDP/Wi-Fi, USB/serial, Jetson companion bridge, optional supported Bluetooth telemetry adapter, RTSP/media, GPS, battery, health, retry, lost-link, and operator-confirmed actions.
-- [ ] Add hardware capability detection and explicit safe simulator fallback when no drone or companion computer is connected.
+- [x] Add and document safe drone connectivity options: MAVLink over UDP/Wi-Fi, USB/serial, Jetson companion bridge, optional supported Bluetooth telemetry adapter, RTSP/media, GPS, battery, health, retry, lost-link, and operator-confirmed actions.
+- [x] Add hardware capability detection and explicit safe simulator fallback when no drone or companion computer is connected.
 - [ ] Add integration tests for telemetry validation, media correlation, GPS provenance, reconnect behavior, and unsafe-command rejection.
 - [x] Audit the new canonical repository’s tracked files for `.env`, passwords, API keys, private keys, credential files, and other sensitive artifacts before making it public.
 - [x] Change `DRIFT-AI-ML-Platform` visibility to public and verify anonymous access after the audit.
