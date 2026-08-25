@@ -18,7 +18,11 @@ export function registerOAuthRoutes(app: Express) {
     const backendOrigin = `${req.protocol}://${req.get("host")}`;
     const frontendOrigin = process.env.FRONTEND_APP_URL?.replace(/\/$/, "");
     const returnTo = getQueryParam(req, "returnTo") ?? frontendOrigin ?? backendOrigin;
-    if (!oauthPortalUrl || !appId || (frontendOrigin && returnTo !== frontendOrigin) || !/^https?:\/\//.test(returnTo)) {
+    if (!oauthPortalUrl || !appId || !process.env.OAUTH_SERVER_URL) {
+      res.status(503).json({ error: "External OAuth is not configured. Public monitoring remains available; configure an external identity provider before using protected actions." });
+      return;
+    }
+    if ((frontendOrigin && returnTo !== frontendOrigin) || !/^https?:\/\//.test(returnTo)) {
       res.status(500).json({ error: "OAuth split-host configuration is incomplete or invalid" });
       return;
     }

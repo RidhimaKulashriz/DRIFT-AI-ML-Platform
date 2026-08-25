@@ -21,6 +21,11 @@ export const startLogin = () => {
 
   const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
   const appId = import.meta.env.VITE_APP_ID;
+  if (!oauthPortalUrl || !appId) {
+    console.warn("[OAuth] No external provider is configured; protected DRIFT actions are unavailable in public mode.");
+    window.alert("External sign-in is not configured for this deployment. Public monitoring remains available; configure an external identity provider to use protected actions.");
+    return;
+  }
   const redirectUri = `${window.location.origin}/api/oauth/callback`;
 
   const nonce = crypto.randomUUID();

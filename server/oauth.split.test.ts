@@ -8,11 +8,12 @@ function registeredStartHandler() {
   return handler;
 }
 
-const original = { portal: process.env.VITE_OAUTH_PORTAL_URL, appId: process.env.VITE_APP_ID, frontend: process.env.FRONTEND_APP_URL };
+const original = { portal: process.env.VITE_OAUTH_PORTAL_URL, appId: process.env.VITE_APP_ID, frontend: process.env.FRONTEND_APP_URL, oauthServer: process.env.OAUTH_SERVER_URL };
 afterEach(() => {
   process.env.VITE_OAUTH_PORTAL_URL = original.portal;
   process.env.VITE_APP_ID = original.appId;
   process.env.FRONTEND_APP_URL = original.frontend;
+  process.env.OAUTH_SERVER_URL = original.oauthServer;
 });
 
 describe("split-host OAuth start", () => {
@@ -20,6 +21,7 @@ describe("split-host OAuth start", () => {
     process.env.VITE_OAUTH_PORTAL_URL = "https://oauth.example.test";
     process.env.VITE_APP_ID = "drift-app";
     process.env.FRONTEND_APP_URL = "https://drift.vercel.app";
+    process.env.OAUTH_SERVER_URL = "https://auth.example.test";
     const res = { cookie: vi.fn(), redirect: vi.fn(), status: vi.fn(() => res), json: vi.fn() };
     registeredStartHandler()({ protocol: "https", get: () => "api.drift.onrender.com", query: { returnTo: "https://drift.vercel.app" } }, res);
     expect(res.cookie).toHaveBeenCalledOnce();
@@ -32,10 +34,22 @@ describe("split-host OAuth start", () => {
     process.env.VITE_OAUTH_PORTAL_URL = "https://oauth.example.test";
     process.env.VITE_APP_ID = "drift-app";
     process.env.FRONTEND_APP_URL = "https://drift.vercel.app";
+    process.env.OAUTH_SERVER_URL = "https://auth.example.test";
     const res = { cookie: vi.fn(), redirect: vi.fn(), status: vi.fn(() => res), json: vi.fn() };
     registeredStartHandler()({ protocol: "https", get: () => "api.drift.onrender.com", query: { returnTo: "https://attacker.example" } }, res);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.cookie).not.toHaveBeenCalled();
     expect(res.redirect).not.toHaveBeenCalled();
+  });
+
+  it("returns an actionable disabled response when no external provider is configured", () => {
+    delete process.env.VITE_OAUTH_PORTAL_URL;
+    delete process.env.VITE_APP_ID;
+    delete process.env.OAUTH_SERVER_URL;
+    const res = { cookie: vi.fn(), redirect: vi.fn(), status: vi.fn(() => res), json: vi.fn() };
+    registeredStartHandler()({ protocol: "https", get: () => "api.drift.onrender.com", query: { returnTo: "https://drift.vercel.app" } }, res);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: expect.stringContaining("External OAuth is not configured") }));
+    expect(res.cookie).not.toHaveBeenCalled();
   });
 });

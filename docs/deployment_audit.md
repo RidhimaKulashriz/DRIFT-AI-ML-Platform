@@ -4,9 +4,9 @@
 
 | Stack area | Configuration | Required to boot | Production requirement | Safe fallback when absent |
 |---|---|---:|---:|---|
-| Frontend | `VITE_APP_TITLE`, `VITE_APP_LOGO`, `VITE_APP_ID`, `VITE_OAUTH_PORTAL_URL`, `VITE_API_BASE_URL` | Yes for branded/authenticated UI | Set Vercel build-time values; never commit secrets | Simulator UI can render, but protected calls require the Render API |
+| Frontend | `VITE_APP_TITLE`, `VITE_APP_LOGO`, `VITE_BACKEND_URL` | No for public monitoring | Set the Render API origin as a Vercel build-time value; never commit secrets | The public workspace remains readable; protected actions are clearly unavailable without an external identity provider |
 | Frontend/maps | `MapView` with configured Google Maps provider | No separate key for coordinate fallback | Configure a Vercel-safe Google Maps browser key with domain restrictions; do not commit it | Coordinates remain visible in mission/evidence records and the workbench shows a truthful provider-unavailable state |
-| Backend/auth | `JWT_SECRET`, `OAUTH_SERVER_URL`, owner identity, Forge URL/key | Yes | Configure Render secrets and rotate according to release policy | No safe anonymous access to protected operations; public simulator/read procedures remain intentionally limited |
+| Backend/auth | `JWT_SECRET`, optional external OAuth provider values, owner identity, Forge URL/key | No for public monitoring | Configure a supported external OAuth provider before enabling protected engineering operations | No safe anonymous access to protected operations; the backend returns an actionable `503` for sign-in attempts while public read procedures remain available |
 | Database | `DATABASE_URL` | Yes for persistence | Enable SSL where supported and apply Drizzle migrations before release | Server refuses persistent mission/evidence operations rather than fabricating data |
 | Storage | S3-compatible storage helpers and Forge credentials | Yes for evidence/report artifacts | Configure Render-side object storage; store references and hashes, not file bytes in MySQL | Upload/report operations fail explicitly; existing metadata remains queryable |
 | ML/CV | `ML_INFERENCE_URL`, optional `ML_INFERENCE_TOKEN` | No | Configure a calibrated, domain-specific CV service and validate its response schema | Deterministic fallback labels findings as advisory, applies server calibration, records provenance, and requires human review |
@@ -17,7 +17,7 @@
 
 ## Verification status
 
-The local project contains the external deployment contract, but live Render/Vercel values are not present in this sandbox. `ML_INFERENCE_URL` and `DRIFT_HARDWARE_ENDPOINT` remain optional for simulator/fallback mode. Configure a restricted Google Maps browser key on Vercel if real tiles are required; the coordinate fallback remains available when tiles are unavailable.
+The public Vercel and Render services are live. `ML_INFERENCE_URL` and `DRIFT_HARDWARE_ENDPOINT` remain optional for simulator/fallback mode. Configure a restricted Google Maps browser key on Vercel if real tiles are required; the coordinate fallback remains available when tiles are unavailable. Manus OAuth variables are not required for public monitoring; configure a separate external provider before enabling protected engineering actions.
 
 The latest local release gate passed TypeScript validation, 27 Vitest tests, the production build, authenticated real-image evidence upload, fallback inference persistence, correlation persistence, and application-generated report creation. Remaining field gates are organisation-specific: deploy a calibrated production CV endpoint, bench-test the chosen PX4/ArduPilot hardware and camera bridge, and complete flight/airspace and engineering approvals.
 
