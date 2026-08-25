@@ -308,4 +308,4 @@
 - [ ] Replace Manus-backed dynamic evidence/report storage with an external S3/R2/Vercel Blob-compatible object store before treating uploaded media and PDF evidence as externally portable production data.
 - [x] Expose persistence readiness to the deployed operator UI and disable only storage-dependent actions with an actionable external-database message when no compatible database is configured.
 - [x] Remove the hard requirement for Manus `OAUTH_SERVER_URL` in external Vercel/Render mode, retaining protected-action safeguards while an external authentication provider is not configured.
-- [ ] Remove the Manus Forge Google Maps proxy from the external Vercel release path, retain a reliable coordinate-map fallback, and serve a valid favicon without 404 errors.
+- [x] Remove the Manus Forge Google Maps proxy from the external Vercel release path, retain a reliable coordinate-map fallback, and serve a valid favicon without 404 errors.
