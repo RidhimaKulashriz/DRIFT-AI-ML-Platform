@@ -22,4 +22,13 @@ describe("external deployment artifacts", () => {
     expect(render).toContain("OPENAI_API_KEY");
     expect(render).not.toMatch(/mysql:\/\/[^\n]+/i);
   });
+
+  it("uses externally accessible source media for the labelled public dataset demonstration", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
+    expect(consoleSource).toContain("raw.githubusercontent.com/biankatpas/Cracks-and-Potholes-in-Road-Images-Dataset");
+    expect(consoleSource).toContain("1097248_DF_070_070BDF0010_04158_RAW.jpg");
+    expect(consoleSource).toContain("1097248_DF_070_070BDF0010_04158_CRACK.png");
+    expect(consoleSource).not.toContain("/manus-storage/brazil-road-defect");
+  });
 });

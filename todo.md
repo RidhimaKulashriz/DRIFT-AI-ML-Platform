@@ -291,8 +291,15 @@
 - [ ] Configure frontend API origin and backend CORS, then validate map, AI, simulator, evidence, and report paths across the live Vercel/Render deployment.
 - [x] Surface clearly labelled public-dataset demo media in Operations and Reports in addition to the Evidence Vault, without using it as real-UAV/site evidence.
 - [x] Verify cross-workspace public-dataset media actions, labels, and exclusion from site-specific map markers and report findings.
+- [ ] Verify the Vercel production frontend at its assigned external URL and record the exact origin for backend CORS.
+- [ ] Configure the canonical Node/tRPC backend as a Render web service with production-safe build and start commands.
+- [ ] Add the Vercel production origin to the Render backend CORS allowlist, set the Vercel API base, and validate live cross-origin application flows.
+- [x] Deploy and externally verify the Vercel frontend at `https://drift-ai-ml-platform.vercel.app` with the latest public-dataset visuals.
+- [ ] Resume the free Render Node/tRPC service creation after the account’s mandatory card-verification gate is cleared; do not enter payment details on the user’s behalf.
+- [ ] Set `VITE_BACKEND_URL` in Vercel and verify CORS, live map data, AI, simulator, evidence, and report flows after the Render API URL exists.
 - [ ] Deploy the canonical DRIFT frontend from `DRIFT-AI-ML-Platform` to Vercel and record the production URL.
 - [ ] Deploy the canonical DRIFT Node/tRPC backend to Render with server-only provider and ingress secrets, then record the API URL.
 - [ ] Configure Vercel-to-Render CORS, frontend API origin, and secure production environment variables without committing credentials.
 - [ ] Verify the deployed map, DRIFT AI provider status, simulator, original-media upload route, and report flow against the live external services.
 - [ ] Keep real photo/video evidence limited to operator/drone-original uploads or authenticated bridge capture, with simulator-only demo labels and no external internet images.
+- [ ] Replace public-dataset image and crack-mask references that use internal storage paths with externally hosted, licence-attributed source URLs and verify they load from the Vercel deployment.
