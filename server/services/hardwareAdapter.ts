@@ -56,6 +56,9 @@ export async function probeHardwareConnection(endpoint = process.env.DRIFT_HARDW
 export function validateTelemetryPayload(payload: unknown): { valid: boolean; message: string; value?: TelemetryPayload } {
   if (!payload || typeof payload !== "object") return { valid: false, message: "Telemetry payload must be a JSON object." };
   const value = payload as Record<string, unknown>;
+  const controlFields = ["command", "action", "arm", "launch", "navigate", "waypoint", "takeoff", "land", "rtl", "gimbal"];
+  const attemptedControl = controlFields.find(key => value[key] !== undefined);
+  if (attemptedControl) return { valid: false, message: `DRIFT is receive-only and rejects flight-control field: ${attemptedControl}.` };
   const required = ["missionId", "latitude", "longitude", "altitude", "speedMps", "batteryPercent", "timestamp"];
   const missing = required.filter(key => value[key] === undefined || value[key] === null);
   if (missing.length) return { valid: false, message: `Missing required telemetry fields: ${missing.join(", ")}` };

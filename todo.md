@@ -248,7 +248,7 @@
 - [ ] Run full validation and record deployment prerequisites and live hosting status for the new canonical repository.
 - [x] Add and document safe drone connectivity options: MAVLink over UDP/Wi-Fi, USB/serial, Jetson companion bridge, optional supported Bluetooth telemetry adapter, RTSP/media, GPS, battery, health, retry, lost-link, and operator-confirmed actions.
 - [x] Add hardware capability detection and explicit safe simulator fallback when no drone or companion computer is connected.
-- [ ] Add integration tests for telemetry validation, media correlation, GPS provenance, reconnect behavior, and unsafe-command rejection.
+- [x] Add integration tests for telemetry validation, media correlation, GPS provenance, reconnect behavior, and unsafe-command rejection.
 - [x] Audit the new canonical repository’s tracked files for `.env`, passwords, API keys, private keys, credential files, and other sensitive artifacts before making it public.
 - [x] Change `DRIFT-AI-ML-Platform` visibility to public and verify anonymous access after the audit.
 - [x] Push the complete working preview source into the currently empty public `DRIFT-AI-ML-Platform` repository and verify its canonical tree before claiming repository delivery.
@@ -279,3 +279,14 @@
 - [x] Require drone-captured or operator-uploaded original media to be labelled with capture source, GPS, timestamp, camera, mission, and inference provenance; keep internet reference images visibly non-live and outside detected-defect claims.
 - [x] Bind captured media and resulting ML detections to map locations and PDF reports with evidence provenance and review boundaries.
 - [x] Audit every dashboard button and navigation control, implement missing actions or clearly disabled states, and add interaction regression coverage.
+- [x] Inventory existing uploaded dataset media and classify each asset as original operator media, simulator, public reference, or unknown before displaying it in DRIFT.
+- [ ] Add only approved, provenance-classified uploaded dataset media to the Evidence Vault with an explicit source label and no unsupported real-drone claim.
+- [ ] Bind approved uploaded dataset media to an evidence record, coordinate metadata where available, map review, and generated report evidence register.
+- [x] Source licence-compatible public infrastructure-defect dataset samples for DRIFT demo inference.
+- [x] Display public-dataset samples with dataset, licence, source URL, and explicit non-field/non-drone evidence labels.
+- [x] Keep public-dataset samples out of real UAV evidence claims while allowing them to exercise demo inference, maps, and report workflows.
+- [ ] Deploy the canonical DRIFT frontend from `DRIFT-AI-ML-Platform` to Vercel and record the production URL.
+- [ ] Deploy the canonical DRIFT Node/tRPC backend to Render with server-only provider and ingress secrets, then record the API URL.
+- [ ] Configure Vercel-to-Render CORS, frontend API origin, and secure production environment variables without committing credentials.
+- [ ] Verify the deployed map, DRIFT AI provider status, simulator, original-media upload route, and report flow against the live external services.
+- [ ] Keep real photo/video evidence limited to operator/drone-original uploads or authenticated bridge capture, with simulator-only demo labels and no external internet images.
