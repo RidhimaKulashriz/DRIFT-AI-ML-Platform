@@ -21,6 +21,10 @@ The Render API currently has no compatible MySQL/TiDB `DATABASE_URL`. It therefo
 
 The existing Render PostgreSQL service must not be attached to this Node backend because the persistence layer uses Drizzle's `mysql2` driver and a MySQL-style schema. Real operator media and generated PDF report bytes also still need an external object-storage implementation; internal storage paths are not an external-production data store.
 
+## Map delivery
+
+The Vercel production entry bundle was checked after commit `0ee5433`. It contains the DRIFT coordinate-map implementation and contains neither the `forge.butterfly-effect.dev` proxy URL nor the `Map provider unavailable` failure copy. `https://drift-ai-ml-platform.vercel.app/favicon.svg` returned HTTP `200`. The public release therefore uses the built-in interactive coordinate plot, including severity markers, telemetry traces, and finding-register controls, without a Manus-hosted Google Maps script or an unconfigured browser API key.
+
 ## Security follow-up
 
 The previously chat-exposed Gemini and OpenAI keys must be revoked and replaced before live AI use. A rotated `GEMINI_API_KEY`, an unexposed `DRIFT_INGEST_TOKEN`, and a compatible database connection belong only in Render server environment variables, never in Vercel client configuration or GitHub. External OAuth is deliberately disabled by default; do not set `DRIFT_EXTERNAL_OAUTH_ENABLED=true` until a non-Manus identity provider, its server-side endpoint, and the corresponding portal/app values are configured and tested.
