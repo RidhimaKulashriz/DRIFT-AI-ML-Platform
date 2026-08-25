@@ -306,5 +306,5 @@
 - [x] Configure the Vercel production `VITE_BACKEND_URL` and confirm browser tRPC traffic plus CORS reach `https://drift-node-api.onrender.com`.
 - [ ] Provision a compatible external MySQL/TiDB database with TLS for the Node/Drizzle MySQL driver, or deliberately port the persistence layer to PostgreSQL; do not connect the incompatible existing Render PostgreSQL URL.
 - [ ] Replace Manus-backed dynamic evidence/report storage with an external S3/R2/Vercel Blob-compatible object store before treating uploaded media and PDF evidence as externally portable production data.
-- [ ] Expose persistence readiness to the deployed operator UI and disable only storage-dependent actions with an actionable external-database message when no compatible database is configured.
-- [ ] Remove the hard requirement for Manus `OAUTH_SERVER_URL` in external Vercel/Render mode, retaining protected-action safeguards while an external authentication provider is not configured.
+- [x] Expose persistence readiness to the deployed operator UI and disable only storage-dependent actions with an actionable external-database message when no compatible database is configured.
+- [x] Remove the hard requirement for Manus `OAUTH_SERVER_URL` in external Vercel/Render mode, retaining protected-action safeguards while an external authentication provider is not configured.
