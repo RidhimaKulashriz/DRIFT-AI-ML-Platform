@@ -285,6 +285,12 @@
 - [x] Source licence-compatible public infrastructure-defect dataset samples for DRIFT demo inference.
 - [x] Display public-dataset samples with dataset, licence, source URL, and explicit non-field/non-drone evidence labels.
 - [x] Keep public-dataset samples out of real UAV evidence claims while allowing them to exercise demo inference, maps, and report workflows.
+- [ ] Confirm the canonical public repository contains the latest validated DRIFT release before external deployment.
+- [ ] Create/update the Vercel frontend project from `RidhimaKulashriz/DRIFT-AI-ML-Platform` and capture its deployment URL.
+- [ ] Create/update the Render Node/tRPC backend from `RidhimaKulashriz/DRIFT-AI-ML-Platform` using secure server-only environment variables.
+- [ ] Configure frontend API origin and backend CORS, then validate map, AI, simulator, evidence, and report paths across the live Vercel/Render deployment.
+- [x] Surface clearly labelled public-dataset demo media in Operations and Reports in addition to the Evidence Vault, without using it as real-UAV/site evidence.
+- [x] Verify cross-workspace public-dataset media actions, labels, and exclusion from site-specific map markers and report findings.
 - [ ] Deploy the canonical DRIFT frontend from `DRIFT-AI-ML-Platform` to Vercel and record the production URL.
 - [ ] Deploy the canonical DRIFT Node/tRPC backend to Render with server-only provider and ingress secrets, then record the API URL.
 - [ ] Configure Vercel-to-Render CORS, frontend API origin, and secure production environment variables without committing credentials.
