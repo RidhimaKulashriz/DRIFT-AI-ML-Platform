@@ -1,0 +1,69 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1787655332973,
+      "tag": "0000_simple_brood",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1787655785019,
+      "tag": "0001_early_wonder_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1787656742258,
+      "tag": "0002_parched_lake",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1787657627414,
+      "tag": "0003_illegal_blue_shield",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1787661884000,
+      "tag": "0004_milky_wildside",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1787662796911,
+      "tag": "0005_sturdy_baron_strucker",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1787668331201,
+      "tag": "0006_dear_supreme_intelligence",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1787668646101,
+      "tag": "0007_tranquil_paibok",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1787669114604,
+      "tag": "0008_rapid_steel_serpent",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+services:
+  - type: web
+    name: drift-inspection-platform
+    runtime: node
+    plan: free
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: VITE_APP_ID
+        sync: false
+      - key: VITE_APP_TITLE
+        sync: false
+      - key: VITE_APP_LOGO
+        sync: false
+      - key: VITE_OAUTH_PORTAL_URL
+        sync: false
+      - key: FRONTEND_APP_URL
+        sync: false
+      - key: DRIFT_ALLOWED_ORIGINS
+        sync: false
+      - key: OAUTH_SERVER_URL
+        sync: false
+      - key: OWNER_OPEN_ID
+        sync: false
+      - key: BUILT_IN_FORGE_API_URL
+        sync: false
+      - key: BUILT_IN_FORGE_API_KEY
+        sync: false
+      - key: VITE_FRONTEND_FORGE_API_URL
+        sync: false
+      - key: VITE_FRONTEND_FORGE_API_KEY
+        sync: false
+      - key: DRIFT_INGEST_TOKEN
+        sync: false
+      - key: ML_INFERENCE_URL
+        sync: false
+      - key: ML_INFERENCE_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DRIFT_HARDWARE_ENDPOINT
+        sync: false
