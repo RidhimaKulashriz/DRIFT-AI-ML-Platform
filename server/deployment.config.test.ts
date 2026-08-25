@@ -36,11 +36,14 @@ describe("external deployment artifacts", () => {
     const root = resolve(import.meta.dirname, "..");
     const driftMap = readFileSync(resolve(root, "client/src/components/DriftMap.tsx"), "utf8");
     const html = readFileSync(resolve(root, "client/index.html"), "utf8");
+    const viteConfig = readFileSync(resolve(root, "vite.config.ts"), "utf8");
     expect(driftMap).not.toContain("MapView");
     expect(driftMap).not.toContain("forge.butterfly-effect.dev");
     expect(driftMap).toContain("Coordinate geospatial defect map");
     expect(html).toContain('href="/favicon.svg"');
     expect(html).not.toContain("%VITE_ANALYTICS_ENDPOINT%/umami");
+    expect(viteConfig).not.toContain("vite-plugin-manus-runtime");
+    expect(viteConfig).not.toContain("vitePluginManusRuntime");
     expect(existsSync(resolve(root, "client/public/favicon.svg"))).toBe(true);
   });
 });
