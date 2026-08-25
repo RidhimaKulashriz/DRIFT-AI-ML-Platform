@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 describe("DRIFT AI OpenAI credential", () => {
-  it("can reach the lightweight models endpoint when a server key is configured", async () => {
+  it.skipIf(process.env.DRIFT_RUN_EXTERNAL_CONNECTIVITY_TESTS !== "true" || !process.env.OPENAI_API_KEY)("can reach the lightweight models endpoint when a server key is configured", async () => {
     const key = process.env.OPENAI_API_KEY;
     expect(key, "OPENAI_API_KEY must be configured server-side").toBeTruthy();
     const response = await fetch("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${key}` } });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 describe("DRIFT AI Gemini credential", () => {
-  it("can reach the Gemini model catalog when a server key is configured", async () => {
+  it.skipIf(process.env.DRIFT_RUN_EXTERNAL_CONNECTIVITY_TESTS !== "true" || !process.env.GEMINI_API_KEY)("can reach the Gemini model catalog when a server key is configured", async () => {
     const key = process.env.GEMINI_API_KEY;
     expect(key, "GEMINI_API_KEY must be configured server-side").toBeTruthy();
 

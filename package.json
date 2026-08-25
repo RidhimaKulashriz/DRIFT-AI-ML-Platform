@@ -10,6 +10,7 @@
     "check": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
+    "test:external": "DRIFT_RUN_EXTERNAL_CONNECTIVITY_TESTS=true vitest run server/geminiCredential.test.ts server/hardware.secret.test.ts server/openaiCredential.test.ts server/services/openaiCredential.test.ts",
     "test:bridge": "node scripts/verify-bridge-routes.mjs",
     "db:push": "drizzle-kit generate && drizzle-kit migrate"
   },
