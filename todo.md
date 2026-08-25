@@ -242,7 +242,7 @@
 - [ ] Verify the Jetson/drone WebSocket path separately from CPU inference and document any Render Free limitation.
 - [ ] Deploy the previously built React/tRPC DRIFT AI frontend on Vercel and its Node/tRPC backend on Render, separate from the FastAPI/ML service.
 - [ ] Verify DRIFT AI’s server-side provider/fallback, map markers, reports, and API origin against the deployed Node backend.
-- [ ] Create private GitHub repository `DRIFT-AI-ML-Platform` and import the working preview source as the clean canonical project.
+- [x] Create private GitHub repository `DRIFT-AI-ML-Platform` and import the working preview source as the clean canonical project; repository is now public by explicit request.
 - [ ] Preserve and document real drone/Jetson connection, simulator fallback, telemetry, media, inference, geospatial, report, and audit workflows in the new repository.
 - [ ] Harden DRIFT AI for typo-tolerant, short, varied, context-grounded questions with clarification and safe engineer-review boundaries.
 - [ ] Run full validation and record deployment prerequisites and live hosting status for the new canonical repository.
@@ -251,4 +251,31 @@
 - [ ] Add integration tests for telemetry validation, media correlation, GPS provenance, reconnect behavior, and unsafe-command rejection.
 - [x] Audit the new canonical repository’s tracked files for `.env`, passwords, API keys, private keys, credential files, and other sensitive artifacts before making it public.
 - [x] Change `DRIFT-AI-ML-Platform` visibility to public and verify anonymous access after the audit.
-- [ ] Push the complete working preview source into the currently empty public `DRIFT-AI-ML-Platform` repository and verify its canonical tree before claiming repository delivery.
+- [x] Push the complete working preview source into the currently empty public `DRIFT-AI-ML-Platform` repository and verify its canonical tree before claiming repository delivery.
+- [ ] Reconcile the canonical public repository with the working preview and define explicit acceptance criteria for multi-domain infrastructure inspection, drone/Jetson ingestion, ML/AI, maps, evidence, reports, simulator, and safety.
+- [ ] Implement or verify domain-aware detection contracts for roads, bridges, railways, buildings, utilities, drainage, tunnels, and under-structure inspection zones without claiming universal detection.
+- [ ] Implement or verify safe hardware paths for MAVLink UDP/Wi-Fi, USB/serial, Jetson companion, camera/video, GPS, battery, reconnect, lost-link handling, and simulator fallback.
+- [ ] Implement or verify grounded DRIFT AI question handling, evidence-linked answers, clarification, uncertainty, and engineer sign-off boundaries.
+- [ ] Run complete validation and prepare a reviewable branch and pull request from the canonical repository before external deployment.
+- [ ] Apply all remaining canonical DRIFT implementation and deployment changes directly to the public repository `main` branch; do not create a separate PR branch.
+- [x] Add common typo normalization for short DRIFT AI questions and pass the dedicated regression test; synchronized directly to canonical public main.
+- [x] Add and synchronize an explicit industry-readiness acceptance contract covering domains, drone paths, ML evidence, DRIFT AI safety, maps, reports, simulator, and security gates.
+- [x] Fix DRIFT AI repeated-answer behavior by routing general questions to the server-side OpenAI provider when configured and returning distinct question-aware fallbacks when unavailable.
+- [x] Add non-secret provider diagnostics and regression tests for provider success, missing key, provider failure, typo questions, and unsupported safety claims.
+- [x] Document that the previously exposed OpenAI key must be revoked and that a newly rotated key belongs only in Render’s secure server environment.
+- [x] Configure the user-supplied OpenAI credential only as a server-side test secret and verify provider connectivity without exposing it; require a newly rotated key for Render production.
+- [ ] Await an actual operator/drone media upload for live evidence; external internet imagery is intentionally excluded from DRIFT’s detection and evidence surfaces.
+- [x] Add working picture preview, open-source, download, locate, and evidence-navigation actions.
+- [x] Audit and fix every nonresponsive dashboard control, including navigation, filters, demo, reports, hardware bridge, and DRIFT AI actions.
+- [x] Add interaction regression coverage and browser-verify the repaired controls and Pictures/Evidence experience.
+- [x] Replace remaining client-side canned DRIFT AI preview replies with a real provider-backed conversational path or an explicit unavailable state.
+- [x] Send bounded conversation history and current inspection context to DRIFT AI so follow-up questions are answered in context.
+- [x] Expose provider/fallback status in the AI panel and add varied-question regression coverage.
+- [x] Surface OpenAI quota/auth/provider status distinctly in DRIFT AI so a 429 quota failure is never presented as a normal answer.
+- [x] Add Gemini as the server-side DRIFT AI provider, with bounded context/history and no client or repository key exposure.
+- [x] Validate the supplied Gemini credential with a minimal live request and make Gemini provider/quota status explicit in the AI panel.
+- [ ] Rotate the chat-exposed Gemini key before configuring the external Render production environment.
+- [x] Add a truthful UAV operations workspace with a selectable aircraft profile, MAVLink-compatible telemetry/media bridge contract, camera/RTSP capture configuration, and an explicit simulator mode.
+- [x] Require drone-captured or operator-uploaded original media to be labelled with capture source, GPS, timestamp, camera, mission, and inference provenance; keep internet reference images visibly non-live and outside detected-defect claims.
+- [x] Bind captured media and resulting ML detections to map locations and PDF reports with evidence provenance and review boundaries.
+- [x] Audit every dashboard button and navigation control, implement missing actions or clearly disabled states, and add interaction regression coverage.

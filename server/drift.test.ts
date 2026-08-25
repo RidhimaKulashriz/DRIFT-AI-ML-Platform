@@ -188,6 +188,11 @@ describe("tRPC operations", () => {
 });
 
 describe("authorized workspace roles", () => {
+  it("blocks citizen accounts from creating a UAV capture mission", async () => {
+    const ctx = { user: { id: 7, role: "citizen" }, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
+    await expect(appRouter.createCaller(ctx).drift.createHardwareCaptureMission({ name: "Citizen UAV attempt", aircraftProfile: "PX4 / ArduPilot MAVLink-compatible UAV", adapter: "mavlink-bridge", latitude: 28.6139, longitude: 77.2090 })).rejects.toThrow(/does not permit/);
+  });
+
   const baseContext = { req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] };
   const userFor = (role: "admin" | "engineer" | "citizen") => ({ id: 1, openId: `${role}-user`, name: role, email: null, loginMethod: "manus", role, createdAt: new Date(), updatedAt: new Date(), lastSignedIn: new Date() });
 

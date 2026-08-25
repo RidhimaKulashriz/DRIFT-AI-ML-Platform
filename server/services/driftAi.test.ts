@@ -1,10 +1,15 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { askDriftAi } from "./driftAi";
 
 const context = { missionName: "North span verification", telemetryPoints: 12, evidenceCount: 3, selectedFinding: { id: 101, label: "Deck crack", defectType: "crack", inspectionDomain: "bridges", severity: "critical", reviewState: "pending", zeroErrorScore: 93, confidencePercent: 91, coveragePercent: 78, latitude: "28.6139", longitude: "77.2090", qualityGate: "review", captureZone: "under-bridge" } };
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+beforeEach(() => {
+  delete process.env.GEMINI_API_KEY;
+  delete process.env.OPENAI_API_KEY;
 });
 
 describe("DRIFT AI", () => {
@@ -90,7 +95,7 @@ describe("DRIFT AI", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network unavailable")));
     const result = await askDriftAi("What is the operational context for this inspection?", context);
     expect(result.source).toBe("deterministic-fallback");
-    expect(result.providerStatus).toBe("network-error");
+    expect(result.providerStatus).toBe("openai-network-error");
     expect(result.answer).toContain("What is the operational context for this inspection?");
     if (previous) process.env.OPENAI_API_KEY = previous; else delete process.env.OPENAI_API_KEY;
   });
@@ -101,7 +106,7 @@ describe("DRIFT AI", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 429 }));
     const result = await askDriftAi("Can you explain this finding?", context);
     expect(result.source).toBe("deterministic-fallback");
-    expect(result.providerStatus).toBe(429);
+    expect(result.providerStatus).toBe("openai-429");
     expect(result.answer).toContain("OpenAI quota exhausted");
     if (previous) process.env.OPENAI_API_KEY = previous; else delete process.env.OPENAI_API_KEY;
   });
@@ -112,7 +117,21 @@ describe("DRIFT AI", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 503 }));
     const result = await askDriftAi("Give me a condition snapshot.", context);
     expect(result.source).toBe("deterministic-fallback");
-    expect(result.providerStatus).toBe(503);
+    expect(result.providerStatus).toBe("openai-503");
     if (previous) process.env.OPENAI_API_KEY = previous; else delete process.env.OPENAI_API_KEY;
+  });
+
+  it("prefers Gemini when a server-side Gemini key is configured", async () => {
+    process.env.GEMINI_API_KEY = "test-only-gemini-secret";
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: "Gemini uses the selected mission context." }] } }] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await askDriftAi("Summarize the active inspection.", context, [{ role: "user", content: "Keep this concise." }]);
+    expect(result.source).toBe("gemini");
+    expect(result.model).toBe("gemini-2.5-flash");
+    expect(result.providerStatus).toBe("gemini-connected");
+    const request = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as { contents: Array<{ role: string; parts: Array<{ text: string }> }> };
+    expect(fetchMock.mock.calls[0]?.[0]).toContain("gemini-2.5-flash:generateContent");
+    expect(request.contents[0]?.role).toBe("user");
+    expect(request.contents[1]?.parts[0]?.text).toContain("28.6139");
   });
 });

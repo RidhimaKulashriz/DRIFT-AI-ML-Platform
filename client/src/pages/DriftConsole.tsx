@@ -41,7 +41,7 @@ type Severity = "low" | "medium" | "high" | "critical";
 type DefectType = "pothole" | "crack" | "structural" | "corrosion" | "spalling" | "exposed_rebar" | "water_intrusion" | "settlement" | "rail_alignment" | "obstruction" | "lighting_failure";
 type Workspace = "operations" | "defects" | "evidence" | "reports" | "hardware";
 type Role = "administrator" | "engineer" | "citizen";
-type EvidenceItem = { id: number; fileName: string; storageUrl: string; mediaKind: "photo" | "video" | "annotation" | "report"; source?: "hardware" | "upload" | "simulator"; latitude: string | null; longitude: string | null; capturedAt?: Date | null; cameraId?: string | null; provenance?: unknown; captureZone?: string | null; qualityStatus?: string | null; imageQuality?: unknown };
+type EvidenceItem = { id: number; fileName: string; storageUrl: string; mediaKind: "photo" | "video" | "annotation" | "report"; source?: "hardware" | "upload" | "simulator" | "reference"; latitude: string | null; longitude: string | null; capturedAt?: Date | null; cameraId?: string | null; provenance?: unknown; captureZone?: string | null; qualityStatus?: string | null; imageQuality?: unknown };
 
 const navItems: Array<{ key: Workspace; label: string; icon: typeof Radar }> = [
   { key: "operations", label: "Operations", icon: Radar },
@@ -68,6 +68,12 @@ function evidenceProvenance(provenance: unknown) {
   return `${kind}${author}${license}`;
 }
 
+function evidenceSourceUrl(provenance: unknown) {
+  if (!provenance || typeof provenance !== "object") return null;
+  const sourceUrl = (provenance as Record<string, unknown>).sourceUrl;
+  return typeof sourceUrl === "string" && sourceUrl.startsWith("https://") ? sourceUrl : null;
+}
+
 function SeverityChip({ severity }: { severity: Severity }) {
   return <span className={cn("severity-chip", severityClass(severity))}>{severity}</span>;
 }
@@ -85,7 +91,10 @@ function StatBlock({ label, value, detail, direction = "neutral" }: { label: str
 }
 
 export default function DriftConsole() {
-  const [workspace, setWorkspace] = useState<Workspace>("operations");
+  const [workspace, setWorkspace] = useState<Workspace>(() => {
+    const requested = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("workspace");
+    return navItems.some(item => item.key === requested) ? requested as Workspace : "operations";
+  });
   const [previewRole, setPreviewRole] = useState<Role>("engineer");
   const [selectedId, setSelectedId] = useState(101);
   const [severityFilter, setSeverityFilter] = useState<Severity | "all">("all");
@@ -96,12 +105,18 @@ export default function DriftConsole() {
   const [missionFilter, setMissionFilter] = useState<number | "all">("all");
   const [assetFilter, setAssetFilter] = useState<number | "all">("all");
   const [missionName, setMissionName] = useState("Demo corridor patrol");
+  const [uavMissionName, setUavMissionName] = useState("Operator UAV capture mission");
+  const [uavProfile, setUavProfile] = useState("PX4 / ArduPilot MAVLink-compatible UAV");
+  const [uavAdapter, setUavAdapter] = useState<"mavlink-bridge" | "http-webhook" | "rtsp-media">("mavlink-bridge");
+  const [uavLatitude, setUavLatitude] = useState("28.6139");
+  const [uavLongitude, setUavLongitude] = useState("77.2090");
   const [aiBrief, setAiBrief] = useState<string | null>(null);
   const [driftAiMessages, setDriftAiMessages] = useState<Message[]>([{ role: "assistant", content: "I’m DRIFT AI. Ask me anything about this inspection. I will use the live mission context and clearly separate observed evidence from advisory inference." }]);
-  const [driftAiSource, setDriftAiSource] = useState<"openai" | "deterministic-intent" | "deterministic-fallback" | "unknown">("unknown");
+  const [driftAiSource, setDriftAiSource] = useState<"gemini" | "openai" | "deterministic-intent" | "deterministic-fallback" | "unknown">("unknown");
   const [driftAiProviderStatus, setDriftAiProviderStatus] = useState<string>("not-requested");
   const [pendingAiFilter, setPendingAiFilter] = useState<Severity | null>(null);
   const [reportResult, setReportResult] = useState<{ title: string; storageUrl?: string; evidenceCount: number; defectCount: number; format?: string; severityCounts?: Record<string, number> } | null>(null);
+  const [evidencePreview, setEvidencePreview] = useState<EvidenceItem | null>(null);
   const { user, isAuthenticated } = useAuth();
   const overview = trpc.drift.overview.useQuery(undefined, { refetchInterval: 15000 });
   const hardware = trpc.drift.hardwareStatus.useQuery(undefined);
@@ -116,6 +131,14 @@ export default function DriftConsole() {
     },
     onError: error => toast.error(error.message),
   });
+  const createHardwareCaptureMission = trpc.drift.createHardwareCaptureMission.useMutation({
+    onSuccess: data => {
+      toast.success(`UAV capture mission ${data.missionId} is in preflight. Upload original camera media next.`);
+      utils.drift.overview.invalidate();
+      setWorkspace("evidence");
+    },
+    onError: error => toast.error(error.message),
+  });
 
   const live = overview.data;
   const defects = live?.defects ?? [];
@@ -126,7 +149,10 @@ export default function DriftConsole() {
   const missionIdForEvidence = Number(missions[0]?.id ?? 0);
   const missionEvidence = trpc.drift.evidence.list.useQuery({ missionId: missionIdForEvidence }, { enabled: workspace === "evidence" && missionIdForEvidence > 0 });
   const demoEvidence = trpc.drift.evidence.demoList.useQuery({ missionId: missionIdForEvidence }, { enabled: workspace === "evidence" && missionIdForEvidence > 0 });
-  const evidenceItems: EvidenceItem[] = missionEvidence.data?.length ? missionEvidence.data : demoEvidence.data ?? [];
+  const evidenceItems: EvidenceItem[] = (missionEvidence.data?.length ? missionEvidence.data : demoEvidence.data ?? []).filter(item => {
+    const provenance = item.provenance;
+    return !(provenance && typeof provenance === "object" && (provenance as Record<string, unknown>).kind === "reference-image");
+  });
   const uploadEvidence = trpc.drift.evidence.upload.useMutation({
     onSuccess: () => {
       toast.success("Evidence stored securely with mission metadata");
@@ -157,12 +183,13 @@ export default function DriftConsole() {
     onError: error => toast.error(`Report generation failed: ${error.message}`),
   });
   const driftAi = trpc.drift.ai.ask.useMutation({
-    onSuccess: result => { const aiResult = result as { source: "openai" | "deterministic-intent" | "deterministic-fallback"; providerStatus?: string | number; answer: string }; setDriftAiSource(aiResult.source); setDriftAiProviderStatus(String(aiResult.providerStatus ?? (aiResult.source === "openai" ? "connected" : "unknown"))); setDriftAiMessages(previous => [...previous, { role: "assistant", content: aiResult.answer }]); },
+    onSuccess: result => { const aiResult = result as { source: "gemini" | "openai" | "deterministic-intent" | "deterministic-fallback"; providerStatus?: string | number; answer: string }; setDriftAiSource(aiResult.source); setDriftAiProviderStatus(String(aiResult.providerStatus ?? ((aiResult.source === "openai" || aiResult.source === "gemini") ? "connected" : "unknown"))); setDriftAiMessages(previous => [...previous, { role: "assistant", content: aiResult.answer }]); },
     onError: error => { setDriftAiMessages(previous => [...previous, { role: "assistant", content: `DRIFT AI could not complete this request. ${error.message} Please verify the engineer session and try again.` }]); toast.error(error.message); },
   });
   const selected = defects.find(defect => defect.id === selectedId) ?? defects[0] ?? { id: 0, label: "No finding selected", defectType: "structural", severity: "low" as Severity, zeroErrorScore: 0, confidencePercent: 0, latitude: "—", longitude: "—", status: "detected", reviewState: "pending", missionId: 0, assetId: 0, explanation: ["Run a simulator mission or connect an approved hardware bridge to create a finding."] };
   const selectedExplanation = Array.isArray(selected.explanation) ? selected.explanation.filter((item): item is string => typeof item === "string") : [];
-  const selectedEvidence = evidenceItems.find(item => item.id === (selected as typeof selected & { evidenceId?: number | null }).evidenceId) ?? evidenceItems[0];
+  const selectedEvidenceId = (selected as typeof selected & { evidenceId?: number | null }).evidenceId;
+  const selectedEvidence = selectedEvidenceId ? evidenceItems.find(item => item.id === selectedEvidenceId && item.source !== "reference") : undefined;
   const visibleDefects = useMemo(() => defects.filter(defect =>
     (severityFilter === "all" || defect.severity === severityFilter) &&
     (defectTypeFilter === "all" || defect.defectType === defectTypeFilter) &&
@@ -181,7 +208,8 @@ export default function DriftConsole() {
   const availableMissions = live?.missions ?? [];
   const role: Role = isAuthenticated ? (workspaceAccess.data?.role === "admin" ? "administrator" : workspaceAccess.data?.role === "citizen" ? "citizen" : "engineer") : previewRole;
   const roleSource = isAuthenticated ? "AUTHORISED ROLE" : "DEMO PREVIEW";
-  const canOperate = !isAuthenticated || role !== "citizen";
+  const canOperate = isAuthenticated && role !== "citizen";
+  const canRunDemo = !isAuthenticated || role !== "citizen";
 
   const roleCopy: Record<Role, { eyebrow: string; title: string; note: string }> = {
     administrator: { eyebrow: "GOVERNANCE DESK", title: "Network accountability", note: "Audit integrity, service levels, and asset exposure across the inspection network." },
@@ -222,7 +250,10 @@ export default function DriftConsole() {
       captureZone: "oblique",
       qualityStatus: "review",
       inspectionDomain: "bridges",
-      imageQuality: { source: "client-upload", requiresEngineerReview: true },
+      cameraId: `${uavProfile} · operator camera`,
+      captureSource: "hardware",
+      aircraftProfile: uavProfile,
+      imageQuality: { source: "operator-uav-upload", requiresEngineerReview: true, originalMediaRequired: true },
       correlationKey: `${missionIdForEvidence}:${selected.assetId || "asset"}`,
     });
     reader.onerror = () => toast.error("The selected evidence file could not be read.");
@@ -232,6 +263,13 @@ export default function DriftConsole() {
     const missionId = Number(missions[0]?.id ?? 0);
     if (!missionId) { toast.error("Run a simulator mission before generating a report."); return; }
     generateReport.mutate({ missionId });
+  };
+  const startUavCaptureMission = () => {
+    if (!isAuthenticated) { toast.error("Sign in as an engineer or administrator to create a persisted UAV capture mission."); return; }
+    const latitude = Number(uavLatitude);
+    const longitude = Number(uavLongitude);
+    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) { toast.error("Enter valid latitude and longitude before starting preflight."); return; }
+    createHardwareCaptureMission.mutate({ name: uavMissionName, aircraftProfile: uavProfile, adapter: uavAdapter, latitude, longitude, operatorNote: "Operator-created capture mission. DRIFT receives telemetry and original media only; it cannot fly the UAV." });
   };
   const askDriftAi = (question: string) => {
     const normalizedQuestion = question.toLowerCase();
@@ -280,7 +318,7 @@ export default function DriftConsole() {
           <div className="crumbs"><span>OPERATIONS</span><b>/</b><span>{workspace.toUpperCase()}</span></div>
           <div className="topbar-actions">
             <button type="button" className="role-toggle" disabled={isAuthenticated} onClick={() => setPreviewRole(role === "administrator" ? "engineer" : role === "engineer" ? "citizen" : "administrator")}><ShieldCheck /> {roleSource} · {role}</button>
-            {canOperate && <button type="button" className="primary-action" onClick={() => runSimulator.mutate({ name: missionName })} disabled={runSimulator.isPending}><Play /> {runSimulator.isPending ? "SIMULATING" : "RUN DEMO"}</button>}
+            {canRunDemo && <button type="button" className="primary-action" onClick={() => runSimulator.mutate({ name: missionName })} disabled={runSimulator.isPending}><Play /> {runSimulator.isPending ? "SIMULATING" : "RUN DEMO"}</button>}
           </div>
         </header>
 
@@ -336,10 +374,10 @@ export default function DriftConsole() {
             <article className="panel decision-panel">
               <div className="panel-heading"><div><span className="eyebrow">ENGINEER DECISION</span><h2>Human checkpoint</h2></div><ClipboardCheck /></div>
               <div className="decision-score"><span className={cn("score-orb", severityClass(selected.severity))}>{selected.zeroErrorScore}</span><div><span className="eyebrow">ZEROERROR PRIORITY</span><h3>{selected.severity} intervention</h3><p>AI is advisory. An authorised engineer must approve, override, or request a site visit.</p></div></div>
-              {!canOperate ? <div className="citizen-notice">Public view only. Engineering decision controls remain unavailable for the authenticated citizen role.</div> : <div className="decision-actions"><button type="button" onClick={() => submitReview("approve")}><CheckCheck /> APPROVE</button><button type="button" onClick={() => submitReview("override")}><Wrench /> OVERRIDE</button><button type="button" onClick={() => submitReview("needs_site_visit")}><MapPinned /> SITE VISIT</button></div>}
+              {!canOperate ? <div className="citizen-notice">Sign in as an engineer or administrator to submit an engineering decision. Demo preview remains read-only for approvals and overrides.</div> : <div className="decision-actions"><button type="button" onClick={() => submitReview("approve")}><CheckCheck /> APPROVE</button><button type="button" onClick={() => submitReview("override")}><Wrench /> OVERRIDE</button><button type="button" onClick={() => submitReview("needs_site_visit")}><MapPinned /> SITE VISIT</button></div>}
             </article>
           </section>
-          <section className="drift-ai-panel"><div className="drift-ai-heading"><div><span className="eyebrow">DRIFT AI · INSPECTION COPILOT</span><h2>Ask the evidence, not the guess</h2><p>DRIFT AI reads the selected finding, exact coordinates, severity, confidence, quality gate, mission telemetry, evidence count, and review state. It never issues flight commands or replaces engineer sign-off.</p></div><div className="drift-ai-badge"><Sparkles /> {driftAiSource === "openai" ? "OPENAI CONNECTED" : driftAiProviderStatus === "429" ? "OPENAI QUOTA REQUIRED" : driftAiProviderStatus === "401" || driftAiProviderStatus === "403" ? "OPENAI KEY REJECTED" : driftAiSource === "deterministic-fallback" ? "FALLBACK · PROVIDER UNAVAILABLE" : driftAiSource === "deterministic-intent" ? "RULES · PROVIDER NOT CONFIGURED" : "READY FOR QUESTION"}</div></div><div className="drift-ai-metrics"><div><span>ANALYZED RECORDS</span><strong>{evidenceItems.length || defects.length}</strong><small>{evidenceItems.length ? "evidence items" : "finding records"}</small></div><div><span>CRITICAL DEFECTS</span><strong>{aiCriticalCount}</strong><small>engineer review</small></div><div><span>BRIDGE HEALTH</span><strong>{aiHealthScore}<em>/100</em></strong><small>derived triage score</small></div><div><span>RISK BAND</span><strong>{aiRiskBand}</strong><small>not a failure prediction</small></div><div><span>REPAIR EXPOSURE</span><strong>{formatCurrency(repairTotal)}</strong><small>stored estimates</small></div></div>{pendingAiFilter && <div className="drift-ai-filter-suggestion"><span>DRIFT AI suggests showing only <strong>{pendingAiFilter}</strong> findings on the map.</span><button type="button" onClick={() => { setSeverityFilter(pendingAiFilter); setWorkspace("defects"); setPendingAiFilter(null); }}>APPLY FILTER</button><button type="button" onClick={() => setPendingAiFilter(null)}>DISMISS</button></div>}<AIChatBox messages={driftAiMessages} onSendMessage={askDriftAi} isLoading={driftAi.isPending} height="430px" className="drift-ai-chat" placeholder="Ask: Why is this critical? What should the engineer verify next?" emptyStateMessage="DRIFT AI is ready for an inspection question." suggestedPrompts={["What are the most critical defects?", "Which defects need immediate repair?", "Why was this finding marked severe?", "Summarize this inspection and risk", "Compare with the previous inspection", "What should the engineer inspect manually?"]} /></section>
+          <section className="drift-ai-panel"><div className="drift-ai-heading"><div><span className="eyebrow">DRIFT AI · INSPECTION COPILOT</span><h2>Ask the evidence, not the guess</h2><p>DRIFT AI reads the selected finding, exact coordinates, severity, confidence, quality gate, mission telemetry, evidence count, and review state. It never issues flight commands or replaces engineer sign-off.</p></div><div className="drift-ai-badge"><Sparkles /> {driftAiSource === "gemini" ? "GEMINI CONNECTED" : driftAiSource === "openai" ? "OPENAI CONNECTED" : driftAiProviderStatus.endsWith("-429") ? "AI QUOTA REQUIRED" : driftAiProviderStatus.endsWith("-401") || driftAiProviderStatus.endsWith("-403") ? "AI KEY REJECTED" : driftAiSource === "deterministic-fallback" ? "FALLBACK · PROVIDER UNAVAILABLE" : driftAiSource === "deterministic-intent" ? "RULES · PROVIDER NOT CONFIGURED" : "READY FOR QUESTION"}</div></div><div className="drift-ai-metrics"><div><span>ANALYZED RECORDS</span><strong>{evidenceItems.length || defects.length}</strong><small>{evidenceItems.length ? "evidence items" : "finding records"}</small></div><div><span>CRITICAL DEFECTS</span><strong>{aiCriticalCount}</strong><small>engineer review</small></div><div><span>BRIDGE HEALTH</span><strong>{aiHealthScore}<em>/100</em></strong><small>derived triage score</small></div><div><span>RISK BAND</span><strong>{aiRiskBand}</strong><small>not a failure prediction</small></div><div><span>REPAIR EXPOSURE</span><strong>{formatCurrency(repairTotal)}</strong><small>stored estimates</small></div></div>{pendingAiFilter && <div className="drift-ai-filter-suggestion"><span>DRIFT AI suggests showing only <strong>{pendingAiFilter}</strong> findings on the map.</span><button type="button" onClick={() => { setSeverityFilter(pendingAiFilter); setWorkspace("defects"); setPendingAiFilter(null); }}>APPLY FILTER</button><button type="button" onClick={() => setPendingAiFilter(null)}>DISMISS</button></div>}<AIChatBox messages={driftAiMessages} onSendMessage={askDriftAi} isLoading={driftAi.isPending} height="430px" className="drift-ai-chat" placeholder="Ask: Why is this critical? What should the engineer verify next?" emptyStateMessage="DRIFT AI is ready for an inspection question." suggestedPrompts={["What are the most critical defects?", "Which defects need immediate repair?", "Why was this finding marked severe?", "Summarize this inspection and risk", "Compare with the previous inspection", "What should the engineer inspect manually?"]} /></section>
           {role === "administrator" && <section className="admin-grid"><article className="panel admin-panel"><div className="panel-heading"><div><span className="eyebrow">ADMINISTRATOR WORKSPACE</span><h2>Asset governance</h2></div><Layers3 /></div><div className="governance-list">{availableAssets.slice(0, 4).map(asset => <div key={asset.id}><strong>{asset.name}</strong><span>{asset.assetType} · criticality {asset.criticality}/5 · {asset.status}</span></div>) || <p>No managed assets are available yet.</p>}</div><p className="access-note">Asset create, update, and delete actions are server-authorized for authenticated administrator roles. This unauthenticated display is clearly marked as a preview.</p></article><article className="panel admin-panel"><div className="panel-heading"><div><span className="eyebrow">AUDIT TRAIL</span><h2>Accountability log</h2></div><ClipboardCheck /></div><div className="governance-list">{(live?.audit ?? []).slice(0, 4).map(event => <div key={event.id}><strong>{event.action}</strong><span>{new Date(event.createdAt).toLocaleString()}</span></div>) || <p>No audit entries yet.</p>}</div><p className="access-note">Every simulator run, evidence upload, telemetry event, and review decision is written to the audit record.</p></article></section>}
         </>}
 
@@ -350,13 +388,13 @@ export default function DriftConsole() {
         </section>}
 
         {workspace === "evidence" && <section className="workspace-page evidence-workspace">
-          <div className="workspace-header"><div><span className="eyebrow">SECURE MISSION MEDIA</span><h2>Evidence vault</h2></div><div><input ref={filePickerRef} className="file-picker" type="file" accept="image/*,video/*" onChange={event => handleEvidenceFile(event.target.files?.[0])} /><button type="button" className="primary-action" onClick={() => filePickerRef.current?.click()}><Upload /> {uploadEvidence.isPending ? "STORING" : "UPLOAD EVIDENCE"}</button></div></div>
+          <div className="workspace-header"><div><span className="eyebrow">SECURE MISSION MEDIA</span><h2>Evidence vault</h2></div><div><input ref={filePickerRef} className="file-picker" type="file" accept="image/*,video/*" onChange={event => handleEvidenceFile(event.target.files?.[0])} /><button type="button" className="primary-action" onClick={() => filePickerRef.current?.click()} disabled={!canOperate || uploadEvidence.isPending} title={!canOperate ? "Sign in as an engineer or administrator to upload original drone media." : undefined}><Upload /> {uploadEvidence.isPending ? "STORING" : !canOperate ? "SIGN IN TO UPLOAD" : "UPLOAD EVIDENCE"}</button></div></div>
           <DriftMap defects={defects.filter(defect => defect.missionId === missionIdForEvidence)} telemetry={telemetry.filter(point => (point as typeof point & { missionId?: number }).missionId === missionIdForEvidence)} selectedId={selected.id || undefined} onSelect={setSelectedId} className="mb-6" />
-          <div className="evidence-grid">{evidenceItems.length ? evidenceItems.map((item, index) => <article key={item.id} className="evidence-card"><div className={cn("evidence-thumb", `thumb-${index % 3}`)}>{item.mediaKind === "photo" || item.mediaKind === "annotation" ? <img src={item.storageUrl} alt={item.fileName} /> : null}{item.mediaKind === "video" && <video src={item.storageUrl} controls preload="metadata" />}<span>{String(index + 1).padStart(2, "0")}</span><div className="thumb-box" /></div><div><span className="severity-chip severity-low">{item.source ?? "stored"} · {item.mediaKind}</span><h3>{item.fileName}</h3><p>{item.source === "simulator" ? "Simulator/reference media · not a live inspection" : "Stored mission media"} · {item.latitude ?? "GPS pending"}, {item.longitude ?? ""}</p><small className="provenance-line">{evidenceProvenance(item.provenance)}{item.provenance && typeof item.provenance === "object" && "sourceUrl" in item.provenance && typeof item.provenance.sourceUrl === "string" ? <a href={item.provenance.sourceUrl} target="_blank" rel="noreferrer"> · VIEW SOURCE</a> : null}</small></div><a href={item.storageUrl} target="_blank" rel="noreferrer">OPEN ORIGINAL <ChevronRight /></a></article>) : <article className="empty-state"><h3>No evidence stored for this mission</h3><p>Upload a real inspection photo or video, or run the simulator to create clearly labelled demonstration evidence.</p></article>}</div>
+          <div className="evidence-grid">{evidenceItems.length ? evidenceItems.map((item, index) => <article key={item.id} className="evidence-card"><button type="button" className={cn("evidence-thumb", `thumb-${index % 3}`)} onClick={() => setEvidencePreview(item)} aria-label={`Preview ${item.fileName}`}><span className="sr-only">Preview {item.fileName}</span>{item.mediaKind === "photo" || item.mediaKind === "annotation" ? <img src={item.storageUrl} alt={item.fileName} /> : null}{item.mediaKind === "video" && <video src={item.storageUrl} controls preload="metadata" />}<span>{String(index + 1).padStart(2, "0")}</span><div className="thumb-box" /></button><div><span className="severity-chip severity-low">{item.source ?? "stored"} · {item.mediaKind}</span><h3>{item.fileName}</h3><p>{item.source === "reference" ? "Real reference photograph · not live drone evidence" : item.source === "simulator" ? "Simulator/reference media · not a live inspection" : "Stored mission media"} · {item.latitude ?? "GPS pending"}, {item.longitude ?? ""}</p><small className="provenance-line">{evidenceProvenance(item.provenance)}{evidenceSourceUrl(item.provenance) ? <a href={evidenceSourceUrl(item.provenance)!} target="_blank" rel="noreferrer"> · VIEW SOURCE</a> : null}</small></div><div className="evidence-actions"><button type="button" onClick={() => setEvidencePreview(item)}>VIEW</button><a href={item.storageUrl} target="_blank" rel="noreferrer">OPEN ORIGINAL <ChevronRight /></a><a href={item.storageUrl} download={item.fileName}>DOWNLOAD</a>{item.latitude && item.longitude && <button type="button" onClick={() => { setSelectedId(Number((item as EvidenceItem & { defectId?: number }).defectId ?? selected.id)); setWorkspace("operations"); }}>LOCATE</button>}</div></article>) : <article className="empty-state"><h3>No evidence stored for this mission</h3><p>Upload a real inspection photo or video, or run the simulator to create clearly labelled demonstration evidence.</p></article>}</div>{evidencePreview && <div className="evidence-modal-backdrop" role="presentation" onClick={() => setEvidencePreview(null)}><div className="evidence-modal" role="dialog" aria-modal="true" aria-label={`Evidence preview ${evidencePreview.fileName}`} onClick={event => event.stopPropagation()}><div className="modal-header"><div><span className="eyebrow">EVIDENCE PREVIEW · {evidencePreview.source ?? "stored"}</span><h3>{evidencePreview.fileName}</h3></div><button type="button" onClick={() => setEvidencePreview(null)} aria-label="Close evidence preview">CLOSE</button></div>{evidencePreview.mediaKind === "video" ? <video src={evidencePreview.storageUrl} controls autoPlay /> : <img src={evidencePreview.storageUrl} alt={evidencePreview.fileName} />}{Boolean(evidencePreview.provenance) && <p className="provenance-line">{evidenceProvenance(evidencePreview.provenance)}</p>}<div className="modal-actions"><a href={evidencePreview.storageUrl} target="_blank" rel="noreferrer">OPEN ORIGINAL</a><a href={evidencePreview.storageUrl} download={evidencePreview.fileName}>DOWNLOAD</a></div></div></div>}
         </section>}
 
         {workspace === "reports" && <section className="workspace-page reports-workspace">
-          <div className="workspace-header"><div><span className="eyebrow">AUDIT-READY OUTPUTS</span><h2>Inspection reports</h2><p className="workspace-lede">Generate a structured PDF that keeps severity, evidence, coordinates, uncertainty, recommendations, and sign-off in one reviewable record.</p></div><div className="report-actions-header"><button type="button" className="secondary-action" onClick={createAiBrief} disabled={decisionSupport.isPending}><Sparkles /> {decisionSupport.isPending ? "ANALYSING" : "AI NARRATIVE"}</button><button type="button" className="primary-action" onClick={createPdfReport} disabled={generateReport.isPending}><FileText /> {generateReport.isPending ? "BUILDING PDF" : "GENERATE PDF REPORT"}</button></div></div>
+          <div className="workspace-header"><div><span className="eyebrow">AUDIT-READY OUTPUTS</span><h2>Inspection reports</h2><p className="workspace-lede">Generate a structured PDF that keeps severity, evidence, coordinates, uncertainty, recommendations, and sign-off in one reviewable record.</p></div><div className="report-actions-header"><button type="button" className="secondary-action" onClick={createAiBrief} disabled={!canOperate || decisionSupport.isPending} title={!canOperate ? "Sign in as an engineer or administrator to create a decision narrative." : undefined}><Sparkles /> {decisionSupport.isPending ? "ANALYSING" : !canOperate ? "SIGN IN FOR NARRATIVE" : "AI NARRATIVE"}</button><button type="button" className="primary-action" onClick={createPdfReport} disabled={!canOperate || generateReport.isPending} title={!canOperate ? "Sign in as an engineer or administrator to generate a report." : undefined}><FileText /> {generateReport.isPending ? "BUILDING PDF" : !canOperate ? "SIGN IN FOR PDF" : "GENERATE PDF REPORT"}</button></div></div>
           {reportResult && <article className="report-preview-panel"><div><span className="eyebrow">LATEST GENERATED REPORT · {reportResult.format === "application/pdf" ? "PDF" : "REPORT"}</span><h3>{reportResult.title}</h3><p>{reportResult.evidenceCount} evidence records · {reportResult.defectCount} candidate findings · engineer sign-off pending</p></div><div className="report-preview-stats">{(["critical", "high", "medium", "low"] as const).map(severity => <span key={severity} className={severityClass(severity)}><b>{reportResult.severityCounts?.[severity] ?? 0}</b> {severity}</span>)}</div>{reportResult.storageUrl ? <a className="primary-action" href={reportResult.storageUrl} target="_blank" rel="noreferrer"><FileText /> OPEN PDF</a> : <span className="report-missing">PDF storage URL unavailable</span>} {reportResult.storageUrl && <div className="report-preview-embed"><iframe title="Latest DRIFT inspection report" src={reportResult.storageUrl} /></div>}</article>}
           {aiBrief && <article className="ai-brief"><span className="eyebrow">AI DECISION-SUPPORT DRAFT · ENGINEER REVIEW REQUIRED</span><p>{aiBrief}</p></article>}
           <div className="report-stack">{reports.map(report => { const scope = report.inspectionScope && typeof report.inspectionScope === "object" ? report.inspectionScope as Record<string, unknown> : {}; const severityCounts = scope.severityCounts && typeof scope.severityCounts === "object" ? scope.severityCounts as Record<string, number> : {}; return <article className="report-card" key={report.id}><div className="report-number">R/{String(report.id).padStart(3, "0")}</div><div><span className="eyebrow">{report.status} · {scope.format === "application/pdf" ? "PDF" : "RECORD"}</span><h3>{report.title}</h3><p>{report.narrative}</p><div className="report-mini-metrics"><span>{String(scope.evidenceCount ?? "—")} evidence</span><span>{String(scope.defectCount ?? "—")} findings</span><span className="critical-text">{String(severityCounts.critical ?? 0)} critical</span><span>{String(severityCounts.high ?? 0)} high</span></div></div><div className="report-actions"><button type="button" onClick={() => { setReportResult({ title: report.title, storageUrl: report.storageUrl ?? undefined, evidenceCount: Number(scope.evidenceCount ?? 0), defectCount: Number(scope.defectCount ?? 0), format: String(scope.format ?? "") , severityCounts }); auditAction("Report preview"); }}>PREVIEW</button>{report.storageUrl ? <a href={report.storageUrl} target="_blank" rel="noreferrer">OPEN PDF</a> : <span className="report-missing">PDF unavailable</span>}</div></article>; })}</div>
@@ -365,7 +403,35 @@ export default function DriftConsole() {
 
         {workspace === "hardware" && <section className="workspace-page hardware-workspace">
           <div className="workspace-header"><div><span className="eyebrow">OPERATOR-CONTROLLED INTEGRATION</span><h2>Hardware bridge</h2></div><span className={cn("hardware-status", connectedStatus)}>{connectedStatus}</span></div>
-          <div className="hardware-grid"><article className="hardware-card"><RadioTower /><span className="eyebrow">TELEMETRY INGRESS</span><h3>Compatible adapter contract</h3><p>Accept GPS, altitude, battery, speed, and timestamp data through an operator-approved HTTP or MAVLink bridge. Invalid payloads are rejected with clear validation feedback.</p><code>latitude · longitude · altitude · batteryPercent · timestamp</code></article><article className="hardware-card"><Video /><span className="eyebrow">MEDIA INGRESS</span><h3>Evidence-first capture</h3><p>Bring in camera images or clips via a compatible media bridge. The platform stores mission-linked originals and annotated outputs; it does not control aircraft cameras.</p><code>photo | video | annotation | report</code></article><article className="hardware-card"><ShieldCheck /><span className="eyebrow">SAFE FALLBACK</span><h3>Simulator remains available</h3><p>{hardware.data?.operatorMessage ?? "When hardware is offline, DRIFT stays fully usable in simulator mode without pretending to have a live connection."}</p><button type="button" onClick={() => runSimulator.mutate({ name: missionName })}>RUN SAFE DEMO <ChevronRight /></button></article></div>
+          <div className="uav-capture-console">
+            <article className="hardware-card uav-profile-card">
+              <RadioTower />
+              <span className="eyebrow">01 · AIRCRAFT / BRIDGE PROFILE</span>
+              <h3>Choose a compatible UAV path</h3>
+              <p>DRIFT is airframe-agnostic. Select a profile now; an operator-approved PX4/ArduPilot MAVLink bridge or HTTP/RTSP media gateway is connected later. DRIFT does not arm, launch, navigate, or control the aircraft.</p>
+              <label>Aircraft profile<select value={uavProfile} onChange={event => setUavProfile(event.target.value)}><option>PX4 / ArduPilot MAVLink-compatible UAV</option><option>DJI-compatible media export / operator bridge</option><option>Custom UAV / HTTP telemetry gateway</option><option>RTSP camera payload / media gateway</option></select></label>
+              <label>Bridge contract<select value={uavAdapter} onChange={event => setUavAdapter(event.target.value as typeof uavAdapter)}><option value="mavlink-bridge">MAVLink telemetry bridge</option><option value="http-webhook">HTTP telemetry webhook</option><option value="rtsp-media">RTSP media gateway</option></select></label>
+              <code>MAVLink / UDP or serial → operator bridge → authenticated DRIFT ingest</code>
+            </article>
+            <article className="hardware-card uav-capture-card">
+              <Video />
+              <span className="eyebrow">02 · CAPTURE MISSION</span>
+              <h3>Record original drone evidence</h3>
+              <p>Create a hardware-mode preflight mission, then upload original camera photos or clips. Each stored item is marked as operator UAV capture and carries camera, time, location, mission, and inference provenance.</p>
+              <label>Mission label<input value={uavMissionName} onChange={event => setUavMissionName(event.target.value)} /></label>
+              <div className="uav-coordinate-inputs"><label>Latitude<input value={uavLatitude} onChange={event => setUavLatitude(event.target.value)} inputMode="decimal" /></label><label>Longitude<input value={uavLongitude} onChange={event => setUavLongitude(event.target.value)} inputMode="decimal" /></label></div>
+              <button type="button" onClick={startUavCaptureMission} disabled={!canOperate || createHardwareCaptureMission.isPending} title={!canOperate ? "Sign in as an engineer or administrator to create a UAV capture mission." : undefined}>{createHardwareCaptureMission.isPending ? "CREATING PREFLIGHT" : !canOperate ? "SIGN IN FOR PREFLIGHT" : "CREATE UAV PREFLIGHT MISSION"} <ChevronRight /></button>
+              <button type="button" className="secondary-action" onClick={() => { setWorkspace("evidence"); setTimeout(() => filePickerRef.current?.click(), 0); }} disabled={!canOperate} title={!canOperate ? "Sign in as an engineer or administrator to upload original drone media." : undefined}>{!canOperate ? "SIGN IN TO UPLOAD" : "UPLOAD ORIGINAL DRONE MEDIA"} <Upload /></button>
+            </article>
+            <article className="hardware-card">
+              <ShieldCheck />
+              <span className="eyebrow">03 · LIVE STATUS / SAFE FALLBACK</span>
+              <h3>{hardware.data?.adapter ?? "No bridge configured"}</h3>
+              <p>{hardware.data?.operatorMessage ?? "No compatible hardware endpoint configured. The simulator is available without claiming a real flight."}</p>
+              <div className="hardware-checklist"><span>Telemetry: GPS · altitude · battery · speed</span><span>Media: original photo/video + capture metadata</span><span>Report: evidence-bound, engineer sign-off required</span></div>
+              <button type="button" onClick={() => runSimulator.mutate({ name: missionName })} disabled={runSimulator.isPending}>{runSimulator.isPending ? "SIMULATING" : "RUN CLEARLY LABELLED DEMO"} <ChevronRight /></button>
+            </article>
+          </div>
         </section>}
 
         <footer className="console-footer"><span>DRIFT / ZEROERROR MAINTENANCE INTELLIGENCE</span><span>ENGINEER REVIEW REQUIRED FOR ALL AUTOMATED PRIORITIES</span></footer>

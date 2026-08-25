@@ -4,7 +4,7 @@ import { alerts, assets, auditEvents, defects, evidence, inspectionCorrelations,
 import { ENV } from "./_core/env";
 import { resolveReviewState } from "./services/reviewState";
 import { summarizeSeverity, toMapMarker } from "./services/reportPresentation";
-import { storagePut } from "./storage";
+import { storageGetSignedUrl, storagePut } from "./storage";
 import { renderInspectionPdf } from "./services/reportPdf";
 import type { InferenceResult } from "./services/mlInference";
 import type { DefectKind } from "./services/scoring";
@@ -85,9 +85,8 @@ export async function createDemoMissionRecord(input: { name: string; createdBy?:
     let evidenceId: number | null = null;
     try {
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="100%" height="100%" fill="#343434"/><path d="M0 600 L420 210 L860 720" stroke="#cfcfc8" stroke-width="92" fill="none"/><rect x="${460 + index * 55}" y="${240 + index * 35}" width="230" height="150" fill="none" stroke="#ffffff" stroke-width="6"/><text x="60" y="72" fill="#ffffff" font-size="30" font-family="Arial" letter-spacing="6">DRIFT / SIMULATED EVIDENCE</text><text x="60" y="670" fill="#ffffff" font-size="24" font-family="Arial">${finding.title.toUpperCase()} · ${Math.round(finding.confidence * 100)}% CONFIDENCE</text></svg>`;
-      const isRealReference = finding.label === "pothole";
-      const stored = isRealReference ? { key: "pothole-big-public-domain_f78b4887.jpg", url: "/manus-storage/pothole-big-public-domain_f78b4887.jpg" } : await storagePut(`drift/system/missions/${missionId}/simulated-evidence-${index + 1}.svg`, svg, "image/svg+xml");
-      const evidenceResult = await db.insert(evidence).values({ missionId, fileName: isRealReference ? "public-domain-pothole-reference.jpg" : `${finding.title.replace(/\s+/g, "-")}.svg`, mimeType: isRealReference ? "image/jpeg" : "image/svg+xml", storageKey: stored.key, storageUrl: stored.url, mediaKind: isRealReference ? "photo" : "annotation", source: "simulator", latitude: finding.latitude.toFixed(6), longitude: finding.longitude.toFixed(6), playbackSeconds: finding.captureOffsetSeconds, captureZone: finding.label === "structural" ? "under-bridge" : "oblique", qualityStatus: "review", imageQuality: { source: "simulator", singleFrame: true, requiresEngineerReview: true }, provenance: { ...(isRealReference ? { kind: "reference-image", sourceUrl: "https://commons.wikimedia.org/wiki/File:Pothole_Big.jpg", license: "Public domain dedication", author: "Uncl3dad", note: "Reference image only; displayed route coordinates are simulator coordinates, not source capture coordinates." } : { kind: "generated-simulator", generator: "DRIFT simulator", note: "Synthetic annotation generated for repeatable demo workflow; not a live inspection." }), inspectionDomain: finding.label === "pothole" ? "roads" : "bridges" } });
+      const stored = await storagePut(`drift/system/missions/${missionId}/simulated-evidence-${index + 1}.svg`, svg, "image/svg+xml");
+      const evidenceResult = await db.insert(evidence).values({ missionId, fileName: `${finding.title.replace(/\s+/g, "-")}.svg`, mimeType: "image/svg+xml", storageKey: stored.key, storageUrl: stored.url, mediaKind: "annotation", source: "simulator", latitude: finding.latitude.toFixed(6), longitude: finding.longitude.toFixed(6), playbackSeconds: finding.captureOffsetSeconds, captureZone: finding.label === "structural" ? "under-bridge" : "oblique", qualityStatus: "review", imageQuality: { source: "simulator", singleFrame: true, requiresEngineerReview: true }, provenance: { kind: "generated-simulator", generator: "DRIFT simulator", note: "Synthetic annotation generated for repeatable demo workflow; not a live inspection.", inspectionDomain: finding.label === "pothole" ? "roads" : "bridges" } });
       evidenceId = insertId(evidenceResult);
     } catch (error) {
       console.warn("[DRIFT Storage] Simulator evidence record could not be persisted:", error);
@@ -111,6 +110,17 @@ export async function createDemoMissionRecord(input: { name: string; createdBy?:
   await db.insert(reports).values({ missionId, title: reportTitle, narrative: reportNarrative, storageKey: reportStorage.key, storageUrl: reportStorage.url, status: "ready", generatedBy: "zeroerror-demo", inspectionScope: { domains: ["roads", "bridges"], captureZones: ["oblique", "under-bridge"], mode: "simulator" }, signoff: { required: true, status: "pending", note: "Engineer sign-off required before release." } });
   await db.insert(auditEvents).values({ missionId, actorId: input.createdBy ?? null, action: "simulator.mission_created", details: { findings: input.simulator.findings.length, mode: "demo" } });
   return { missionId, assetId };
+}
+
+export async function createHardwareCaptureMission(input: { name: string; createdBy?: number | null; aircraftProfile: string; adapter: "mavlink-bridge" | "http-webhook" | "rtsp-media"; latitude: number; longitude: number; operatorNote?: string }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable. Configure DATABASE_URL before creating a UAV capture mission.");
+  const assetResult = await db.insert(assets).values({ name: `${input.name} · UAV capture asset`, assetType: "bridge", locality: "Operator-supplied capture location", latitude: input.latitude.toFixed(6), longitude: input.longitude.toFixed(6), criticality: 3, status: "watch" });
+  const assetId = insertId(assetResult);
+  const missionResult = await db.insert(missions).values({ assetId, createdBy: input.createdBy ?? null, name: input.name, mode: "hardware", status: "preflight", hardwareAdapter: input.adapter, operatorNote: input.operatorNote ?? "Operator-created UAV capture mission. No aircraft command is issued by DRIFT.", inspectionProfile: { aircraftProfile: input.aircraftProfile, mediaProvenance: "operator-captured-original-required", bridgeContract: input.adapter } });
+  const missionId = insertId(missionResult);
+  await db.insert(auditEvents).values({ missionId, actorId: input.createdBy ?? null, action: "hardware.capture_mission_created", details: { aircraftProfile: input.aircraftProfile, adapter: input.adapter, latitude: input.latitude, longitude: input.longitude, noFlightCommandsIssued: true } });
+  return { missionId, assetId, mode: "hardware" as const, status: "preflight" as const };
 }
 
 export async function createEvidenceRecord(input: { missionId: number; uploadedBy?: number | null; fileName: string; mimeType: string; storageKey: string; storageUrl: string; mediaKind: "photo" | "video" | "annotation" | "report"; latitude?: string; longitude?: string; playbackSeconds?: number; source?: "hardware" | "upload" | "simulator"; sha256?: string; capturedAt?: Date; cameraId?: string; provenance?: Record<string, unknown>; captureZone?: string; headingDegrees?: number; qualityStatus?: "pending" | "pass" | "review" | "fail"; imageQuality?: Record<string, unknown> }) {
@@ -148,11 +158,21 @@ export async function generateMissionReport(input: { missionId: number; generate
     db.select().from(defects).where(eq(defects.missionId, input.missionId)).orderBy(desc(defects.zeroErrorScore)),
   ]);
   const estimateRows = defectRows.length ? await db.select().from(repairEstimates).where(inArray(repairEstimates.defectId, defectRows.map(row => row.id))).orderBy(desc(repairEstimates.createdAt)) : [];
+  const evidenceForPdf = await Promise.all(evidenceRows.map(async row => {
+    if (!row.mimeType.startsWith("image/") || !row.storageKey) return row;
+    try {
+      const response = await fetch(await storageGetSignedUrl(row.storageKey));
+      if (!response.ok) return row;
+      return { ...row, imageBuffer: Buffer.from(await response.arrayBuffer()) };
+    } catch {
+      return row;
+    }
+  }));
   const title = `${mission.name} · Evidence-linked inspection report`;
   const severityCounts = summarizeSeverity(defectRows);
   const repairTotalCents = estimateRows.reduce((sum, row) => sum + row.estimateCents, 0);
   const body = `# ${title}\n\n## Executive summary\n\n${evidenceRows.length} evidence record(s), ${defectRows.length} candidate finding(s), ${severityCounts.critical ?? 0} critical, ${severityCounts.high ?? 0} high, ${severityCounts.medium ?? 0} medium, and ${severityCounts.low ?? 0} low. Engineer sign-off is pending.\n\n## Evidence coverage\n\n${evidenceRows.map(row => `- Evidence ${row.id}: ${row.fileName} (${row.source ?? "unknown"}), capture zone ${row.captureZone ?? "unknown"}, quality ${row.qualityStatus ?? "unknown"}, coordinates ${row.latitude ?? "unknown"}, ${row.longitude ?? "unknown"}.`).join("\\n") || "No evidence records are available."}\n\n## Candidate findings\n\n${defectRows.map(row => `- Defect ${row.id}: ${row.defectType} · ${row.severity} · ${row.confidencePercent ?? 0}% confidence · ${row.coveragePercent ?? 0}% coverage · evidence ${row.evidenceId ?? "unlinked"} · correlation ${row.correlationKey ?? "unlinked"}.`).join("\\n") || "No defect candidates are available."}\n\n## Next inspection\n\nRepeat the pass with an engineer-approved coverage plan, original media review, and calibrated production CV model for the relevant asset domain and capture zone.\n\n## Sign-off\n\nStatus: PENDING. Automated outputs are advisory and require qualified engineer review before maintenance release.\n`;
-  const pdf = await renderInspectionPdf({ mission, evidence: evidenceRows, defects: defectRows, repairTotalCents });
+  const pdf = await renderInspectionPdf({ mission, evidence: evidenceForPdf, defects: defectRows, repairTotalCents });
   const stored = await storagePut(`drift/system/missions/${input.missionId}/inspection-report-${Date.now()}.pdf`, pdf, "application/pdf");
   const result = await db.insert(reports).values({ missionId: input.missionId, title, narrative: `Engineer-ready PDF report generated from ${evidenceRows.length} evidence item(s) and ${defectRows.length} candidate finding(s). Severity: ${severityCounts.critical ?? 0} critical / ${severityCounts.high ?? 0} high / ${severityCounts.medium ?? 0} medium / ${severityCounts.low ?? 0} low. Sign-off is pending.`, storageKey: stored.key, storageUrl: stored.url, status: "ready", generatedBy: input.generatedBy ? String(input.generatedBy) : "drift-report-generator", inspectionScope: { evidenceCount: evidenceRows.length, defectCount: defectRows.length, severityCounts, repairTotalCents, coordinateCount: defectRows.filter(row => row.latitude && row.longitude).length, format: "application/pdf" }, signoff: { required: true, status: "pending" } });
   return { reportId: insertId(result), title, storageUrl: stored.url, evidenceCount: evidenceRows.length, defectCount: defectRows.length, body, format: "application/pdf", severityCounts };

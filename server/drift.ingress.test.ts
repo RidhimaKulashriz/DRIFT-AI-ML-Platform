@@ -92,6 +92,8 @@ describe("DRIFT ingress route persistence", () => {
       imageQuality: { blurScore: 0.18, gpsLock: true },
       inspectionDomain: "bridges",
       correlationKey: "mission-77-asset-14-pass-01",
+      captureSource: "hardware",
+      aircraftProfile: "PX4 / ArduPilot MAVLink-compatible UAV",
     });
 
     expect(storagePut).toHaveBeenCalledWith(expect.stringMatching(/^drift\/91\/missions\/77\/.*-bridge-frame\.jpg$/), expect.any(Buffer), "image/jpeg");
@@ -99,11 +101,11 @@ describe("DRIFT ingress route persistence", () => {
       missionId: 77,
       uploadedBy: 91,
       fileName: "bridge-frame.jpg",
-      source: "upload",
+      source: "hardware",
       cameraId: "PX4-CAM-01",
       captureZone: "under-bridge",
       qualityStatus: "review",
-      provenance: { inspectionDomain: "bridges", correlationKey: "mission-77-asset-14-pass-01" },
+      provenance: { inspectionDomain: "bridges", correlationKey: "mission-77-asset-14-pass-01", kind: "operator-uav-capture", aircraftProfile: "PX4 / ArduPilot MAVLink-compatible UAV", originalCaptureRequired: true, notSimulator: true },
       sha256: "6e340b9cffb37a989ca544e6bb780a2c78901d3fb33738768511a30617afa01d",
       storageKey: "drift/91/missions/77/inspection.jpg",
     }));

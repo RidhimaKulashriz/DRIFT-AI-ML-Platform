@@ -25,6 +25,7 @@ type PdfEvidence = {
   longitude?: string | null;
   cameraId?: string | null;
   storageUrl?: string | null;
+  provenance?: unknown;
   imageBuffer?: Buffer;
 };
 type PdfDefect = {
@@ -164,15 +165,19 @@ export async function renderInspectionPdf(input: { mission: PdfMission; evidence
   let ey = 145;
   for (const item of input.evidence) {
     if (ey > 690) { footer(doc); doc.addPage(); pageHeader(doc, "Evidence register", 3); ey = 72; }
-    doc.roundedRect(38, ey, 536, 102, 4).fill("#eef1f2");
+    doc.roundedRect(38, ey, 536, 112, 4).fill("#eef1f2");
     if (item.imageBuffer) {
       try { doc.image(item.imageBuffer, 50, ey + 12, { fit: [104, 76], align: "center", valign: "center" }); } catch { doc.rect(50, ey + 12, 104, 76).fill("#d2d9dd"); }
     } else { doc.rect(50, ey + 12, 104, 76).fill(COLORS.navy); doc.fillColor("#9bb0c7").font("Helvetica-Bold").fontSize(8).text("MEDIA\nPREVIEW", 50, ey + 39, { width: 104, align: "center", lineGap: 2 }); }
     doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(10).text(`#${item.id}  ${safeText(item.fileName)}`, 174, ey + 14, { width: 380, ellipsis: true });
     doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(`${titleCase(safeText(item.source, "unknown"))}  ·  ${titleCase(safeText(item.captureZone, "unknown"))}  ·  ${titleCase(safeText(item.qualityStatus, "unknown"))}`, 174, ey + 33, { width: 380 });
     doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(`GPS  ${safeText(item.latitude)}  /  ${safeText(item.longitude)}    CAMERA  ${safeText(item.cameraId)}`, 174, ey + 51, { width: 380 });
-    doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(item.storageUrl ? `Stored media: ${item.storageUrl}` : "Stored media URL not recorded", 174, ey + 69, { width: 380, ellipsis: true });
-    ey += 114;
+    const provenance = item.provenance && typeof item.provenance === "object" ? item.provenance as Record<string, unknown> : {};
+    const kind = typeof provenance.kind === "string" ? provenance.kind : "unclassified";
+    const aircraftProfile = typeof provenance.aircraftProfile === "string" ? provenance.aircraftProfile : "not recorded";
+    doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(`Provenance: ${kind} · Aircraft: ${aircraftProfile}`, 174, ey + 69, { width: 380, ellipsis: true });
+    doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(item.storageUrl ? `Stored original: ${item.storageUrl}` : "Stored media URL not recorded", 174, ey + 85, { width: 380, ellipsis: true });
+    ey += 124;
   }
   if (!input.evidence.length) doc.fillColor(COLORS.slate).font("Helvetica").fontSize(10).text("No evidence records are available for this mission.", 38, 150);
   footer(doc);
