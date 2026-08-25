@@ -14,3 +14,7 @@ DRIFT is an inspection decision-support platform, not an autonomous flight contr
 | Security and operations | Ingress is authenticated and rate-limited, input is validated, audit events are persisted, CORS is allow-listed, and secrets remain server-side. | Automated tests plus a deployment security review pass. |
 
 Render Free is suitable for demonstrations and low-duty API orchestration, but sustained real-time video processing or GPU inference should run on Jetson or a dedicated CV service. A production field deployment also requires hardware bench testing, domain-specific model validation, operator training, regulatory compliance, and a recovery plan.
+
+## OpenAI provider configuration
+
+The backend reads `OPENAI_API_KEY` only on the server. Configure it as a secret environment variable on the Render Node/API service and redeploy that service; do not place it in Vercel client variables, source control, browser code, or chat messages. The key previously posted in chat must be revoked in the OpenAI dashboard and replaced with a newly generated key. DRIFT exposes only non-secret provider outcome metadata (`openai`, `deterministic-fallback`, HTTP status, or `network-error`) to support diagnostics.

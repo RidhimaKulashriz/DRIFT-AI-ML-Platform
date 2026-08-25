@@ -40,6 +40,18 @@ describe("DRIFT AI", () => {
     expect(result.answer).toContain("28.6139, 77.2090");
   });
 
+  it("sends general questions to the provider even when no finding is selected", async () => {
+    const previous = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "test-only-server-secret";
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ choices: [{ message: { content: "There is no selected finding; provide a mission or evidence record for a grounded answer." } }] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await askDriftAi("What can you tell me about this mission?", { missionName: "North span verification", evidenceCount: 3 });
+    expect(result.source).toBe("openai");
+    expect(result.answer).toContain("no selected finding");
+    expect(fetchMock).toHaveBeenCalledOnce();
+    if (previous) process.env.OPENAI_API_KEY = previous; else delete process.env.OPENAI_API_KEY;
+  });
+
   it("sends bounded inspection context to the server-side provider and returns its answer", async () => {
     const previous = process.env.OPENAI_API_KEY;
     process.env.OPENAI_API_KEY = "test-only-server-secret";
@@ -61,6 +73,17 @@ describe("DRIFT AI", () => {
     const result = await askDriftAi("Provide a general assessment of this inspection context.", context);
     expect(result.answer).toContain("not independently verified as safe");
     expect(result.answer).toContain("not a certification");
+    if (previous) process.env.OPENAI_API_KEY = previous; else delete process.env.OPENAI_API_KEY;
+  });
+
+  it("returns a safe question-specific fallback when the provider network fails", async () => {
+    const previous = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "test-only-server-secret";
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network unavailable")));
+    const result = await askDriftAi("What is the operational context for this inspection?", context);
+    expect(result.source).toBe("deterministic-fallback");
+    expect(result.providerStatus).toBe("network-error");
+    expect(result.answer).toContain("What is the operational context for this inspection?");
     if (previous) process.env.OPENAI_API_KEY = previous; else delete process.env.OPENAI_API_KEY;
   });
 
