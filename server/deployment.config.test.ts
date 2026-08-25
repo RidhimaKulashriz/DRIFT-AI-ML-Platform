@@ -31,4 +31,15 @@ describe("external deployment artifacts", () => {
     expect(consoleSource).toContain("1097248_DF_070_070BDF0010_04158_CRACK.png");
     expect(consoleSource).not.toContain("/manus-storage/brazil-road-defect");
   });
+
+  it("keeps the Vercel map surface independent of the Manus Forge proxy and serves a favicon", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const driftMap = readFileSync(resolve(root, "client/src/components/DriftMap.tsx"), "utf8");
+    const html = readFileSync(resolve(root, "client/index.html"), "utf8");
+    expect(driftMap).not.toContain("MapView");
+    expect(driftMap).not.toContain("forge.butterfly-effect.dev");
+    expect(driftMap).toContain("Coordinate geospatial defect map");
+    expect(html).toContain('href="/favicon.svg"');
+    expect(existsSync(resolve(root, "client/public/favicon.svg"))).toBe(true);
+  });
 });
