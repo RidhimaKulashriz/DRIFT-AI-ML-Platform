@@ -8,12 +8,13 @@ function registeredStartHandler() {
   return handler;
 }
 
-const original = { portal: process.env.VITE_OAUTH_PORTAL_URL, appId: process.env.VITE_APP_ID, frontend: process.env.FRONTEND_APP_URL, oauthServer: process.env.OAUTH_SERVER_URL };
+const original = { portal: process.env.VITE_OAUTH_PORTAL_URL, appId: process.env.VITE_APP_ID, frontend: process.env.FRONTEND_APP_URL, oauthServer: process.env.OAUTH_SERVER_URL, externalEnabled: process.env.DRIFT_EXTERNAL_OAUTH_ENABLED };
 afterEach(() => {
   process.env.VITE_OAUTH_PORTAL_URL = original.portal;
   process.env.VITE_APP_ID = original.appId;
   process.env.FRONTEND_APP_URL = original.frontend;
   process.env.OAUTH_SERVER_URL = original.oauthServer;
+  process.env.DRIFT_EXTERNAL_OAUTH_ENABLED = original.externalEnabled;
 });
 
 describe("split-host OAuth start", () => {
@@ -22,6 +23,7 @@ describe("split-host OAuth start", () => {
     process.env.VITE_APP_ID = "drift-app";
     process.env.FRONTEND_APP_URL = "https://drift.vercel.app";
     process.env.OAUTH_SERVER_URL = "https://auth.example.test";
+    process.env.DRIFT_EXTERNAL_OAUTH_ENABLED = "true";
     const res = { cookie: vi.fn(), redirect: vi.fn(), status: vi.fn(() => res), json: vi.fn() };
     registeredStartHandler()({ protocol: "https", get: () => "api.drift.onrender.com", query: { returnTo: "https://drift.vercel.app" } }, res);
     expect(res.cookie).toHaveBeenCalledOnce();
@@ -35,6 +37,7 @@ describe("split-host OAuth start", () => {
     process.env.VITE_APP_ID = "drift-app";
     process.env.FRONTEND_APP_URL = "https://drift.vercel.app";
     process.env.OAUTH_SERVER_URL = "https://auth.example.test";
+    process.env.DRIFT_EXTERNAL_OAUTH_ENABLED = "true";
     const res = { cookie: vi.fn(), redirect: vi.fn(), status: vi.fn(() => res), json: vi.fn() };
     registeredStartHandler()({ protocol: "https", get: () => "api.drift.onrender.com", query: { returnTo: "https://attacker.example" } }, res);
     expect(res.status).toHaveBeenCalledWith(500);
@@ -46,10 +49,22 @@ describe("split-host OAuth start", () => {
     delete process.env.VITE_OAUTH_PORTAL_URL;
     delete process.env.VITE_APP_ID;
     delete process.env.OAUTH_SERVER_URL;
+    delete process.env.DRIFT_EXTERNAL_OAUTH_ENABLED;
     const res = { cookie: vi.fn(), redirect: vi.fn(), status: vi.fn(() => res), json: vi.fn() };
     registeredStartHandler()({ protocol: "https", get: () => "api.drift.onrender.com", query: { returnTo: "https://drift.vercel.app" } }, res);
     expect(res.status).toHaveBeenCalledWith(503);
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: expect.stringContaining("External OAuth is not configured") }));
     expect(res.cookie).not.toHaveBeenCalled();
+  });
+
+  it("keeps public mode disabled even when ambient OAuth variables are present", () => {
+    process.env.VITE_OAUTH_PORTAL_URL = "https://ambient.example.test";
+    process.env.VITE_APP_ID = "ambient-app";
+    process.env.OAUTH_SERVER_URL = "https://ambient-auth.example.test";
+    delete process.env.DRIFT_EXTERNAL_OAUTH_ENABLED;
+    const res = { cookie: vi.fn(), redirect: vi.fn(), status: vi.fn(() => res), json: vi.fn() };
+    registeredStartHandler()({ protocol: "https", get: () => "api.drift.onrender.com", query: { returnTo: "https://drift.vercel.app" } }, res);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.redirect).not.toHaveBeenCalled();
   });
 });

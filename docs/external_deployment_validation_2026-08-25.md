@@ -23,4 +23,4 @@ The existing Render PostgreSQL service must not be attached to this Node backend
 
 ## Security follow-up
 
-The previously chat-exposed Gemini and OpenAI keys must be revoked and replaced before live AI use. A rotated `GEMINI_API_KEY`, an unexposed `DRIFT_INGEST_TOKEN`, and a compatible database connection belong only in Render server environment variables, never in Vercel client configuration or GitHub.
+The previously chat-exposed Gemini and OpenAI keys must be revoked and replaced before live AI use. A rotated `GEMINI_API_KEY`, an unexposed `DRIFT_INGEST_TOKEN`, and a compatible database connection belong only in Render server environment variables, never in Vercel client configuration or GitHub. External OAuth is deliberately disabled by default; do not set `DRIFT_EXTERNAL_OAUTH_ENABLED=true` until a non-Manus identity provider, its server-side endpoint, and the corresponding portal/app values are configured and tested.

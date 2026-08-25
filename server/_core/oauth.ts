@@ -15,10 +15,11 @@ export function registerOAuthRoutes(app: Express) {
   app.get("/api/oauth/start", (req: Request, res: Response) => {
     const oauthPortalUrl = process.env.VITE_OAUTH_PORTAL_URL;
     const appId = process.env.VITE_APP_ID;
+    const externalOAuthEnabled = process.env.DRIFT_EXTERNAL_OAUTH_ENABLED === "true";
     const backendOrigin = `${req.protocol}://${req.get("host")}`;
     const frontendOrigin = process.env.FRONTEND_APP_URL?.replace(/\/$/, "");
     const returnTo = getQueryParam(req, "returnTo") ?? frontendOrigin ?? backendOrigin;
-    if (!oauthPortalUrl || !appId || !process.env.OAUTH_SERVER_URL) {
+    if (!externalOAuthEnabled || !oauthPortalUrl || !appId || !process.env.OAUTH_SERVER_URL) {
       res.status(503).json({ error: "External OAuth is not configured. Public monitoring remains available; configure an external identity provider before using protected actions." });
       return;
     }
