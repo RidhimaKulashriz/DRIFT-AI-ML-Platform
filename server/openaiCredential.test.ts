@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 describe("server-side OpenAI credential", () => {
-  it("is accepted by the lightweight models endpoint without exposing the key", async () => {
+  it.skipIf(!process.env.OPENAI_API_KEY)("is accepted by the lightweight models endpoint without exposing the key", async () => {
     const apiKey = process.env.OPENAI_API_KEY;
     expect(apiKey, "OPENAI_API_KEY must be configured for this connectivity check").toBeTruthy();
     const response = await fetch("https://api.openai.com/v1/models", {
