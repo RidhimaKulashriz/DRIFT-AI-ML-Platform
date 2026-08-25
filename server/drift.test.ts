@@ -154,7 +154,8 @@ describe("tRPC operations", () => {
   it("exposes safe hardware, filter, map, alert, and report read operations", async () => {
     const ctx = { user: null, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
     const caller = appRouter.createCaller(ctx);
-    const [hardware, defects, mapData, alerts, reportRecords, demoEvidence] = await Promise.all([
+    const [overview, hardware, defects, mapData, alerts, reportRecords, demoEvidence] = await Promise.all([
+      caller.drift.overview(),
       caller.drift.hardwareStatus(),
       caller.drift.filters.defects({}),
       caller.drift.filters.mapData({}),
@@ -162,6 +163,7 @@ describe("tRPC operations", () => {
       caller.drift.reports.list(),
       caller.drift.evidence.demoList({ missionId: 60001 }),
     ]);
+    expect(overview.persistence).toEqual(expect.objectContaining({ available: expect.any(Boolean), configured: expect.any(Boolean), driver: "mysql2", message: expect.any(String) }));
     expect(["offline", "connected", "retrying", "degraded"]).toContain(hardware.status);
     expect(Array.isArray(defects)).toBe(true);
     expect(Array.isArray(mapData)).toBe(true);

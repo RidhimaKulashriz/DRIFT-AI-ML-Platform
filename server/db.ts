@@ -56,7 +56,10 @@ function insertId(result: unknown) {
 
 export async function getMissionOverview() {
   const db = await getDb();
-  if (!db) return { assets: [], missions: [], defects: [], telemetry: [], reports: [], estimates: [], reviews: [], audit: [], alerts: [] };
+  const persistence = db
+    ? { available: true, configured: true, driver: "mysql2", message: "Persistent mission, evidence, and report storage is ready." }
+    : { available: false, configured: Boolean(process.env.DATABASE_URL), driver: "mysql2", message: "Persistent missions, original evidence, and PDF reports require a compatible MySQL or TiDB DATABASE_URL." };
+  if (!db) return { assets: [], missions: [], defects: [], telemetry: [], reports: [], estimates: [], reviews: [], audit: [], alerts: [], persistence };
   const [assetRows, missionRows, defectRows, telemetryRows, reportRows, estimateRows, reviewRows, auditRows, alertRows] = await Promise.all([
     db.select().from(assets).orderBy(desc(assets.updatedAt)).limit(40),
     db.select().from(missions).orderBy(desc(missions.createdAt)).limit(30),
@@ -68,7 +71,7 @@ export async function getMissionOverview() {
     db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(120),
     db.select().from(alerts).orderBy(desc(alerts.createdAt)).limit(120),
   ]);
-  return { assets: assetRows, missions: missionRows, defects: defectRows, telemetry: telemetryRows, reports: reportRows, estimates: estimateRows, reviews: reviewRows, audit: auditRows, alerts: alertRows };
+  return { assets: assetRows, missions: missionRows, defects: defectRows, telemetry: telemetryRows, reports: reportRows, estimates: estimateRows, reviews: reviewRows, audit: auditRows, alerts: alertRows, persistence };
 }
 
 export async function createDemoMissionRecord(input: { name: string; createdBy?: number | null; simulator: Awaited<ReturnType<typeof import("./services/simulator").buildSimulatorMission>> }) {
