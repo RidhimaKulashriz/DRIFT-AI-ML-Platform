@@ -1,0 +1,7 @@
+# Canonical DRIFT-AI-ML-Platform validation
+
+The canonical public `main` branch was cloned and validated after import. `pnpm install --frozen-lockfile` completed successfully. The Node/React test suite passed with 46 tests across 12 test files. TypeScript checking passed with `pnpm check`. The production build passed with `pnpm build`, producing the Vite frontend in `dist/public` and the bundled Node server in `dist/index.js`.
+
+The current canonical application contains the React DRIFT console, server-side DRIFT AI with deterministic intent handling and provider fallback, tRPC procedures, map and evidence components, report generation, simulator workflows, hardware adapter contracts, database schema, and deployment configuration. The GitHub Actions workflow was not imported because the available GitHub App token lacks workflow-write permission; application source was imported and the repository remains public.
+
+Validation does not certify universal infrastructure defect detection, flight safety, or live drone inference. Production deployment still requires a compatible database, OAuth/session configuration if authentication is enabled, server-side AI provider configuration, storage configuration, model assets/CV service configuration, and a real hardware bench test. Render Free may be unsuitable for sustained GPU or real-time ML workloads; Jetson or a dedicated inference service is the recommended production path.
