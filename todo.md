@@ -309,3 +309,7 @@
 - [x] Expose persistence readiness to the deployed operator UI and disable only storage-dependent actions with an actionable external-database message when no compatible database is configured.
 - [x] Remove the hard requirement for Manus `OAUTH_SERVER_URL` in external Vercel/Render mode, retaining protected-action safeguards while an external authentication provider is not configured.
 - [x] Remove the Manus Forge Google Maps proxy from the external Vercel release path, retain a reliable coordinate-map fallback, and serve a valid favicon without 404 errors.
+- [ ] Assess and, if safe, port the Node/Drizzle persistence layer from MySQL to the existing external PostgreSQL service without committing database credentials or bypassing migration review.
+- [ ] Diagnose and fix all currently failing Vercel production assets and HTTP/2 resource-load errors, then verify the public frontend directly.
+- [ ] Remove or conditionally configure the unresolved Vercel analytics script placeholder so production never requests `/%VITE_ANALYTICS_ENDPOINT%/umami`.
+- [ ] Verify and repair every public DRIFT frontend asset, visible control, Vercel-to-Render API flow, simulator, AI, map, evidence, report, authentication, storage, and safe drone-ingress boundary; label any unavoidable external-provider prerequisite rather than simulating success.

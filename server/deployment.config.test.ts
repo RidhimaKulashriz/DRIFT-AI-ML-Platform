@@ -40,6 +40,7 @@ describe("external deployment artifacts", () => {
     expect(driftMap).not.toContain("forge.butterfly-effect.dev");
     expect(driftMap).toContain("Coordinate geospatial defect map");
     expect(html).toContain('href="/favicon.svg"');
+    expect(html).not.toContain("%VITE_ANALYTICS_ENDPOINT%/umami");
     expect(existsSync(resolve(root, "client/public/favicon.svg"))).toBe(true);
   });
 });
