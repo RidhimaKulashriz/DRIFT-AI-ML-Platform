@@ -1,11 +1,13 @@
+import crypto from "node:crypto";
 import { desc, eq, getTableColumns, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { alerts, assets, auditEvents, defects, evidence, inspectionCorrelations, InsertUser, missions, repairEstimates, reports, reviews, severityHistory, telemetry, users } from "../drizzle/schema";
+import { alerts, assets, auditEvents, authorities, cameraSources, contractorTicketEvidence, contractorTickets, contractors, cctvCandidates, defects, dsiAssessments, evidence, handoffPackages, inspectionCorrelations, InsertUser, knowledgeChunks, knowledgeDocuments, knowledgeRetrievalRuns, missions, publicStatusPublications, repairEstimates, reports, reviews, routingDecisions, routingRules, severityHistory, slaRules, telemetry, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { resolveReviewState } from "./services/reviewState";
 import { summarizeSeverity, toMapMarker } from "./services/reportPresentation";
 import { storageGetSignedUrl, storagePutWithFallback } from "./storage";
 import { renderInspectionPdf } from "./services/reportPdf";
+import { rankApprovedKnowledge, type KnowledgeCitation } from "./services/rag";
 import type { InferenceResult } from "./services/mlInference";
 import type { DefectKind } from "./services/scoring";
 
@@ -262,4 +264,281 @@ export async function addReview(input: { defectId: number; reviewerId?: number |
     await db.insert(auditEvents).values({ missionId: defect.missionId, defectId: defect.id, actorId: input.reviewerId ?? null, action: `review.${input.decision}`, details: { note: input.note, priorityOverride: input.priorityOverride ?? null } });
   }
   return { id: insertId(result) };
+}
+
+type DsiInput = {
+  assetCriticality: number;
+  evidenceQuality?: number | null;
+  locationConfidence?: number | null;
+  approvedImpact?: number | null;
+  repeatCount?: number | null;
+  verificationState?: string | null;
+};
+
+function calculateDsi(input: DsiInput) {
+  const evidenceQuality = input.evidenceQuality ?? null;
+  const locationConfidence = input.locationConfidence ?? null;
+  const approvedImpact = input.approvedImpact ?? null;
+  const required = [evidenceQuality, locationConfidence, approvedImpact];
+  const missing = required.some(value => value === null || value < 0 || value > 100) || input.assetCriticality < 1 || input.assetCriticality > 5;
+  const factorBreakdown = {
+    policyVersion: "dsi-v1.0",
+    assetCriticality: { value: input.assetCriticality, source: "project-asset-register" },
+    evidenceQuality: { value: evidenceQuality, source: "evidence-quality-record" },
+    locationConfidence: { value: locationConfidence, source: "asset-or-approved-zone-match" },
+    approvedImpact: { value: approvedImpact, source: "engineer-or-owner-approved-impact-input" },
+    repeatCount: { value: input.repeatCount ?? 0, source: "linked-project-evidence-history" },
+    verificationState: input.verificationState ?? "open",
+    missingData: missing,
+  };
+  if (missing) return { priority: "insufficient_evidence" as const, advisoryScore: null, factorBreakdown };
+  const score = Math.round(
+    input.assetCriticality * 9 +
+    (evidenceQuality ?? 0) * 0.16 +
+    (locationConfidence ?? 0) * 0.14 +
+    (approvedImpact ?? 0) * 0.22 +
+    Math.min(input.repeatCount ?? 0, 5) * 3,
+  );
+  const priority = score >= 70 ? "p1" : score >= 55 ? "p2" : score >= 38 ? "p3" : "p4";
+  return { priority, advisoryScore: Math.min(score, 100), factorBreakdown } as const;
+}
+
+export async function getAccountabilityOverview() {
+  const db = await getDb();
+  const persistence = db
+    ? { available: true, message: "Accountability records are ready for approved project data." }
+    : { available: false, message: "Contractor, routing, SLA, CCTV, and handoff records require the PostgreSQL migration and DATABASE_URL." };
+  if (!db) return { contractors: [], tickets: [], assessments: [], authorities: [], routing: [], handoffs: [], publications: [], cameras: [], cameraCandidates: [], knowledgeDocuments: [], persistence };
+  const [contractorRows, ticketRows, assessmentRows, authorityRows, routingRows, handoffRows, publicationRows, cameraRows, candidateRows] = await Promise.all([
+    db.select().from(contractors).orderBy(desc(contractors.updatedAt)).limit(100),
+    db.select().from(contractorTickets).orderBy(desc(contractorTickets.updatedAt)).limit(200),
+    db.select().from(dsiAssessments).orderBy(desc(dsiAssessments.createdAt)).limit(200),
+    db.select().from(authorities).orderBy(desc(authorities.updatedAt)).limit(100),
+    db.select().from(routingDecisions).orderBy(desc(routingDecisions.updatedAt)).limit(200),
+    db.select().from(handoffPackages).orderBy(desc(handoffPackages.updatedAt)).limit(200),
+    db.select().from(publicStatusPublications).orderBy(desc(publicStatusPublications.updatedAt)).limit(200),
+    db.select().from(cameraSources).orderBy(desc(cameraSources.updatedAt)).limit(100),
+    db.select().from(cctvCandidates).orderBy(desc(cctvCandidates.updatedAt)).limit(200),
+  ]);
+  return { contractors: contractorRows, tickets: ticketRows, assessments: assessmentRows, authorities: authorityRows, routing: routingRows, handoffs: handoffRows, publications: publicationRows, cameras: cameraRows, cameraCandidates: candidateRows, knowledgeDocuments: [], persistence };
+}
+
+type KnowledgeRole = "admin" | "engineer" | "user" | "citizen";
+
+function parsePermittedRoles(value: unknown): KnowledgeRole[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((role): role is KnowledgeRole => role === "admin" || role === "engineer" || role === "user" || role === "citizen");
+}
+
+function splitKnowledgeContent(content: string) {
+  const blocks = content.replace(/\r/g, "").split(/\n\s*\n/).map(block => block.trim()).filter(Boolean);
+  const chunks: Array<{ sectionReference: string; content: string }> = [];
+  let buffer = "";
+  for (const block of blocks) {
+    const candidate = buffer ? `${buffer}\n\n${block}` : block;
+    if (candidate.length > 1800 && buffer) {
+      chunks.push({ sectionReference: `Chunk ${chunks.length + 1}`, content: buffer });
+      buffer = block;
+    } else buffer = candidate;
+  }
+  if (buffer) chunks.push({ sectionReference: `Chunk ${chunks.length + 1}`, content: buffer });
+  return chunks.slice(0, 120);
+}
+
+export async function createKnowledgeDocumentRecord(input: { projectScope: string; title: string; documentType: string; version: string; permittedRoles: KnowledgeRole[]; sourceReference?: string; content: string; createdBy: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable. Configure PostgreSQL before registering approved knowledge.");
+  const chunks = splitKnowledgeContent(input.content);
+  if (!chunks.length) throw new Error("Knowledge content must contain readable text.");
+  const result = await db.insert(knowledgeDocuments).values({ projectScope: input.projectScope, title: input.title, documentType: input.documentType, version: input.version, permittedRoles: input.permittedRoles, sourceReference: input.sourceReference, approvalStatus: "draft" }).returning({ id: knowledgeDocuments.id });
+  const documentId = insertId(result);
+  await db.insert(knowledgeChunks).values(chunks.map(chunk => ({ documentId, sectionReference: chunk.sectionReference, content: chunk.content, contentHash: crypto.createHash("sha256").update(chunk.content).digest("hex"), scopeMetadata: { projectScope: input.projectScope, registration: "admin-submitted-draft", untrustedContent: true } })));
+  await db.insert(auditEvents).values({ actorId: input.createdBy, action: "knowledge.document_registered_draft", details: { documentId, projectScope: input.projectScope, chunkCount: chunks.length } });
+  return { documentId, chunkCount: chunks.length, approvalStatus: "draft" as const };
+}
+
+export async function approveKnowledgeDocumentRecord(input: { documentId: number; approvedBy: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable.");
+  const document = (await db.select({ id: knowledgeDocuments.id, approvalStatus: knowledgeDocuments.approvalStatus }).from(knowledgeDocuments).where(eq(knowledgeDocuments.id, input.documentId)).limit(1))[0];
+  if (!document) throw new Error("Knowledge document does not exist.");
+  const chunks = await db.select({ id: knowledgeChunks.id }).from(knowledgeChunks).where(eq(knowledgeChunks.documentId, input.documentId));
+  if (!chunks.length) throw new Error("Knowledge document has no chunked source content to approve.");
+  await db.update(knowledgeDocuments).set({ approvalStatus: "approved", approvedBy: input.approvedBy, effectiveAt: new Date(), updatedAt: new Date() }).where(eq(knowledgeDocuments.id, input.documentId));
+  await db.insert(auditEvents).values({ actorId: input.approvedBy, action: "knowledge.document_approved", details: { documentId: input.documentId, chunkCount: chunks.length } });
+  return { success: true, approvalStatus: "approved" as const };
+}
+
+export async function retrieveApprovedKnowledge(input: { question: string; role: KnowledgeRole; actorId: number; projectScope?: string }) {
+  const db = await getDb();
+  if (!db) return { status: "persistence_required" as const, message: "Approved knowledge retrieval requires the PostgreSQL migration and DATABASE_URL.", citations: [] as KnowledgeCitation[] };
+  const activeDocuments = (await db.select().from(knowledgeDocuments).where(eq(knowledgeDocuments.approvalStatus, "approved"))).filter(document => (!input.projectScope || document.projectScope === input.projectScope) && parsePermittedRoles(document.permittedRoles).includes(input.role));
+  const queryHash = crypto.createHash("sha256").update(input.question.trim()).digest("hex");
+  if (!activeDocuments.length) {
+    await db.insert(knowledgeRetrievalRuns).values({ actorId: input.actorId, projectScope: input.projectScope, queryHash, status: "no_accessible_source", returnedChunkIds: [] });
+    return { status: "no_accessible_source" as const, message: "No approved project source is accessible for this role and scope.", citations: [] as KnowledgeCitation[] };
+  }
+  const chunks = await db.select().from(knowledgeChunks).where(inArray(knowledgeChunks.documentId, activeDocuments.map(document => document.id)));
+  const documentsById = new Map(activeDocuments.map(document => [document.id, document]));
+  const citations = rankApprovedKnowledge(input.question, chunks.map(chunk => {
+    const document = documentsById.get(chunk.documentId)!;
+    return { chunkId: chunk.id, documentId: document.id, title: document.title, version: document.version, sourceReference: document.sourceReference, sectionReference: chunk.sectionReference, content: chunk.content };
+  }));
+  const status = citations.length ? "retrieved" as const : "no_approved_match" as const;
+  await db.insert(knowledgeRetrievalRuns).values({ actorId: input.actorId, projectScope: input.projectScope, queryHash, status, returnedChunkIds: citations.map(citation => citation.chunkId) });
+  return { status, message: citations.length ? "Approved, role-scoped source excerpts retrieved." : "No approved source excerpt matches this question. DRIFT will not make a project-specific claim.", citations };
+}
+
+export async function listKnowledgeRetrievalRuns() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(knowledgeRetrievalRuns).orderBy(desc(knowledgeRetrievalRuns.createdAt)).limit(200);
+}
+
+export async function createContractorRecord(input: { legalName: string; externalReference?: string; createdBy: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable. Configure PostgreSQL before adding real contractors.");
+  const existing = (await db.select({ id: contractors.id }).from(contractors).where(eq(contractors.legalName, input.legalName)).limit(1))[0];
+  if (existing) throw new Error("A contractor with this legal name already exists.");
+  const result = await db.insert(contractors).values({ legalName: input.legalName, externalReference: input.externalReference, createdBy: input.createdBy, status: "active" }).returning({ id: contractors.id });
+  return { id: insertId(result) };
+}
+
+export async function createAuthorityRecord(input: { legalName: string; authorityType: "municipal" | "state" | "national" | "utility" | "private_operator" | "contractor_internal"; contactChannel?: string; createdBy: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable. Configure PostgreSQL before adding authority records.");
+  const existing = (await db.select({ id: authorities.id }).from(authorities).where(eq(authorities.legalName, input.legalName)).limit(1))[0];
+  if (existing) throw new Error("An authority with this legal name already exists.");
+  const result = await db.insert(authorities).values(input).returning({ id: authorities.id });
+  return { id: insertId(result) };
+}
+
+export async function createSlaRuleRecord(input: { authorityId: number; contractReference: string; responseTargetHours: number; closureTargetHours: number; escalationPolicy: Record<string, unknown>; businessCalendar?: Record<string, unknown>; policyVersion: string; effectiveFrom: Date; effectiveUntil?: Date; createdBy: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable.");
+  const authority = (await db.select({ id: authorities.id }).from(authorities).where(eq(authorities.id, input.authorityId)).limit(1))[0];
+  if (!authority) throw new Error("Authority record does not exist.");
+  const result = await db.insert(slaRules).values(input).returning({ id: slaRules.id });
+  return { id: insertId(result) };
+}
+
+export async function createRoutingRuleRecord(input: { authorityId: number; contractorId?: number; slaRuleId?: number; assetType?: "bridge" | "road" | "rail" | "building" | "utility"; zoneReference: string; boundarySourceReference: string; responsibleTeam: string; effectiveFrom: Date; effectiveUntil?: Date; createdBy: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable.");
+  const authority = (await db.select({ id: authorities.id }).from(authorities).where(eq(authorities.id, input.authorityId)).limit(1))[0];
+  if (!authority) throw new Error("Authority record does not exist.");
+  if (input.contractorId) {
+    const contractor = (await db.select({ id: contractors.id }).from(contractors).where(eq(contractors.id, input.contractorId)).limit(1))[0];
+    if (!contractor) throw new Error("Assigned contractor record does not exist.");
+  }
+  const result = await db.insert(routingRules).values(input).returning({ id: routingRules.id });
+  return { id: insertId(result) };
+}
+
+export async function createContractorTicketRecord(input: { assetId: number; defectId?: number; contractorId?: number; title: string; scopeNote: string; zoneLabel?: string; latitude?: string; longitude?: string; dueAt?: Date; verificationCriterion: string; evidenceId?: number; evidenceQuality?: number; locationConfidence?: number; approvedImpact?: number; repeatCount?: number; createdBy: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable. Configure PostgreSQL before creating tickets.");
+  const asset = (await db.select().from(assets).where(eq(assets.id, input.assetId)).limit(1))[0];
+  if (!asset) throw new Error("Asset record does not exist.");
+  if (input.contractorId) {
+    const contractor = (await db.select({ id: contractors.id, status: contractors.status }).from(contractors).where(eq(contractors.id, input.contractorId)).limit(1))[0];
+    if (!contractor || contractor.status !== "active") throw new Error("An active real contractor record is required for assignment.");
+  }
+  if (input.evidenceId) {
+    const evidenceRow = (await db.select({ id: evidence.id }).from(evidence).where(eq(evidence.id, input.evidenceId)).limit(1))[0];
+    if (!evidenceRow) throw new Error("Opening evidence record does not exist.");
+  }
+  const dsi = calculateDsi({ assetCriticality: asset.criticality, evidenceQuality: input.evidenceQuality, locationConfidence: input.locationConfidence, approvedImpact: input.approvedImpact, repeatCount: input.repeatCount, verificationState: "open" });
+  const assessmentResult = await db.insert(dsiAssessments).values({ assetId: asset.id, defectId: input.defectId, evidenceId: input.evidenceId, policyVersion: "dsi-v1.0", priority: dsi.priority, advisoryScore: dsi.advisoryScore, factorBreakdown: dsi.factorBreakdown, requiresEngineerReview: 1, createdBy: input.createdBy }).returning({ id: dsiAssessments.id });
+  const dsiAssessmentId = insertId(assessmentResult);
+  const ticketResult = await db.insert(contractorTickets).values({ assetId: input.assetId, defectId: input.defectId, dsiAssessmentId, contractorId: input.contractorId, title: input.title, scopeNote: input.scopeNote, zoneLabel: input.zoneLabel, latitude: input.latitude, longitude: input.longitude, priority: dsi.priority, status: input.contractorId ? "assigned" : "open", dueAt: input.dueAt, verificationCriterion: input.verificationCriterion, createdBy: input.createdBy }).returning({ id: contractorTickets.id });
+  const ticketId = insertId(ticketResult);
+  if (input.evidenceId) await db.insert(contractorTicketEvidence).values({ ticketId, evidenceId: input.evidenceId, role: "opening", createdBy: input.createdBy });
+  await db.insert(auditEvents).values({ defectId: input.defectId, actorId: input.createdBy, action: "accountability.ticket_created", details: { ticketId, dsiAssessmentId, priority: dsi.priority, advisoryScore: dsi.advisoryScore, contractorAssigned: Boolean(input.contractorId) } });
+  return { ticketId, dsiAssessmentId, priority: dsi.priority, advisoryScore: dsi.advisoryScore, factorBreakdown: dsi.factorBreakdown };
+}
+
+export async function closeContractorTicketRecord(input: { ticketId: number; contractorClosureNote: string; closureEvidenceIds: number[]; actorId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable.");
+  const ticket = (await db.select().from(contractorTickets).where(eq(contractorTickets.id, input.ticketId)).limit(1))[0];
+  if (!ticket) throw new Error("Ticket does not exist.");
+  if (!ticket.contractorId) throw new Error("Ticket must be assigned to an authenticated contractor before closure.");
+  if (!input.closureEvidenceIds.length) throw new Error("At least one original closure-proof reference is required.");
+  const closureEvidence = await db.select({ id: evidence.id }).from(evidence).where(inArray(evidence.id, input.closureEvidenceIds));
+  if (closureEvidence.length !== input.closureEvidenceIds.length) throw new Error("One or more closure evidence records do not exist.");
+  await db.update(contractorTickets).set({ status: "contractor_closed", contractorClosureNote: input.contractorClosureNote, contractorClosedAt: new Date(), updatedAt: new Date() }).where(eq(contractorTickets.id, input.ticketId));
+  await db.insert(contractorTicketEvidence).values(input.closureEvidenceIds.map(evidenceId => ({ ticketId: input.ticketId, evidenceId, role: "closure_proof" as const, createdBy: input.actorId })));
+  await db.insert(auditEvents).values({ actorId: input.actorId, action: "accountability.contractor_closed", details: { ticketId: input.ticketId, closureEvidenceIds: input.closureEvidenceIds } });
+  return { success: true, status: "contractor_closed" as const };
+}
+
+export async function verifyContractorTicketRecord(input: { ticketId: number; decision: "fixed" | "needs_rework" | "cannot_verify"; verificationNote: string; followUpEvidenceIds: number[]; engineerId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable.");
+  const ticket = (await db.select().from(contractorTickets).where(eq(contractorTickets.id, input.ticketId)).limit(1))[0];
+  if (!ticket) throw new Error("Ticket does not exist.");
+  if (ticket.status !== "contractor_closed" && ticket.status !== "verification_pending") throw new Error("A contractor closure claim must exist before engineer verification.");
+  if (input.decision !== "cannot_verify" && !input.followUpEvidenceIds.length) throw new Error("Follow-up evidence is required to verify a fix or request rework.");
+  if (input.followUpEvidenceIds.length) {
+    const rows = await db.select({ id: evidence.id }).from(evidence).where(inArray(evidence.id, input.followUpEvidenceIds));
+    if (rows.length !== input.followUpEvidenceIds.length) throw new Error("One or more follow-up evidence records do not exist.");
+    await db.insert(contractorTicketEvidence).values(input.followUpEvidenceIds.map(evidenceId => ({ ticketId: input.ticketId, evidenceId, role: "follow_up" as const, createdBy: input.engineerId })));
+  }
+  await db.update(contractorTickets).set({ status: input.decision, verificationNote: input.verificationNote, verifiedBy: input.engineerId, verifiedAt: new Date(), updatedAt: new Date() }).where(eq(contractorTickets.id, input.ticketId));
+  await db.insert(auditEvents).values({ actorId: input.engineerId, action: `accountability.ticket_${input.decision}`, details: { ticketId: input.ticketId, followUpEvidenceIds: input.followUpEvidenceIds } });
+  return { success: true, status: input.decision };
+}
+
+export async function resolveTicketRoutingRecord(input: { ticketId: number; reviewerId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable.");
+  const ticket = (await db.select().from(contractorTickets).where(eq(contractorTickets.id, input.ticketId)).limit(1))[0];
+  if (!ticket) throw new Error("Ticket does not exist.");
+  const asset = (await db.select().from(assets).where(eq(assets.id, ticket.assetId)).limit(1))[0];
+  if (!asset) throw new Error("Ticket asset does not exist.");
+  const now = new Date();
+  const rules = (await db.select().from(routingRules).orderBy(desc(routingRules.createdAt))).filter(rule => rule.effectiveFrom <= now && (!rule.effectiveUntil || rule.effectiveUntil >= now) && (!rule.assetType || rule.assetType === asset.assetType) && (!ticket.zoneLabel || rule.zoneReference === ticket.zoneLabel));
+  const matched = rules.length === 1 ? rules[0] : undefined;
+  const status = matched ? "proposed" as const : "unresolved" as const;
+  const rationale = matched ? "Exactly one active project routing rule matched the ticket asset type and approved zone reference. Engineer approval remains required." : rules.length > 1 ? "Multiple active project routing rules matched. Select an authoritative route before handoff." : "No active project routing rule matched. Add or review ownership, zone, contract, and SLA data.";
+  const result = await db.insert(routingDecisions).values({ ticketId: input.ticketId, routingRuleId: matched?.id, status, sourceReferences: { assetId: asset.id, assetType: asset.assetType, ticketZone: ticket.zoneLabel ?? null, matchedRuleIds: rules.map(rule => rule.id) }, rationale, reviewedBy: input.reviewerId, reviewedAt: new Date() }).returning({ id: routingDecisions.id });
+  return { routingDecisionId: insertId(result), status, rationale, matchedRuleId: matched?.id ?? null };
+}
+
+export async function approveRoutingDecisionRecord(input: { routingDecisionId: number; reviewerId: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable.");
+  const decision = (await db.select().from(routingDecisions).where(eq(routingDecisions.id, input.routingDecisionId)).limit(1))[0];
+  if (!decision || decision.status !== "proposed" || !decision.routingRuleId) throw new Error("Only a proposed route with an approved project rule can be approved.");
+  await db.update(routingDecisions).set({ status: "approved", reviewedBy: input.reviewerId, reviewedAt: new Date(), updatedAt: new Date() }).where(eq(routingDecisions.id, input.routingDecisionId));
+  return { success: true, status: "approved" as const };
+}
+
+export async function prepareHandoffPackageRecord(input: { ticketId: number; routingDecisionId: number; recipientSystem?: string; expiresAt?: Date; preparedBy: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable.");
+  const ticket = (await db.select().from(contractorTickets).where(eq(contractorTickets.id, input.ticketId)).limit(1))[0];
+  const decision = (await db.select().from(routingDecisions).where(eq(routingDecisions.id, input.routingDecisionId)).limit(1))[0];
+  if (!ticket || !decision || decision.ticketId !== ticket.id || decision.status !== "approved" || !decision.routingRuleId) throw new Error("An approved routing decision for this ticket is required before preparing a handoff.");
+  const rule = (await db.select().from(routingRules).where(eq(routingRules.id, decision.routingRuleId)).limit(1))[0];
+  if (!rule) throw new Error("Approved routing rule no longer exists.");
+  const payload = { ticketId: ticket.id, title: ticket.title, scopeNote: ticket.scopeNote, priority: ticket.priority, status: ticket.status, verificationCriterion: ticket.verificationCriterion, assetId: ticket.assetId, zoneLabel: ticket.zoneLabel ?? null, routingDecisionId: decision.id, evidence: "Access through authorized DRIFT evidence view only", exportState: "prepared-not-delivered" };
+  const result = await db.insert(handoffPackages).values({ ticketId: ticket.id, recipientAuthorityId: rule.authorityId, recipientSystem: input.recipientSystem, status: "prepared", expiresAt: input.expiresAt, payload, accessScope: { purpose: "authorized-maintenance-review", rawCctvExcluded: true, requiresRecipientAuthorization: true }, preparedBy: input.preparedBy }).returning({ id: handoffPackages.id });
+  return { handoffPackageId: insertId(result), status: "prepared" as const, payload };
+}
+
+export async function publishPublicStatusRecord(input: { ticketId: number; publicSummary: string; expectedCompletionAt?: Date; privacyReviewNote: string; approvedBy: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable.");
+  const ticket = (await db.select({ id: contractorTickets.id }).from(contractorTickets).where(eq(contractorTickets.id, input.ticketId)).limit(1))[0];
+  if (!ticket) throw new Error("Ticket does not exist.");
+  const result = await db.insert(publicStatusPublications).values({ ticketId: input.ticketId, publicSummary: input.publicSummary, expectedCompletionAt: input.expectedCompletionAt, privacyReviewNote: input.privacyReviewNote, approvedBy: input.approvedBy, approvedAt: new Date(), publishedAt: new Date(), status: "published" }).returning({ id: publicStatusPublications.id });
+  return { id: insertId(result), status: "published" as const };
+}
+
+export async function listPublishedPublicStatuses() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({ id: publicStatusPublications.id, ticketId: publicStatusPublications.ticketId, publicSummary: publicStatusPublications.publicSummary, expectedCompletionAt: publicStatusPublications.expectedCompletionAt, publishedAt: publicStatusPublications.publishedAt }).from(publicStatusPublications).where(eq(publicStatusPublications.status, "published")).orderBy(desc(publicStatusPublications.publishedAt)).limit(100);
 }

@@ -10,6 +10,7 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   BatteryCharging,
+  BookOpenCheck,
   CheckCheck,
   ChevronRight,
   CircleDot,
@@ -39,15 +40,16 @@ import { CAPTURE_ZONES, INSPECTION_DOMAINS } from "@shared/types";
 
 type Severity = "low" | "medium" | "high" | "critical";
 type DefectType = "pothole" | "crack" | "structural" | "corrosion" | "spalling" | "exposed_rebar" | "water_intrusion" | "settlement" | "rail_alignment" | "obstruction" | "lighting_failure";
-type Workspace = "operations" | "defects" | "evidence" | "reports" | "hardware";
+type Workspace = "operations" | "defects" | "evidence" | "reports" | "hardware" | "accountability";
 type Role = "administrator" | "engineer" | "citizen";
-type EvidenceItem = { id: number; fileName: string; storageUrl: string; mediaKind: "photo" | "video" | "annotation" | "report"; source?: "hardware" | "upload" | "simulator" | "reference"; latitude: string | null; longitude: string | null; capturedAt?: Date | null; cameraId?: string | null; provenance?: unknown; captureZone?: string | null; qualityStatus?: string | null; imageQuality?: unknown };
+type EvidenceItem = { id: number; fileName: string; storageUrl: string; mediaKind: "photo" | "video" | "annotation" | "report"; source?: "hardware" | "upload" | "simulator" | "cctv" | "reference"; latitude: string | null; longitude: string | null; capturedAt?: Date | null; cameraId?: string | null; provenance?: unknown; captureZone?: string | null; qualityStatus?: string | null; imageQuality?: unknown };
 
 const navItems: Array<{ key: Workspace; label: string; icon: typeof Radar }> = [
   { key: "operations", label: "Operations", icon: Radar },
   { key: "defects", label: "Defect control", icon: TriangleAlert },
   { key: "evidence", label: "Evidence vault", icon: Video },
   { key: "reports", label: "Reports", icon: FileText },
+  { key: "accountability", label: "Accountability", icon: Network },
   { key: "hardware", label: "Hardware bridge", icon: RadioTower },
 ];
 
@@ -143,6 +145,11 @@ export default function DriftConsole() {
   const [uavAdapter, setUavAdapter] = useState<"mavlink-bridge" | "http-webhook" | "rtsp-media">("mavlink-bridge");
   const [uavLatitude, setUavLatitude] = useState("28.6139");
   const [uavLongitude, setUavLongitude] = useState("77.2090");
+  const [ticketTitle, setTicketTitle] = useState("Engineer-reviewed maintenance action");
+  const [ticketScope, setTicketScope] = useState("Create a real contractor ticket only after the opening evidence, approved impact, and verification criterion are reviewed.");
+  const [ticketImpact, setTicketImpact] = useState("60");
+  const [ragQuestion, setRagQuestion] = useState("What approved evidence is required before contractor closure can be engineer-verified?");
+  const [ragResult, setRagResult] = useState<{ answer: string; source: string; retrieval: { status: string; message: string; citations: Array<{ chunkId: number; documentId: number; title: string; version: string; sourceReference: string | null; sectionReference: string; score: number }> } } | null>(null);
   const [aiBrief, setAiBrief] = useState<string | null>(null);
   const [driftAiMessages, setDriftAiMessages] = useState<Message[]>([{ role: "assistant", content: "I’m DRIFT AI. Ask me anything about this inspection. I will use the live mission context and clearly separate observed evidence from advisory inference." }]);
   const [driftAiSource, setDriftAiSource] = useState<"gemini" | "openai" | "deterministic-intent" | "deterministic-fallback" | "unknown">("unknown");
@@ -153,6 +160,7 @@ export default function DriftConsole() {
   const { user, isAuthenticated } = useAuth();
   const overview = trpc.drift.overview.useQuery(undefined, { refetchInterval: 15000 });
   const hardware = trpc.drift.hardwareStatus.useQuery(undefined);
+  const accountability = trpc.drift.accountability.overview.useQuery(undefined, { refetchInterval: 30000 });
   const workspaceAccess = trpc.drift.workspace.useQuery(undefined, { enabled: isAuthenticated });
   const utils = trpc.useUtils();
   const filePickerRef = useRef<HTMLInputElement>(null);
@@ -182,6 +190,8 @@ export default function DriftConsole() {
   const persistence = live?.persistence;
   const persistenceAvailable = persistence?.available !== false;
   const persistenceMessage = persistence?.message ?? "Persistent storage status is loading.";
+  const accountabilityPersistence = accountability.data?.persistence;
+  const accountabilityReady = accountabilityPersistence?.available === true && persistenceAvailable;
   const missionIdForEvidence = Number(missions[0]?.id ?? 0);
   const missionEvidence = trpc.drift.evidence.list.useQuery({ missionId: missionIdForEvidence }, { enabled: workspace === "evidence" && missionIdForEvidence > 0 });
   const demoEvidence = trpc.drift.evidence.demoList.useQuery({ missionId: missionIdForEvidence }, { enabled: workspace === "evidence" && missionIdForEvidence > 0 });
@@ -217,6 +227,21 @@ export default function DriftConsole() {
       utils.drift.overview.invalidate();
     },
     onError: error => toast.error(`Report generation failed: ${error.message}`),
+  });
+  const createAccountabilityTicket = trpc.drift.accountability.tickets.create.useMutation({
+    onSuccess: result => {
+      toast.success(`Accountability ticket ${result.ticketId} created · DSI ${result.priority.toUpperCase()} · engineer route review required`);
+      utils.drift.accountability.overview.invalidate();
+    },
+    onError: error => toast.error(error.message),
+  });
+  const askApprovedKnowledge = trpc.drift.accountability.knowledge.ask.useMutation({
+    onSuccess: result => {
+      setRagResult(result as typeof ragResult extends infer _ ? NonNullable<typeof ragResult> : never);
+      if (result.retrieval.status === "retrieved") toast.success(`Retrieved ${result.retrieval.citations.length} approved source excerpt${result.retrieval.citations.length === 1 ? "" : "s"}`);
+      else toast.message(result.retrieval.message);
+    },
+    onError: error => toast.error(error.message),
   });
   const driftAi = trpc.drift.ai.ask.useMutation({
     onSuccess: result => { const aiResult = result as { source: "gemini" | "openai" | "deterministic-intent" | "deterministic-fallback"; providerStatus?: string | number; answer: string }; setDriftAiSource(aiResult.source); setDriftAiProviderStatus(String(aiResult.providerStatus ?? ((aiResult.source === "openai" || aiResult.source === "gemini") ? "connected" : "unknown"))); setDriftAiMessages(previous => [...previous, { role: "assistant", content: aiResult.answer }]); },
@@ -327,6 +352,28 @@ export default function DriftConsole() {
       repairEstimateCents: repairTotal,
     },
   });
+  const createAccountabilityCase = () => {
+    if (!canOperate) { toast.error("Sign in as an engineer or administrator to create a real maintenance ticket."); return; }
+    if (!accountabilityReady) { toast.error(accountabilityPersistence?.message ?? persistenceMessage); return; }
+    if (!selected.assetId) { toast.error("Select a persisted finding linked to an asset before opening a ticket."); return; }
+    const impact = Number(ticketImpact);
+    if (!Number.isInteger(impact) || impact < 0 || impact > 100) { toast.error("Approved operational impact must be a whole number from 0 to 100."); return; }
+    createAccountabilityTicket.mutate({
+      assetId: selected.assetId,
+      defectId: selected.id || undefined,
+      title: ticketTitle,
+      scopeNote: ticketScope,
+      zoneLabel: selectedEvidence?.captureZone ?? undefined,
+      latitude: selected.latitude === "—" ? undefined : String(selected.latitude),
+      longitude: selected.longitude === "—" ? undefined : String(selected.longitude),
+      verificationCriterion: "Engineer must compare original follow-up evidence against the approved repair scope before final status is set.",
+      evidenceId: selectedEvidenceId ?? undefined,
+      evidenceQuality: selectedEvidence?.qualityStatus === "pass" ? 90 : selectedEvidence?.qualityStatus === "review" ? 60 : 0,
+      locationConfidence: selectedEvidence?.latitude && selectedEvidence?.longitude ? 90 : selectedEvidence?.captureZone ? 60 : 0,
+      approvedImpact: impact,
+      repeatCount: defects.filter(defect => defect.assetId === selected.assetId && defect.defectType === selected.defectType).length,
+    });
+  };
 
   const aiCriticalCount = defects.filter(defect => defect.severity === "critical").length;
   const aiHealthScore = Math.max(0, Math.min(100, 100 - aiCriticalCount * 16 - defects.filter(defect => defect.severity === "high").length * 9 - defects.filter(defect => defect.severity === "medium").length * 4));
@@ -442,6 +489,19 @@ export default function DriftConsole() {
           {aiBrief && <article className="ai-brief"><span className="eyebrow">AI DECISION-SUPPORT DRAFT · ENGINEER REVIEW REQUIRED</span><p>{aiBrief}</p></article>}
           <div className="report-stack">{reports.map(report => { const scope = report.inspectionScope && typeof report.inspectionScope === "object" ? report.inspectionScope as Record<string, unknown> : {}; const severityCounts = scope.severityCounts && typeof scope.severityCounts === "object" ? scope.severityCounts as Record<string, number> : {}; return <article className="report-card" key={report.id}><div className="report-number">R/{String(report.id).padStart(3, "0")}</div><div><span className="eyebrow">{report.status} · {scope.format === "application/pdf" ? "PDF" : "RECORD"}</span><h3>{report.title}</h3><p>{report.narrative}</p><div className="report-mini-metrics"><span>{String(scope.evidenceCount ?? "—")} evidence</span><span>{String(scope.defectCount ?? "—")} findings</span><span className="critical-text">{String(severityCounts.critical ?? 0)} critical</span><span>{String(severityCounts.high ?? 0)} high</span></div></div><div className="report-actions"><button type="button" onClick={() => { setReportResult({ title: report.title, storageUrl: report.storageUrl ?? undefined, evidenceCount: Number(scope.evidenceCount ?? 0), defectCount: Number(scope.defectCount ?? 0), format: String(scope.format ?? "") , severityCounts }); auditAction("Report preview"); }}>PREVIEW</button>{report.storageUrl ? <a href={resolveBackendAssetUrl(report.storageUrl)} target="_blank" rel="noreferrer">OPEN PDF</a> : <span className="report-missing">PDF unavailable</span>}</div></article>; })}</div>
           {!reports.length && <article className="empty-state report-empty"><FileText /><h3>No report records yet</h3><p>Run a simulator mission, then generate the PDF report. Reports remain explicitly pending until an authorised engineer signs off.</p></article>}
+        </section>}
+
+        {workspace === "accountability" && <section className="workspace-page accountability-workspace">
+          <PublicDatasetVisualCard onPreview={() => setEvidencePreview(publicDatasetSamples[0]!)} onOpenEvidence={() => setWorkspace("evidence")} />
+          <div className="workspace-header"><div><span className="eyebrow">EVIDENCE-TO-ACTION CONTROL PLANE</span><h2>Infrastructure accountability</h2><p className="workspace-lede">Connect reviewed evidence to an approved ownership route, real contractor assignment, SLA rule, closure proof, and engineer verification. DRIFT does not invent an owner, contractor, repair outcome, or government-system delivery.</p></div><span className={cn("hardware-status", accountabilityReady ? "connected" : "offline")}>{accountabilityReady ? "PERSISTENT WORKFLOW READY" : "CONFIGURATION REQUIRED"}</span></div>
+          <section className="stats-grid accountability-stats"><StatBlock label="REAL CONTRACTORS" value={String(accountability.data?.contractors.length ?? 0).padStart(2, "0")} detail="authenticated project records" /><StatBlock label="OPEN TICKETS" value={String((accountability.data?.tickets ?? []).filter(ticket => ticket.status === "open" || ticket.status === "assigned").length).padStart(2, "0")} detail="not closure claims" /><StatBlock label="ROUTING DECISIONS" value={String(accountability.data?.routing.length ?? 0).padStart(2, "0")} detail="reviewed ownership proposals" /><StatBlock label="GOVERNMENT HANDOFFS" value={String(accountability.data?.handoffs.length ?? 0).padStart(2, "0")} detail="prepared, never auto-delivered" /></section>
+          {!accountabilityReady && <section className="safety-banner persistence-banner"><CloudCog /><div><strong>ACCOUNTABILITY DATA NOT CONFIGURED</strong><span>{accountabilityPersistence?.message ?? persistenceMessage} Create no fake contractor, ownership, CCTV, SLA, ticket, or completion record until the PostgreSQL migration and approved project data are available.</span></div><button type="button" onClick={() => setWorkspace("hardware")}>VIEW READINESS <ChevronRight /></button></section>}
+          <section className="operations-grid accountability-grid">
+            <article className="panel priority-panel"><div className="panel-heading"><div><span className="eyebrow">01 · DSI FACTOR CARD</span><h2>Transparent priority</h2></div><Gauge /></div><div className="governance-list"><div><strong>Evidence support</strong><span>{selectedEvidence?.qualityStatus ?? "missing"} quality · original/provenance review required</span></div><div><strong>Location support</strong><span>{selectedEvidence?.latitude && selectedEvidence?.longitude ? "exact capture coordinates recorded" : selectedEvidence?.captureZone ? `approved zone ${selectedEvidence.captureZone}` : "unresolved"}</span></div><div><strong>Asset criticality</strong><span>{availableAssets.find(asset => asset.id === selected.assetId)?.criticality ?? "—"}/5 from project asset register</span></div><div><strong>Operational impact</strong><span>Engineer/owner input required · never inferred from a public map</span></div><div><strong>Verification state</strong><span>Contractor close is not fixed; engineer follow-up evidence is required</span></div></div><p className="access-note">If evidence support, location support, or approved impact is missing, DSI stores <strong>INSUFFICIENT EVIDENCE</strong> instead of a false priority.</p></article>
+            <article className="panel decision-panel"><div className="panel-heading"><div><span className="eyebrow">02 · CREATE REAL MAINTENANCE CASE</span><h2>Engineer checkpoint</h2></div><ClipboardCheck /></div><label className="accountability-field">Ticket title<input value={ticketTitle} onChange={event => setTicketTitle(event.target.value)} disabled={!canOperate || !accountabilityReady} /></label><label className="accountability-field">Approved impact / 100<input value={ticketImpact} onChange={event => setTicketImpact(event.target.value)} inputMode="numeric" disabled={!canOperate || !accountabilityReady} /></label><label className="accountability-field">Scope and verification context<textarea value={ticketScope} onChange={event => setTicketScope(event.target.value)} disabled={!canOperate || !accountabilityReady} /></label><button type="button" className="primary-action full" onClick={createAccountabilityCase} disabled={!canOperate || !accountabilityReady || createAccountabilityTicket.isPending} title={!canOperate ? "Sign in as an engineer or administrator." : !accountabilityReady ? accountabilityPersistence?.message ?? persistenceMessage : undefined}>{createAccountabilityTicket.isPending ? "CREATING CASE" : !canOperate ? "SIGN IN FOR TICKET" : !accountabilityReady ? "PERSISTENCE REQUIRED" : "CREATE ENGINEER-REVIEWED TICKET"} <ChevronRight /></button><p className="access-note">A real contractor can be assigned only after an administrator creates an authenticated organization record. No demo contractor data is used.</p></article>
+          </section>
+          <section className="panel rag-panel"><div className="panel-heading"><div><span className="eyebrow">APPROVED-SOURCE RAG · ROLE-SCOPED</span><h2>Ask the project record, not the web</h2><p className="workspace-lede">This assistant searches only approved, versioned document chunks that your authenticated role may access. It records retrieval metadata, returns citations, and refuses a project-specific answer when no approved source supports it.</p></div><BookOpenCheck /></div><label className="accountability-field">Question for approved project knowledge<textarea value={ragQuestion} onChange={event => setRagQuestion(event.target.value)} disabled={!isAuthenticated || askApprovedKnowledge.isPending} /></label><div className="rag-actions"><button type="button" className="primary-action" onClick={() => askApprovedKnowledge.mutate({ question: ragQuestion })} disabled={!isAuthenticated || askApprovedKnowledge.isPending} title={!isAuthenticated ? "Sign in to retrieve role-permitted project knowledge." : undefined}>{askApprovedKnowledge.isPending ? "RETRIEVING APPROVED SOURCES" : !isAuthenticated ? "SIGN IN FOR RAG" : "RETRIEVE APPROVED SOURCES"} <ChevronRight /></button><span>NO OPEN WEB · NO UNAPPROVED DOCUMENTS · NO HIDDEN CITATIONS</span></div>{ragResult ? <div className="rag-result"><div className="rag-result-header"><strong>{ragResult.retrieval.status.replaceAll("_", " ")}</strong><span>{ragResult.source.replaceAll("-", " ")}</span></div><pre>{ragResult.answer}</pre>{ragResult.retrieval.citations.length ? <div className="rag-citations"><span className="eyebrow">RETRIEVED SOURCE CITATIONS</span>{ragResult.retrieval.citations.map((citation, index) => <div key={citation.chunkId}><strong>[{index + 1}] {citation.title}</strong><span>{citation.sectionReference} · v{citation.version} · score {citation.score}{citation.sourceReference ? ` · ${citation.sourceReference}` : " · source reference not recorded"}</span></div>)}</div> : <p className="access-note">{ragResult.retrieval.message}</p>}</div> : <p className="access-note">No approved project knowledge is preloaded. An administrator must register a real project document, then independently approve it before any role-scoped answer can be generated.</p>}</section>
+          <section className="lower-grid accountability-flow-grid"><article className="panel evidence-panel"><div className="panel-heading"><div><span className="eyebrow">03 · OWNERSHIP / SLA ROUTING</span><h2>Resolve before escalation</h2></div><Waypoints /></div><div className="governance-list"><div><strong>Authoritative route only</strong><span>Asset class + approved zone + boundary source + effective contract/SLA rule</span></div><div><strong>Conflict-safe behavior</strong><span>Multiple or missing matches remain unresolved; no legal ownership assumption is made</span></div><div><strong>Human authorization</strong><span>A proposed route requires engineer approval before a handoff package is prepared</span></div></div><p className="access-note">Current approved routing records: {accountability.data?.routing.filter(route => route.status === "approved").length ?? 0}. Export adapters stay in prepared state until a named authority authorizes schema and credentials.</p></article><article className="panel decision-panel"><div className="panel-heading"><div><span className="eyebrow">04 · CLOSE, VERIFY, PUBLISH</span><h2>Proof before trust</h2></div><ShieldCheck /></div><div className="governance-list"><div><strong>Contractor closure</strong><span>Actual closure note and original proof references</span></div><div><strong>Engineer verification</strong><span>Follow-up evidence yields Fixed, Needs Rework, or Cannot Verify</span></div><div><strong>Controlled transparency</strong><span>Public summaries are owner-approved, privacy-reviewed, and exclude raw CCTV and unverified candidates</span></div></div><p className="access-note">Published public summaries: {accountability.data?.publications.filter(item => item.status === "published").length ?? 0}. CCTV remains permissioned and never triggers autonomous drone flight.</p></article></section>
         </section>}
 
         {workspace === "hardware" && <section className="workspace-page hardware-workspace">

@@ -86,10 +86,11 @@ declare global {
   }
 }
 
-const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || import.meta.env.VITE_FRONTEND_FORGE_API_KEY || "AIzaSyBSM200XbaFuL0wzS5qixkX40-94iJDM2M";
+const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
 
 function loadMapScript() {
   return new Promise<void>((resolve, reject) => {
+    if (!API_KEY) return reject(new Error("Google Maps is not configured. Set a domain-restricted VITE_GOOGLE_MAPS_API_KEY."));
     if (window.google?.maps) return resolve();
     const script = document.createElement("script");
     script.src = `https://maps.googleapis.com/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry`;

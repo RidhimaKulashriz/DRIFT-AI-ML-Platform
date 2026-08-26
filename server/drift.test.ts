@@ -164,7 +164,7 @@ describe("tRPC operations", () => {
   it("exposes safe hardware, filter, map, alert, and report read operations", async () => {
     const ctx = { user: null, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
     const caller = appRouter.createCaller(ctx);
-    const [overview, hardware, defects, mapData, alerts, reportRecords, demoEvidence] = await Promise.all([
+    const [overview, hardware, defects, mapData, alerts, reportRecords, demoEvidence, accountability, publicStatuses] = await Promise.all([
       caller.drift.overview(),
       caller.drift.hardwareStatus(),
       caller.drift.filters.defects({}),
@@ -172,6 +172,8 @@ describe("tRPC operations", () => {
       caller.drift.alerts.list(),
       caller.drift.reports.list(),
       caller.drift.evidence.demoList({ missionId: 60001 }),
+      caller.drift.accountability.overview(),
+      caller.drift.accountability.publicStatuses(),
     ]);
     expect(overview.persistence).toEqual(expect.objectContaining({ available: expect.any(Boolean), configured: expect.any(Boolean), driver: "postgresql", message: expect.any(String) }));
     expect(["offline", "connected", "retrying", "degraded"]).toContain(hardware.status);
@@ -180,6 +182,10 @@ describe("tRPC operations", () => {
     expect(Array.isArray(alerts)).toBe(true);
     expect(Array.isArray(reportRecords)).toBe(true);
     expect(Array.isArray(demoEvidence)).toBe(true);
+    expect(accountability.persistence).toEqual(expect.objectContaining({ available: expect.any(Boolean), message: expect.any(String) }));
+    expect(accountability.contractors).toEqual(expect.any(Array));
+    expect(accountability.tickets).toEqual(expect.any(Array));
+    expect(Array.isArray(publicStatuses)).toBe(true);
   });
 
   it("supports multi-pass defect correlation lookup by evidence key", async () => {
@@ -221,11 +227,20 @@ describe("authorized workspace roles", () => {
     expect(citizen.permissions).toEqual(["public:read"]);
   });
 
+  it("returns an explicit approved-source refusal when the knowledge base is not persistent", async () => {
+    const engineer = appRouter.createCaller({ ...baseContext, user: userFor("engineer") } as TrpcContext);
+    const result = await engineer.drift.accountability.knowledge.ask({ question: "What closure proof does this project require?" });
+    expect(result.retrieval.status).toBe("persistence_required");
+    expect(result.source).toBe("approved-source-refusal");
+    expect(result.answer).toMatch(/no approved, role-permitted source excerpt/i);
+  });
+
   it("rejects protected administrator and engineering actions for unauthorized roles before database mutation", async () => {
     const citizen = appRouter.createCaller({ ...baseContext, user: userFor("citizen") } as TrpcContext);
     const engineer = appRouter.createCaller({ ...baseContext, user: userFor("engineer") } as TrpcContext);
     await expect(citizen.drift.assets.create({ name: "Blocked asset", assetType: "bridge", locality: "Delhi", latitude: "28.61", longitude: "77.20", criticality: 4 })).rejects.toThrow(/does not permit/);
     await expect(engineer.drift.assets.delete({ id: 999999 })).rejects.toThrow(/does not permit/);
     await expect(citizen.drift.review({ defectId: 1, decision: "approve", note: "Citizen review attempt" })).rejects.toThrow(/does not permit/);
+    await expect(citizen.drift.accountability.tickets.create({ assetId: 1, title: "Blocked contractor ticket", scopeNote: "Citizen cannot create a maintenance case.", verificationCriterion: "Engineer follow-up required." })).rejects.toThrow(/does not permit/);
   });
 });
