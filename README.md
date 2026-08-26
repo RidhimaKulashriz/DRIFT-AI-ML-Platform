@@ -34,16 +34,6 @@ The map uses Google Maps when the configured provider is available. If the provi
 
 The report endpoint above is a durable PostgreSQL-backed attachment URL served by the Node backend. It is included as a verification sample; newly generated reports expose their own backend URL in the Reports workspace.
 
-## Video and visual references
-
-The repository currently does not contain committed video files. For an interactive walkthrough, use the live demo links above. To add a recording from a previous DRIFT repository or video artifact, place the public URL in this section using a linked thumbnail or a direct Markdown link, for example:
-
-```markdown
-[![DRIFT walkthrough](https://example.com/thumbnail.jpg)](https://example.com/drift-walkthrough.mp4)
-```
-
-Do not commit large video binaries to the application repository. Prefer a public GitHub release asset, GitHub-hosted media, or another durable public video URL, and keep the README link pointed at that asset.
-
 ## What is implemented
 
 The application includes a React dashboard, a Node.js/tRPC API, PostgreSQL-compatible Drizzle persistence, durable database-backed evidence and report attachments, simulator mode, a validated hardware-ingestion boundary, explainable defect-inference adapters, geospatial mission context, severity and repair rules, AI decision-support narratives, and engineer-review state.
