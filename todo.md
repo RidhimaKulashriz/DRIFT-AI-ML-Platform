@@ -338,3 +338,8 @@
 - [x] Repair Render-to-Vercel CORS for batched public tRPC reads so browser requests receive an allowed-origin response.
 - [x] Route database-backed attachment previews and downloads through Render instead of resolving their relative URLs against Vercel; external object storage remains the future production portability gate.
 - [x] Replace the OpenStreetMap fallback with a Google Maps-only surface using a Vercel Production browser configuration, exact coordinate marker support, an explicit missing-key readiness state, no Forge proxy, and live Google tile verification.
+- [x] Add contractor role assignment, contractor-only accept/start/note/closure transitions, and audit records without seeding any organization, ticket, proof, or completion data.
+- [x] Add permissioned CCTV candidate validation with authorized-camera, purpose, retention, camera-identity, duplicate, evidence-quality, temporal-observation, and engineer-review gates.
+- [x] Add a prepared-only UAV follow-up recommendation requiring contractor closure proof, optional reviewed CCTV linkage, expiry, operator/site/airspace/legal/aircraft checks, and audit logging; it does not dispatch, arm, navigate, or command an aircraft.
+- [ ] Rotate the previously exposed Render PostgreSQL credential in the provider UI, inspect the actual schema and migration history, and apply the reviewed canonical migration only after clean-schema confirmation; do not provide credentials in chat.
+- [ ] Configure real external identity, approved object storage, and authorized contractor/camera records before enabling closure-proof uploads or contractor/CCTV actions in production.

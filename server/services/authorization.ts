@@ -1,6 +1,6 @@
 import { TRPCError } from "@trpc/server";
 
-export type DriftRole = "admin" | "engineer" | "citizen" | "user";
+export type DriftRole = "admin" | "engineer" | "contractor" | "citizen" | "user";
 
 export function requireDriftRole(user: { role: DriftRole } | null | undefined, allowed: DriftRole[]) {
   if (!user) throw new TRPCError({ code: "UNAUTHORIZED", message: "Sign in to perform this operational action." });

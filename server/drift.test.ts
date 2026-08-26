@@ -121,6 +121,14 @@ describe("engineering review state and role boundary", () => {
     expect(() => requireDriftRole({ role: "engineer" }, ["admin", "engineer"])).not.toThrow();
     expect(() => requireDriftRole({ role: "citizen" }, ["admin", "engineer"])).toThrow(/does not permit/);
   });
+
+  it("blocks citizen and contractor roles from preparing UAV follow-up recommendations", async () => {
+    const citizenContext = { user: { id: 4, role: "citizen" }, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
+    const contractorContext = { user: { id: 5, role: "contractor" }, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
+    const input = { ticketId: 1, triggerReason: "Closure proof requires independent visual follow-up.", expiresAt: Date.now() + 86_400_000 };
+    await expect(appRouter.createCaller(citizenContext).drift.accountability.tickets.prepareUavFollowUp(input)).rejects.toThrow(/does not permit/);
+    await expect(appRouter.createCaller(contractorContext).drift.accountability.tickets.prepareUavFollowUp(input)).rejects.toThrow(/does not permit/);
+  });
 });
 
 describe("report presentation contracts", () => {
