@@ -4,7 +4,6 @@ import { InspectionMap } from "@/components/InspectionMap";
 import { requestedSeverityFilter } from "@/lib/driftInteractions";
 import { AIChatBox, type Message } from "@/components/AIChatBox";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { startLogin } from "@/const";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -145,7 +144,7 @@ export default function DriftConsole() {
   const [pendingAiFilter, setPendingAiFilter] = useState<Severity | null>(null);
   const [reportResult, setReportResult] = useState<{ title: string; storageUrl?: string; evidenceCount: number; defectCount: number; format?: string; severityCounts?: Record<string, number> } | null>(null);
   const [evidencePreview, setEvidencePreview] = useState<EvidenceItem | null>(null);
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const overview = trpc.drift.overview.useQuery(undefined, { refetchInterval: 15000 });
   const hardware = trpc.drift.hardwareStatus.useQuery(undefined);
   const workspaceAccess = trpc.drift.workspace.useQuery(undefined, { enabled: isAuthenticated });
@@ -238,9 +237,10 @@ export default function DriftConsole() {
   const availableAssets = live?.assets ?? [];
   const availableMissions = live?.missions ?? [];
   const role: Role = isAuthenticated ? (workspaceAccess.data?.role === "admin" ? "administrator" : workspaceAccess.data?.role === "citizen" ? "citizen" : "engineer") : previewRole;
-  const roleSource = isAuthenticated ? "AUTHORISED ROLE" : "DEMO PREVIEW";
+  const roleSource = isAuthenticated ? "AUTHORISED ROLE" : "PUBLIC DEMO";
   const canOperate = isAuthenticated && role !== "citizen";
   const canRunDemo = !isAuthenticated || role !== "citizen";
+  const canGeneratePublicReport = persistenceAvailable;
 
   const roleCopy: Record<Role, { eyebrow: string; title: string; note: string }> = {
     administrator: { eyebrow: "GOVERNANCE DESK", title: "Network accountability", note: "Audit integrity, service levels, and asset exposure across the inspection network." },
@@ -348,8 +348,7 @@ export default function DriftConsole() {
         <header className="topbar">
           <div className="crumbs"><span>OPERATIONS</span><b>/</b><span>{workspace.toUpperCase()}</span></div>
           <div className="topbar-actions">
-            <button type="button" className="role-toggle" disabled={isAuthenticated} onClick={() => setPreviewRole(role === "administrator" ? "engineer" : role === "engineer" ? "citizen" : "administrator")}><ShieldCheck /> {roleSource} · {role}</button>
-            {isAuthenticated ? <button type="button" className="secondary-action" onClick={() => void logout()}>SIGN OUT</button> : <button type="button" className="secondary-action" onClick={() => startLogin()}>SIGN IN</button>}
+            <span className="role-toggle"><ShieldCheck /> {roleSource} · {role}</span>
             {canRunDemo && <button type="button" className="primary-action" onClick={() => runSimulator.mutate({ name: missionName })} disabled={!persistenceAvailable || runSimulator.isPending} title={!persistenceAvailable ? persistenceMessage : undefined}><Play /> {runSimulator.isPending ? "SIMULATING" : !persistenceAvailable ? "PERSISTENCE REQUIRED" : "RUN DEMO"}</button>}
           </div>
         </header>
@@ -432,7 +431,7 @@ export default function DriftConsole() {
 
         {workspace === "reports" && <section className="workspace-page reports-workspace">
           <PublicDatasetVisualCard onPreview={() => setEvidencePreview(publicDatasetSamples[0]!)} onOpenEvidence={() => setWorkspace("evidence")} />
-          <div className="workspace-header"><div><span className="eyebrow">AUDIT-READY OUTPUTS</span><h2>Inspection reports</h2><p className="workspace-lede">Generate a structured PDF that keeps severity, evidence, coordinates, uncertainty, recommendations, and sign-off in one reviewable record.</p></div><div className="report-actions-header"><button type="button" className="secondary-action" onClick={createAiBrief} disabled={!canOperate || !persistenceAvailable || decisionSupport.isPending} title={!canOperate ? "Sign in as an engineer or administrator to create a decision narrative." : !persistenceAvailable ? persistenceMessage : undefined}><Sparkles /> {decisionSupport.isPending ? "ANALYSING" : !canOperate ? "SIGN IN FOR NARRATIVE" : !persistenceAvailable ? "PERSISTENCE REQUIRED" : "AI NARRATIVE"}</button><button type="button" className="primary-action" onClick={createPdfReport} disabled={!canOperate || !persistenceAvailable || generateReport.isPending} title={!canOperate ? "Sign in as an engineer or administrator to generate a report." : !persistenceAvailable ? persistenceMessage : undefined}><FileText /> {generateReport.isPending ? "BUILDING PDF" : !canOperate ? "SIGN IN FOR PDF" : !persistenceAvailable ? "PERSISTENCE REQUIRED" : "GENERATE PDF REPORT"}</button></div></div>
+          <div className="workspace-header"><div><span className="eyebrow">AUDIT-READY OUTPUTS</span><h2>Inspection reports</h2><p className="workspace-lede">Generate a structured PDF that keeps severity, evidence, coordinates, uncertainty, recommendations, and sign-off in one reviewable record.</p></div><div className="report-actions-header"><button type="button" className="secondary-action" onClick={createAiBrief} disabled={!persistenceAvailable || decisionSupport.isPending} title={!persistenceAvailable ? persistenceMessage : undefined}><Sparkles /> {decisionSupport.isPending ? "ANALYSING" : !persistenceAvailable ? "PERSISTENCE REQUIRED" : "AI NARRATIVE"}</button><button type="button" className="primary-action" onClick={createPdfReport} disabled={!canGeneratePublicReport || generateReport.isPending} title={!persistenceAvailable ? persistenceMessage : undefined}><FileText /> {generateReport.isPending ? "BUILDING PDF" : !canGeneratePublicReport ? "PERSISTENCE REQUIRED" : "GENERATE PDF REPORT"}</button></div></div>
           {reportResult && <article className="report-preview-panel"><div><span className="eyebrow">LATEST GENERATED REPORT · {reportResult.format === "application/pdf" ? "PDF" : "REPORT"}</span><h3>{reportResult.title}</h3><p>{reportResult.evidenceCount} evidence records · {reportResult.defectCount} candidate findings · engineer sign-off pending</p></div><div className="report-preview-stats">{(["critical", "high", "medium", "low"] as const).map(severity => <span key={severity} className={severityClass(severity)}><b>{reportResult.severityCounts?.[severity] ?? 0}</b> {severity}</span>)}</div>{reportResult.storageUrl ? <a className="primary-action" href={reportResult.storageUrl} target="_blank" rel="noreferrer"><FileText /> OPEN PDF</a> : <span className="report-missing">PDF storage URL unavailable</span>} {reportResult.storageUrl && <div className="report-preview-embed"><iframe title="Latest DRIFT inspection report" src={reportResult.storageUrl} /></div>}</article>}
           {aiBrief && <article className="ai-brief"><span className="eyebrow">AI DECISION-SUPPORT DRAFT · ENGINEER REVIEW REQUIRED</span><p>{aiBrief}</p></article>}
           <div className="report-stack">{reports.map(report => { const scope = report.inspectionScope && typeof report.inspectionScope === "object" ? report.inspectionScope as Record<string, unknown> : {}; const severityCounts = scope.severityCounts && typeof scope.severityCounts === "object" ? scope.severityCounts as Record<string, number> : {}; return <article className="report-card" key={report.id}><div className="report-number">R/{String(report.id).padStart(3, "0")}</div><div><span className="eyebrow">{report.status} · {scope.format === "application/pdf" ? "PDF" : "RECORD"}</span><h3>{report.title}</h3><p>{report.narrative}</p><div className="report-mini-metrics"><span>{String(scope.evidenceCount ?? "—")} evidence</span><span>{String(scope.defectCount ?? "—")} findings</span><span className="critical-text">{String(severityCounts.critical ?? 0)} critical</span><span>{String(severityCounts.high ?? 0)} high</span></div></div><div className="report-actions"><button type="button" onClick={() => { setReportResult({ title: report.title, storageUrl: report.storageUrl ?? undefined, evidenceCount: Number(scope.evidenceCount ?? 0), defectCount: Number(scope.defectCount ?? 0), format: String(scope.format ?? "") , severityCounts }); auditAction("Report preview"); }}>PREVIEW</button>{report.storageUrl ? <a href={report.storageUrl} target="_blank" rel="noreferrer">OPEN PDF</a> : <span className="report-missing">PDF unavailable</span>}</div></article>; })}</div>
