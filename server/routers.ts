@@ -11,7 +11,7 @@ import { probeHardwareConnection, validateTelemetryPayload } from "./services/ha
 import { runVisionInference } from "./services/mlInference";
 import { buildSimulatorMission } from "./services/simulator";
 import { askDriftAi } from "./services/driftAi";
-import { storagePut } from "./storage";
+import { storagePutWithFallback } from "./storage";
 import { CAPTURE_ZONES, INSPECTION_DOMAINS, QUALITY_STATUSES } from "@shared/types";
 
 export const appRouter = router({
@@ -58,8 +58,8 @@ export const appRouter = router({
         const bytes = Buffer.from(input.base64.split(",").pop() ?? "", "base64");
         if (bytes.byteLength === 0 || bytes.byteLength > 50 * 1024 * 1024) throw new Error("Evidence upload must be between 1 byte and 50 MB.");
         const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const stored = await storagePut(`drift/${ctx.user.id}/missions/${input.missionId}/${Date.now()}-${safeName}`, bytes, input.mimeType);
-        const evidenceRecord = await createEvidenceRecord({ missionId: input.missionId, uploadedBy: ctx.user.id, fileName: input.fileName, mimeType: input.mimeType, storageKey: stored.key, storageUrl: stored.url, mediaKind: input.mediaKind, latitude: input.latitude, longitude: input.longitude, playbackSeconds: input.playbackSeconds, source: input.captureSource, sha256: crypto.createHash("sha256").update(bytes).digest("hex"), capturedAt: input.capturedAt ? new Date(input.capturedAt) : undefined, cameraId: input.cameraId, captureZone: input.captureZone, headingDegrees: input.headingDegrees, qualityStatus: input.qualityStatus, imageQuality: input.imageQuality, provenance: { inspectionDomain: input.inspectionDomain, correlationKey: input.correlationKey, kind: input.captureSource === "hardware" ? "operator-uav-capture" : "operator-upload", aircraftProfile: input.aircraftProfile ?? null, originalCaptureRequired: true, notSimulator: true } });
+        const stored = await storagePutWithFallback(`drift/${ctx.user.id}/missions/${input.missionId}/${Date.now()}-${safeName}`, bytes, input.mimeType);
+        const evidenceRecord = await createEvidenceRecord({ missionId: input.missionId, uploadedBy: ctx.user.id, fileName: input.fileName, mimeType: input.mimeType, storageKey: stored.key, storageUrl: stored.url, attachmentData: stored.attachmentData, mediaKind: input.mediaKind, latitude: input.latitude, longitude: input.longitude, playbackSeconds: input.playbackSeconds, source: input.captureSource, sha256: crypto.createHash("sha256").update(bytes).digest("hex"), capturedAt: input.capturedAt ? new Date(input.capturedAt) : undefined, cameraId: input.cameraId, captureZone: input.captureZone, headingDegrees: input.headingDegrees, qualityStatus: input.qualityStatus, imageQuality: input.imageQuality, provenance: { inspectionDomain: input.inspectionDomain, correlationKey: input.correlationKey, kind: input.captureSource === "hardware" ? "operator-uav-capture" : "operator-upload", aircraftProfile: input.aircraftProfile ?? null, originalCaptureRequired: true, notSimulator: true } });
         const qualityGate = input.qualityStatus === "fail" ? { status: "fail", action: "blocked-from-inference" } : input.qualityStatus === "review" ? { status: "review", action: "engineer-review-required" } : { status: input.qualityStatus ?? "pending", action: "review-policy-applies" };
         if (input.qualityStatus === "fail" || input.mediaKind !== "photo" || !input.runInference || !input.assetId || !input.assetCriticality || !input.latitude || !input.longitude) return { ...evidenceRecord, inference: null, qualityGate };
         const inference = await runVisionInference({ fileName: input.fileName, imageBase64: input.base64, latitude: Number(input.latitude), longitude: Number(input.longitude), assetCriticality: input.assetCriticality, priorOpenDefects: input.priorOpenDefects ?? 0 });

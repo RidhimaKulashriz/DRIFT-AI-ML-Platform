@@ -11,7 +11,7 @@ vi.mock("./db", async () => {
   return { ...actual, addTelemetryRecord, createEvidenceRecord, persistInferenceDefect };
 });
 
-vi.mock("./storage", () => ({ storagePut }));
+vi.mock("./storage", () => ({ storagePut, storagePutWithFallback: storagePut }));
 
 const { appRouter } = await import("./routers");
 

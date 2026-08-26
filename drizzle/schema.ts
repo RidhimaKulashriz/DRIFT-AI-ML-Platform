@@ -1,4 +1,6 @@
-import { integer, jsonb, pgEnum, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { customType, integer, jsonb, pgEnum, pgTable, serial, text, timestamp, varchar } from "drizzle-orm/pg-core";
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
 export const userRoleEnum = pgEnum("user_role", ["admin", "engineer", "citizen", "user"]);
 export const assetTypeEnum = pgEnum("asset_type", ["bridge", "road", "rail", "building", "utility"]);
@@ -95,6 +97,7 @@ export const evidence = pgTable("evidence", {
   headingDegrees: integer("headingDegrees"),
   qualityStatus: qualityStatusEnum("qualityStatus").default("pending"),
   imageQuality: jsonb("imageQuality"),
+  attachmentData: bytea("attachmentData"),
   createdAt: createdAt(),
 });
 
@@ -182,6 +185,7 @@ export const reports = pgTable("reports", {
   generatedBy: varchar("generatedBy", { length: 80 }).notNull().default("zeroerror"),
   inspectionScope: jsonb("inspectionScope"),
   signoff: jsonb("signoff"),
+  attachmentData: bytea("attachmentData"),
   createdAt: createdAt(),
 });
 

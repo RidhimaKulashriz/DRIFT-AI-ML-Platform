@@ -1,7 +1,9 @@
 // Preconfigured storage helpers for Manus WebDev templates
 // Uploads via Forge Server presigned URL to S3 (PUT direct).
-// Downloads return /manus-storage/{key} paths served via 307 redirect.
+// When Forge is not configured, attachments are returned with a database key so
+// callers can persist the bytes in PostgreSQL and serve them through the API.
 
+import { randomUUID } from "node:crypto";
 import { ENV } from "./_core/env";
 
 function getForgeConfig() {
@@ -22,11 +24,17 @@ function normalizeKey(relKey: string): string {
 }
 
 function appendHashSuffix(relKey: string): string {
-  const hash = crypto.randomUUID().replace(/-/g, "").slice(0, 8);
+  const hash = randomUUID().replace(/-/g, "").slice(0, 8);
   const lastDot = relKey.lastIndexOf(".");
   if (lastDot === -1) return `${relKey}_${hash}`;
   return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
 }
+
+export type AttachmentStorageResult = {
+  key: string;
+  url: string;
+  attachmentData?: Buffer;
+};
 
 export async function storagePut(
   relKey: string,
@@ -69,6 +77,25 @@ export async function storagePut(
   }
 
   return { key, url: `/manus-storage/${key}` };
+}
+
+export async function storagePutWithFallback(
+  relKey: string,
+  data: Buffer | Uint8Array | string,
+  contentType = "application/octet-stream",
+): Promise<AttachmentStorageResult> {
+  try {
+    return await storagePut(relKey, data, contentType);
+  } catch (error) {
+    const key = `db:${randomUUID()}`;
+    const attachmentData =
+      typeof data === "string" ? Buffer.from(data, "utf8") : Buffer.from(data);
+    console.warn(
+      `[DRIFT Storage] External object storage unavailable; using PostgreSQL attachment fallback for ${relKey}.`,
+      error instanceof Error ? error.message : error,
+    );
+    return { key, url: `/api/drift/attachments/${key}`, attachmentData };
+  }
 }
 
 export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
