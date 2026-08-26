@@ -337,3 +337,4 @@
 - [x] Document the safe Render PostgreSQL credential-rotation, migration-verification, and real-data onboarding sequence without collecting credentials in chat or committing them.
 - [x] Repair Render-to-Vercel CORS for batched public tRPC reads so browser requests receive an allowed-origin response.
 - [x] Route database-backed attachment previews and downloads through Render instead of resolving their relative URLs against Vercel; external object storage remains the future production portability gate.
+- [x] Replace the OpenStreetMap fallback with a Google Maps-only surface using a Vercel Production browser configuration, exact coordinate marker support, an explicit missing-key readiness state, no Forge proxy, and live Google tile verification.
