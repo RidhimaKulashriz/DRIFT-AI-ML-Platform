@@ -18,6 +18,14 @@ function request(origin: string | undefined, method = "GET") {
 }
 
 describe("split-host CORS middleware", () => {
+  it("allows the deployed Vercel origin when the runtime configuration is temporarily empty", () => {
+    const res = response();
+    const next = vi.fn();
+    createCorsMiddleware("")(request("https://drift-ai-ml-platform.vercel.app"), res as any, next);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://drift-ai-ml-platform.vercel.app");
+    expect(next).toHaveBeenCalledOnce();
+  });
+
   it("allows configured Vercel origins with credentials", () => {
     const res = response();
     const next = vi.fn();

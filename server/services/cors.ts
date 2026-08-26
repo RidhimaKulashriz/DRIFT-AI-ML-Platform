@@ -1,7 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
 
+const DEPLOYED_VERCEL_ORIGIN = "https://drift-ai-ml-platform.vercel.app";
+
 export function createCorsMiddleware(allowedOriginsValue = process.env.DRIFT_ALLOWED_ORIGINS ?? "") {
-  const allowedOrigins = new Set(allowedOriginsValue.split(",").map(value => value.trim()).filter(Boolean));
+  const allowedOrigins = new Set([DEPLOYED_VERCEL_ORIGIN, ...allowedOriginsValue.split(",").map(value => value.trim()).filter(Boolean)]);
   return (req: Request, res: Response, next: NextFunction) => {
     const origin = req.header("origin");
     const allowed = Boolean(origin && allowedOrigins.has(origin));

@@ -86,7 +86,7 @@ declare global {
   }
 }
 
-const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
+const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
 function loadMapScript() {
   return new Promise<void>((resolve, reject) => {
@@ -135,8 +135,7 @@ export function MapView({
     try {
       await loadMapScript();
     } catch (error) {
-      console.error(error);
-      const message = "Map provider unavailable. Coordinate data remains available in the mission and defect records.";
+      const message = error instanceof Error ? error.message : "Google Maps could not be loaded.";
       setLoadError(message);
       onMapError?.(message);
       return;
@@ -152,7 +151,6 @@ export function MapView({
       fullscreenControl: true,
       zoomControl: true,
       streetViewControl: true,
-      mapId: "DEMO_MAP_ID",
     });
     setMapReady(true);
     if (onMapReady) {
