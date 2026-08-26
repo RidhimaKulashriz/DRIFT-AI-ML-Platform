@@ -331,5 +331,6 @@
 - [x] Repair the public dataset preview action so it opens its modal from Operations, Defect Control, Reports, and Hardware Bridge, not only from Evidence Vault.
 - [x] Render a dedicated Accountability workspace with DSI factors, ownership/SLA safeguards, real-data-only ticket controls, closure-versus-verification boundary, and controlled-publication messaging.
 - [x] Add accountability regression coverage for safe read-only empty states and citizen ticket-creation rejection before any persistence mutation.
-- [x] Add deterministic, role-scoped approved-source RAG retrieval with query-hash audit records, explicit no-source refusal, citation display, and reviewed PostgreSQL migration `0003_nifty_mercury.sql`.
+- [x] Add deterministic, role-scoped approved-source RAG retrieval with query-hash audit records, explicit no-source refusal, citation display, and reviewed PostgreSQL migration `0002_perfect_speedball.sql`.
 - [ ] Apply the reviewed PostgreSQL accountability/RAG migrations only after rotating the Render database credential in the provider UI; then register and independently approve real project knowledge documents before enabling contractor answers.
+- [x] Return a truthful empty Accountability readiness state when the deployed PostgreSQL schema has not yet been migrated, without exposing failed SQL queries to public clients.

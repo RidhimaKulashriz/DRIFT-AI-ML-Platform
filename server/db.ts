@@ -303,24 +303,33 @@ function calculateDsi(input: DsiInput) {
   return { priority, advisoryScore: Math.min(score, 100), factorBreakdown } as const;
 }
 
+function emptyAccountabilityOverview(persistence: { available: boolean; message: string }) {
+  return { contractors: [], tickets: [], assessments: [], authorities: [], routing: [], handoffs: [], publications: [], cameras: [], cameraCandidates: [], knowledgeDocuments: [], persistence };
+}
+
 export async function getAccountabilityOverview() {
   const db = await getDb();
   const persistence = db
     ? { available: true, message: "Accountability records are ready for approved project data." }
     : { available: false, message: "Contractor, routing, SLA, CCTV, and handoff records require the PostgreSQL migration and DATABASE_URL." };
-  if (!db) return { contractors: [], tickets: [], assessments: [], authorities: [], routing: [], handoffs: [], publications: [], cameras: [], cameraCandidates: [], knowledgeDocuments: [], persistence };
-  const [contractorRows, ticketRows, assessmentRows, authorityRows, routingRows, handoffRows, publicationRows, cameraRows, candidateRows] = await Promise.all([
-    db.select().from(contractors).orderBy(desc(contractors.updatedAt)).limit(100),
-    db.select().from(contractorTickets).orderBy(desc(contractorTickets.updatedAt)).limit(200),
-    db.select().from(dsiAssessments).orderBy(desc(dsiAssessments.createdAt)).limit(200),
-    db.select().from(authorities).orderBy(desc(authorities.updatedAt)).limit(100),
-    db.select().from(routingDecisions).orderBy(desc(routingDecisions.updatedAt)).limit(200),
-    db.select().from(handoffPackages).orderBy(desc(handoffPackages.updatedAt)).limit(200),
-    db.select().from(publicStatusPublications).orderBy(desc(publicStatusPublications.updatedAt)).limit(200),
-    db.select().from(cameraSources).orderBy(desc(cameraSources.updatedAt)).limit(100),
-    db.select().from(cctvCandidates).orderBy(desc(cctvCandidates.updatedAt)).limit(200),
-  ]);
-  return { contractors: contractorRows, tickets: ticketRows, assessments: assessmentRows, authorities: authorityRows, routing: routingRows, handoffs: handoffRows, publications: publicationRows, cameras: cameraRows, cameraCandidates: candidateRows, knowledgeDocuments: [], persistence };
+  if (!db) return emptyAccountabilityOverview(persistence);
+  try {
+    const [contractorRows, ticketRows, assessmentRows, authorityRows, routingRows, handoffRows, publicationRows, cameraRows, candidateRows] = await Promise.all([
+      db.select().from(contractors).orderBy(desc(contractors.updatedAt)).limit(100),
+      db.select().from(contractorTickets).orderBy(desc(contractorTickets.updatedAt)).limit(200),
+      db.select().from(dsiAssessments).orderBy(desc(dsiAssessments.createdAt)).limit(200),
+      db.select().from(authorities).orderBy(desc(authorities.updatedAt)).limit(100),
+      db.select().from(routingDecisions).orderBy(desc(routingDecisions.updatedAt)).limit(200),
+      db.select().from(handoffPackages).orderBy(desc(handoffPackages.updatedAt)).limit(200),
+      db.select().from(publicStatusPublications).orderBy(desc(publicStatusPublications.updatedAt)).limit(200),
+      db.select().from(cameraSources).orderBy(desc(cameraSources.updatedAt)).limit(100),
+      db.select().from(cctvCandidates).orderBy(desc(cctvCandidates.updatedAt)).limit(200),
+    ]);
+    return { contractors: contractorRows, tickets: ticketRows, assessments: assessmentRows, authorities: authorityRows, routing: routingRows, handoffs: handoffRows, publications: publicationRows, cameras: cameraRows, cameraCandidates: candidateRows, knowledgeDocuments: [], persistence };
+  } catch (error) {
+    console.warn("[Accountability] PostgreSQL accountability tables are unavailable:", error instanceof Error ? error.message : error);
+    return emptyAccountabilityOverview({ available: false, message: "Accountability records are not configured yet. Apply the reviewed PostgreSQL migration before adding approved project data." });
+  }
 }
 
 type KnowledgeRole = "admin" | "engineer" | "user" | "citizen";

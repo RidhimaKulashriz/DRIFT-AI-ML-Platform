@@ -185,6 +185,11 @@ describe("tRPC operations", () => {
     expect(accountability.persistence).toEqual(expect.objectContaining({ available: expect.any(Boolean), message: expect.any(String) }));
     expect(accountability.contractors).toEqual(expect.any(Array));
     expect(accountability.tickets).toEqual(expect.any(Array));
+    if (!accountability.persistence.available) {
+      expect(accountability.contractors).toEqual([]);
+      expect(accountability.tickets).toEqual([]);
+      expect(accountability.persistence.message).toMatch(/migration|configured/i);
+    }
     expect(Array.isArray(publicStatuses)).toBe(true);
   });
 
