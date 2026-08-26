@@ -111,6 +111,13 @@ interface MapViewProps {
   initialZoom?: number;
   onMapReady?: (map: google.maps.Map) => void;
   onMapError?: (message: string) => void;
+  markers?: Array<{
+    id: number;
+    position: google.maps.LatLngLiteral;
+    label: string;
+    color: string;
+    onClick?: () => void;
+  }>;
 }
 
 export function MapView({
@@ -119,10 +126,13 @@ export function MapView({
   initialZoom = 12,
   onMapReady,
   onMapError,
+  markers = [],
 }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<google.maps.Map | null>(null);
+  const markerRefs = useRef<google.maps.Marker[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [mapReady, setMapReady] = useState(false);
 
   const init = usePersistFn(async () => {
     try {
@@ -147,13 +157,36 @@ export function MapView({
       streetViewControl: true,
       mapId: "DEMO_MAP_ID",
     });
+    setMapReady(true);
     if (onMapReady) {
       onMapReady(map.current);
     }
   });
 
   useEffect(() => {
+    if (!mapReady || !map.current || !window.google?.maps) return;
+    markerRefs.current.forEach(marker => marker.setMap(null));
+    markerRefs.current = markers.map(marker => {
+      const instance = new window.google!.maps.Marker({
+        map: map.current!,
+        position: marker.position,
+        title: marker.label,
+        label: { text: marker.label, color: "#ffffff", fontSize: "10px", fontWeight: "700" },
+        icon: { path: window.google!.maps.SymbolPath.CIRCLE, scale: 9, fillColor: marker.color, fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2 },
+      });
+      if (marker.onClick) instance.addListener("click", marker.onClick);
+      return instance;
+    });
+    return () => markerRefs.current.forEach(marker => marker.setMap(null));
+  }, [mapReady, markers]);
+
+  useEffect(() => {
     init();
+    return () => {
+      markerRefs.current.forEach(marker => marker.setMap(null));
+      markerRefs.current = [];
+      map.current = null;
+    };
   }, [init]);
 
   return (
