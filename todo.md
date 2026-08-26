@@ -334,3 +334,4 @@
 - [x] Add deterministic, role-scoped approved-source RAG retrieval with query-hash audit records, explicit no-source refusal, citation display, and reviewed PostgreSQL migration `0002_perfect_speedball.sql`.
 - [ ] Apply the reviewed PostgreSQL accountability/RAG migrations only after rotating the Render database credential in the provider UI; then register and independently approve real project knowledge documents before enabling contractor answers.
 - [x] Return a truthful empty Accountability readiness state when the deployed PostgreSQL schema has not yet been migrated, without exposing failed SQL queries to public clients.
+- [x] Document the safe Render PostgreSQL credential-rotation, migration-verification, and real-data onboarding sequence without collecting credentials in chat or committing them.
