@@ -229,7 +229,7 @@ describe("authorized workspace roles", () => {
   });
 
   const baseContext = { req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] };
-  const userFor = (role: "admin" | "engineer" | "citizen") => ({ id: 1, openId: `${role}-user`, name: role, email: null, loginMethod: "manus", role, createdAt: new Date(), updatedAt: new Date(), lastSignedIn: new Date() });
+  const userFor = (role: "admin" | "engineer" | "contractor" | "citizen") => ({ id: 1, openId: `${role}-user`, name: role, email: null, loginMethod: "manus", role, createdAt: new Date(), updatedAt: new Date(), lastSignedIn: new Date() });
 
   it("returns role-specific server-authorized workspace permissions", async () => {
     const admin = await appRouter.createCaller({ ...baseContext, user: userFor("admin") } as TrpcContext).drift.workspace();
@@ -255,5 +255,15 @@ describe("authorized workspace roles", () => {
     await expect(engineer.drift.assets.delete({ id: 999999 })).rejects.toThrow(/does not permit/);
     await expect(citizen.drift.review({ defectId: 1, decision: "approve", note: "Citizen review attempt" })).rejects.toThrow(/does not permit/);
     await expect(citizen.drift.accountability.tickets.create({ assetId: 1, title: "Blocked contractor ticket", scopeNote: "Citizen cannot create a maintenance case.", verificationCriterion: "Engineer follow-up required." })).rejects.toThrow(/does not permit/);
+  });
+
+  it("keeps authorized security observations pending review and blocks citizen or contractor assertions", async () => {
+    const input = { source: "authorized_bridge_health" as const, integrationName: "Signed bridge-health gateway", sourceRecordReference: "health-record-2026-0001", observationType: "bridge_health_signal" as const, observationSummary: "Gateway reported an integrity anomaly requiring qualified analyst review.", authorizedScope: "Approved bridge gateway health telemetry for the named project asset.", retentionUntil: Date.now() + 86_400_000, observedAt: Date.now(), integrityMetadata: { signatureVerified: true, schemaVersion: "1" } };
+    const citizen = appRouter.createCaller({ ...baseContext, user: userFor("citizen") } as TrpcContext);
+    const contractor = appRouter.createCaller({ ...baseContext, user: userFor("contractor") } as TrpcContext);
+    const engineer = appRouter.createCaller({ ...baseContext, user: userFor("engineer") } as TrpcContext);
+    await expect(citizen.drift.accountability.security.registerObservation(input)).rejects.toThrow(/does not permit/);
+    await expect(contractor.drift.accountability.security.registerObservation(input)).rejects.toThrow(/does not permit/);
+    if (!hasPostgresTestDatabase) await expect(engineer.drift.accountability.security.registerObservation(input)).rejects.toThrow(/Database is unavailable/);
   });
 });

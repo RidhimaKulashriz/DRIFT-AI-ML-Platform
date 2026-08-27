@@ -348,5 +348,7 @@
 - [x] Add a direct Google Maps-only public NBI context layer with three bounded 2025 USDOT/BTS public inventory locations, separate marker treatment, linked source, and explicit non-live/non-DRIFT/non-ticket limits.
 - [x] Add configuration-required states for missing or failed Google Maps loading so the deployed surface does not silently show a fallback map or invented issue location.
 - [ ] Complete a browser-level audit of remaining pre-existing public controls and remove any residual ambiguous simulated-success behavior before production rollout.
+- [x] Add a constrained security-observation model and API limited to named authorized bridge-health or security-adapter source records, integrity metadata, retention, duplicate suppression, pending human review, and audit logging; no malware, firmware, CCTV, device, or network-security assertion is produced.
+- [ ] Configure and independently approve a named security integration, authorization scope, retention policy, analyst review process, and real source records before recording any security observation in production.
 - [ ] Model camera/bridge security observations only from authorized health and audit inputs; do not claim malware detection or scan firmware/network traffic without an approved, deployed security integration.
 - [x] Add a visible Hardware Bridge security-readiness panel that distinguishes authenticated bridge health/provenance from unavailable malware, firmware, device, network, CCTV, tamper, and intrusion detection; the unsupported operation remains disabled.

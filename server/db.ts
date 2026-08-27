@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { desc, eq, getTableColumns, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { alerts, assets, auditEvents, authorities, cameraSources, contractorTicketEvidence, contractorTicketNotes, contractorTickets, contractorUserAssignments, contractors, cctvCandidates, defects, dsiAssessments, evidence, handoffPackages, inspectionCorrelations, InsertUser, knowledgeChunks, knowledgeDocuments, knowledgeRetrievalRuns, missions, publicStatusPublications, repairEstimates, reports, reviews, routingDecisions, routingRules, severityHistory, slaRules, telemetry, uavFollowUpRecommendations, users } from "../drizzle/schema";
+import { alerts, assets, auditEvents, authorities, cameraSources, contractorTicketEvidence, contractorTicketNotes, contractorTickets, contractorUserAssignments, contractors, cctvCandidates, defects, dsiAssessments, evidence, handoffPackages, inspectionCorrelations, InsertUser, knowledgeChunks, knowledgeDocuments, knowledgeRetrievalRuns, missions, publicStatusPublications, repairEstimates, reports, reviews, routingDecisions, routingRules, securityObservations, severityHistory, slaRules, telemetry, uavFollowUpRecommendations, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { resolveReviewState } from "./services/reviewState";
 import { summarizeSeverity, toMapMarker } from "./services/reportPresentation";
@@ -465,6 +465,23 @@ export async function reviewCctvCandidateRecord(input: { candidateId: number; de
   await db.update(cctvCandidates).set({ status: input.decision, operatorNote: input.operatorNote, reviewedBy: input.reviewedBy, reviewedAt: new Date(), updatedAt: new Date() }).where(eq(cctvCandidates.id, input.candidateId));
   await db.insert(auditEvents).values({ actorId: input.reviewedBy, action: `accountability.cctv_candidate_${input.decision}`, details: { candidateId: input.candidateId, evidenceId: candidate.evidenceId, cameraSourceId: candidate.cameraSourceId, humanReviewRequired: true } });
   return { success: true, status: input.decision };
+}
+
+export async function registerAuthorizedSecurityObservationRecord(input: { assetId?: number; cameraSourceId?: number; source: "authorized_bridge_health" | "approved_security_adapter"; integrationName: string; sourceRecordReference: string; observationType: "bridge_health_signal" | "security_adapter_alert"; observationSummary: string; authorizedScope: string; retentionUntil: Date; observedAt: Date; integrityMetadata: Record<string, unknown>; createdBy: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database is unavailable. Configure PostgreSQL before registering authorized security observations.");
+  if (input.retentionUntil <= new Date()) throw new Error("A future authorized retention deadline is required.");
+  if (input.observedAt > new Date(Date.now() + 5 * 60_000)) throw new Error("Observed time cannot be materially in the future.");
+  if (!input.integrationName.trim() || !input.sourceRecordReference.trim()) throw new Error("A named authorized integration and source record reference are required.");
+  if (!input.authorizedScope.trim() || Object.keys(input.integrityMetadata).length === 0) throw new Error("Authorized scope and integrity metadata are required.");
+  if (input.assetId) { const asset = (await db.select({ id: assets.id }).from(assets).where(eq(assets.id, input.assetId)).limit(1))[0]; if (!asset) throw new Error("The referenced project asset does not exist."); }
+  if (input.cameraSourceId) { const camera = (await db.select({ id: cameraSources.id, retentionUntil: cameraSources.retentionUntil }).from(cameraSources).where(eq(cameraSources.id, input.cameraSourceId)).limit(1))[0]; if (!camera) throw new Error("The referenced authorized camera source does not exist."); if (camera.retentionUntil <= new Date()) throw new Error("The referenced camera authorization has expired."); }
+  const existing = (await db.select({ id: securityObservations.id, status: securityObservations.status }).from(securityObservations).where(eq(securityObservations.sourceRecordReference, input.sourceRecordReference)).limit(1))[0];
+  if (existing) return { securityObservationId: existing.id, status: existing.status, duplicate: true };
+  const result = await db.insert(securityObservations).values({ ...input, status: "pending_review" }).returning({ id: securityObservations.id });
+  const securityObservationId = insertId(result);
+  await db.insert(auditEvents).values({ actorId: input.createdBy, action: "accountability.security_observation_registered", details: { securityObservationId, source: input.source, integrationName: input.integrationName, sourceRecordReference: input.sourceRecordReference, observationType: input.observationType, humanReviewRequired: true, noAutomatedSecurityClaim: true } });
+  return { securityObservationId, status: "pending_review" as const, duplicate: false };
 }
 
 export async function createAuthorityRecord(input: { legalName: string; authorityType: "municipal" | "state" | "national" | "utility" | "private_operator" | "contractor_internal"; contactChannel?: string; createdBy: number }) {
