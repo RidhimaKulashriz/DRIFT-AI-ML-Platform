@@ -108,6 +108,7 @@ describe("external deployment artifacts", () => {
     const routerSource = readFileSync(resolve(root, "server/routers.ts"), "utf8");
     expect(consoleSource).toContain("const canPersistSimulation = canOperate && persistenceAvailable");
     expect(consoleSource).toContain("RUN PERSISTENT ENGINEERING DEMO");
+    expect(consoleSource).toContain("const canRunDemo = true;");
     expect(consoleSource).toContain('onClick={() => startLogin()}');
     expect(consoleSource).toContain(">SIGN IN</button>");
     expect(consoleSource).toContain("{transientSimulatorRun && <article className=\"report-preview-panel\">");

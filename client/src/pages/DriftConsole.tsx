@@ -303,7 +303,9 @@ export default function DriftConsole() {
   const roleSource = isAuthenticated ? "AUTHORISED ROLE" : "DEMO PREVIEW";
   const canOperate = isAuthenticated && (role === "administrator" || role === "engineer");
   const canPersistSimulation = canOperate && persistenceAvailable && portableEvidenceStorageAvailable;
-  const canRunDemo = !isAuthenticated || role !== "citizen";
+  // The stateless walkthrough is deliberately browser-only and creates no operational record.
+  // It remains available after sign-in so a default citizen account is not trapped in an empty view.
+  const canRunDemo = true;
   const canGeneratePublicReport = canOperate && persistenceAvailable && portableEvidenceStorageAvailable;
   const transientMapDefects = useMemo(() => (transientSimulatorRun?.findings ?? []).map((finding, index) => ({ id: -(index + 1), label: `${finding.title} · transient demo`, defectType: finding.label, severity: finding.score.severity, zeroErrorScore: finding.score.score, confidencePercent: Math.round(finding.confidence * 100), latitude: finding.latitude, longitude: finding.longitude })), [transientSimulatorRun]);
   const transientMapTelemetry = transientSimulatorRun?.telemetry ?? [];
