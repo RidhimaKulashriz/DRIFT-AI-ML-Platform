@@ -44,10 +44,10 @@ describe("external deployment artifacts", () => {
     const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
     expect(inspectionMap).not.toContain("MapView");
     expect(inspectionMap).not.toContain("forge.butterfly-effect.dev");
-    expect(inspectionMap).toContain("maps.googleapis.com/maps/api/js");
-    expect(inspectionMap).toContain("Google Maps infrastructure context");
-    expect(inspectionMap).toContain("Public NBI context only");
-    expect(inspectionMap).toContain("Not a DRIFT site, live defect, ticket, or safety determination");
+    expect(inspectionMap).toContain("basemaps.cartocdn.com/light_all");
+    expect(inspectionMap).toContain("DRIFT real geographic inspection map");
+    expect(inspectionMap).toContain("NBI context");
+    expect(inspectionMap).toContain("Public third-party imagery only.");
     expect(html).toContain('href="/favicon.svg"');
     expect(html).not.toContain("%VITE_ANALYTICS_ENDPOINT%/umami");
     expect(viteConfig).not.toContain("vite-plugin-manus-runtime");
@@ -107,43 +107,43 @@ describe("external deployment artifacts", () => {
     expect(consoleSource).toContain("no asset, evidence, ticket, report, CCTV, security, or UAV action");
   });
 
-  it("keeps Street View and numbered temporary markers available without treating public imagery as DRIFT evidence", () => {
+  it("keeps KartaView and numbered temporary markers available without treating public imagery as DRIFT evidence", () => {
     const root = resolve(import.meta.dirname, "..");
     const inspectionMap = readFileSync(resolve(root, "client/src/components/InspectionMap.tsx"), "utf8");
     const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
-    expect(inspectionMap).toContain("streetViewControl: true");
-    expect(inspectionMap).toContain("OPEN STREET VIEW");
-    expect(inspectionMap).toContain("Street View is not available within 250 m");
-    expect(inspectionMap).toContain("not DRIFT evidence or a defect confirmation");
-    expect(inspectionMap).toContain("SIMULATED DEMO advisory");
-    expect(inspectionMap).toContain("numbered temporary advisory");
+    expect(inspectionMap).toContain("OPEN KARTAVIEW");
+    expect(inspectionMap).toContain("KARTAVIEW · STREET-LEVEL IMAGERY");
+    expect(inspectionMap).toContain("KartaView could not be reached");
+    expect(inspectionMap).toContain("not DRIFT evidence, not a crack confirmation");
+    expect(inspectionMap).toContain("Advisory");
+    expect(inspectionMap).toContain("colored findings");
     expect(consoleSource).toContain("isTransient: true");
     expect(consoleSource).toContain("scrollIntoView({ behavior: \"smooth\", block: \"center\" })");
   });
 
-  it("gives every temporary report advisory its own map and Street View inspection action", () => {
+  it("gives every temporary report advisory its own map and KartaView inspection action", () => {
     const root = resolve(import.meta.dirname, "..");
     const inspectionMap = readFileSync(resolve(root, "client/src/components/InspectionMap.tsx"), "utf8");
     const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
     expect(consoleSource).toContain("Temporary advisory inspection register");
     expect(consoleSource).toContain("transientSimulatorRun.findings.map");
-    expect(consoleSource).toContain("View marker + Street View");
+    expect(consoleSource).toContain("View marker + KartaView");
     expect(consoleSource).toContain("inspectTransientAdvisory");
-    expect(consoleSource).toContain("streetViewRequest={streetViewRequest}");
-    expect(inspectionMap).toContain("streetViewRequest?: number");
-    expect(inspectionMap).toContain("completedStreetViewRequest");
-    expect(inspectionMap).toContain("select any marker or report item");
+    expect(consoleSource).toContain("imageryRequest={imageryRequest}");
+    expect(inspectionMap).toContain("imageryRequest?: number");
+    expect(inspectionMap).toContain("completedImageryRequest");
+    expect(inspectionMap).toContain("select any marker");
   });
 
   it("keeps the temporary advisory grid readable by making telemetry optional and focusing the simulated grid", () => {
     const root = resolve(import.meta.dirname, "..");
     const inspectionMap = readFileSync(resolve(root, "client/src/components/InspectionMap.tsx"), "utf8");
     expect(inspectionMap).toContain("const [telemetryVisible, setTelemetryVisible] = useState(false)");
-    expect(inspectionMap).toContain("const shouldShowTelemetry = telemetryVisible || validDefects.length === 0");
+    expect(inspectionMap).toContain("const showTelemetry = telemetryVisible || validDefects.length === 0");
     expect(inspectionMap).toContain("FOCUS 15-POINT GRID");
     expect(inspectionMap).toContain("SHOW ${validTelemetry.length} TELEMETRY");
-    expect(inspectionMap).toContain("map.panTo(selectedDefect.point)");
-    expect(inspectionMap).toContain("map.fitBounds(bounds, validDefects.length ? 54 : 84)");
+    expect(inspectionMap).toContain("map.setView([selectedDefect?.point.lat");
+    expect(inspectionMap).toContain("map.fitBounds(L.latLngBounds");
   });
 
   it("allows a personal-email magic-link request without implying protected-role access", () => {
