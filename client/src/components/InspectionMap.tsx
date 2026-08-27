@@ -104,13 +104,16 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     windowWithMapsAuth.gm_authFailure = authFailureHandler;
     if (!apiKey) { setMapState("fallback"); return () => { if (windowWithMapsAuth.gm_authFailure === authFailureHandler) delete windowWithMapsAuth.gm_authFailure; }; }
     setMapState("loading");
+    let tileLoaded = false;
+    const fallbackTimer = window.setTimeout(() => { if (!cancelled && !tileLoaded) setMapState("fallback"); }, 7000);
     loadGoogleMaps(apiKey).then(() => {
       if (cancelled || authFailed || !mapElement.current) return;
       const center = validDefects[0]?.point ?? { lat: publicNbiBridgeContext[0]!.latitude, lng: publicNbiBridgeContext[0]!.longitude };
       mapRef.current = new window.google.maps.Map(mapElement.current, { center, zoom: validDefects.length ? 14 : 6, mapId, mapTypeControl: true, streetViewControl: true, fullscreenControl: true, clickableIcons: false, gestureHandling: "cooperative" });
+      mapRef.current.addListener("tilesloaded", () => { tileLoaded = true; window.clearTimeout(fallbackTimer); });
       setMapState("ready");
     }).catch(() => { if (!cancelled) setMapState("fallback"); });
-    return () => { cancelled = true; if (windowWithMapsAuth.gm_authFailure === authFailureHandler) delete windowWithMapsAuth.gm_authFailure; };
+    return () => { cancelled = true; window.clearTimeout(fallbackTimer); if (windowWithMapsAuth.gm_authFailure === authFailureHandler) delete windowWithMapsAuth.gm_authFailure; };
   }, [apiKey, mapId]);
 
   useEffect(() => {
