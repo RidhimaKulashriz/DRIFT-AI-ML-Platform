@@ -42,6 +42,10 @@ export const appRouter = router({
       const record = await createDemoMissionRecord({ name: input.name, createdBy: ctx.user?.id ?? null, simulator });
       return { ...record, findings: simulator.findings, telemetry: simulator.telemetry };
     }),
+    runStatelessSimulator: publicProcedure.input(z.object({ name: z.string().min(3).max(180).default("Demo corridor patrol") })).mutation(async ({ input }) => {
+      const simulator = await buildSimulatorMission(input.name);
+      return { mode: "stateless_demo" as const, transient: true, storage: "none" as const, message: "Transient simulated walkthrough only. No mission, finding, telemetry, evidence, ticket, report, CCTV candidate, security observation, or UAV action was stored or created.", ...simulator };
+    }),
     createHardwareCaptureMission: protectedProcedure.input(z.object({ name: z.string().trim().min(3).max(180), aircraftProfile: z.string().trim().min(2).max(120), adapter: z.enum(["mavlink-bridge", "http-webhook", "rtsp-media"]), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180), operatorNote: z.string().trim().max(500).optional() })).mutation(({ ctx, input }) => {
       requireDriftRole(ctx.user, ["admin", "engineer"]);
       return createHardwareCaptureMission({ ...input, createdBy: ctx.user.id });

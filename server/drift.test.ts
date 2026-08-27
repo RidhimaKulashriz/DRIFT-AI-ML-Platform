@@ -109,6 +109,15 @@ describe("simulator lifecycle", () => {
     expect(mission.findings[0]?.score.severity).toBe("critical");
     expect(mission.findings.some(finding => finding.label === "pothole")).toBe(true);
   });
+
+  it("provides a transient public walkthrough without persistence or operational side effects", async () => {
+    const ctx = { user: null, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
+    const result = await appRouter.createCaller(ctx).drift.runStatelessSimulator({ name: "Transient corridor walkthrough" });
+    expect(result).toMatchObject({ mode: "stateless_demo", transient: true, storage: "none" });
+    expect(result.message).toMatch(/No mission, finding, telemetry, evidence, ticket, report, CCTV candidate, security observation, or UAV action was stored/i);
+    expect(result.findings).toHaveLength(3);
+    expect(result.telemetry).toHaveLength(12);
+  });
 });
 
 describe("engineering review state and role boundary", () => {

@@ -45,6 +45,7 @@ type DefectType = "pothole" | "crack" | "structural" | "corrosion" | "spalling" 
 type Workspace = "operations" | "defects" | "evidence" | "reports" | "hardware" | "accountability";
 type Role = "administrator" | "engineer" | "contractor" | "citizen";
 type EvidenceItem = { id: number; fileName: string; storageUrl: string; mediaKind: "photo" | "video" | "annotation" | "report"; source?: "hardware" | "upload" | "simulator" | "cctv" | "reference"; latitude: string | null; longitude: string | null; capturedAt?: Date | null; cameraId?: string | null; provenance?: unknown; captureZone?: string | null; qualityStatus?: string | null; imageQuality?: unknown };
+type TransientSimulatorRun = { name: string; startedAt: number; telemetry: Array<{ latitude: number; longitude: number; altitude: number; batteryPercent: number; speedMps: number; timestamp: number }>; findings: Array<{ title: string; label: string; confidence: number; latitude: number; longitude: number; score: { score: number; severity: Severity; explanation: string[] } }> };
 
 const navItems: Array<{ key: Workspace; label: string; icon: typeof Radar }> = [
   { key: "operations", label: "Operations", icon: Radar },
@@ -160,6 +161,7 @@ export default function DriftConsole() {
   const [pendingAiFilter, setPendingAiFilter] = useState<Severity | null>(null);
   const [reportResult, setReportResult] = useState<{ title: string; storageUrl?: string; evidenceCount: number; defectCount: number; format?: string; severityCounts?: Record<string, number> } | null>(null);
   const [evidencePreview, setEvidencePreview] = useState<EvidenceItem | null>(null);
+  const [transientSimulatorRun, setTransientSimulatorRun] = useState<TransientSimulatorRun | null>(null);
   const { user, isAuthenticated } = useAuth();
   const overview = trpc.drift.overview.useQuery(undefined, { refetchInterval: 15000 });
   const hardware = trpc.drift.hardwareStatus.useQuery(undefined);
@@ -172,6 +174,15 @@ export default function DriftConsole() {
       toast.success(`Simulator mission stored · ${data.findings.length} findings evaluated`);
       utils.drift.overview.invalidate();
       setWorkspace("operations");
+    },
+    onError: error => toast.error(error.message),
+  });
+  const runStatelessSimulator = trpc.drift.runStatelessSimulator.useMutation({
+    onSuccess: data => {
+      setTransientSimulatorRun(data);
+      setSelectedId(-1);
+      setWorkspace("operations");
+      toast.success(`Transient simulator walkthrough ready · ${data.findings.length} advisory findings · no records stored`);
     },
     onError: error => toast.error(error.message),
   });
@@ -289,6 +300,12 @@ export default function DriftConsole() {
   const canOperate = isAuthenticated && (role === "administrator" || role === "engineer");
   const canRunDemo = !isAuthenticated || role !== "citizen";
   const canGeneratePublicReport = persistenceAvailable;
+  const transientMapDefects = useMemo(() => (transientSimulatorRun?.findings ?? []).map((finding, index) => ({ id: -(index + 1), label: `${finding.title} · transient demo`, defectType: finding.label, severity: finding.score.severity, zeroErrorScore: finding.score.score, confidencePercent: Math.round(finding.confidence * 100), latitude: finding.latitude, longitude: finding.longitude })), [transientSimulatorRun]);
+  const transientMapTelemetry = transientSimulatorRun?.telemetry ?? [];
+  const startAvailableSimulator = () => {
+    if (persistenceAvailable) runSimulator.mutate({ name: missionName });
+    else runStatelessSimulator.mutate({ name: missionName });
+  };
 
   const roleCopy: Record<Role, { eyebrow: string; title: string; note: string }> = {
     administrator: { eyebrow: "GOVERNANCE DESK", title: "Network accountability", note: "Audit integrity, service levels, and asset exposure across the inspection network." },
@@ -420,7 +437,7 @@ export default function DriftConsole() {
           <div className="crumbs"><span>OPERATIONS</span><b>/</b><span>{workspace.toUpperCase()}</span></div>
           <div className="topbar-actions">
             <span className="role-toggle"><ShieldCheck /> {roleSource} · {role}</span>
-            {canRunDemo && <button type="button" className="primary-action" onClick={() => runSimulator.mutate({ name: missionName })} disabled={!persistenceAvailable || runSimulator.isPending} title={!persistenceAvailable ? persistenceMessage : undefined}><Play /> {runSimulator.isPending ? "SIMULATING" : !persistenceAvailable ? "PERSISTENCE REQUIRED" : "RUN DEMO"}</button>}
+            {canRunDemo && <button type="button" className="primary-action" onClick={startAvailableSimulator} disabled={runSimulator.isPending || runStatelessSimulator.isPending} title={!persistenceAvailable ? "Runs a transient simulator walkthrough only; no operational records are stored." : undefined}><Play /> {runSimulator.isPending || runStatelessSimulator.isPending ? "SIMULATING" : !persistenceAvailable ? "RUN TRANSIENT DEMO" : "RUN DEMO"}</button>}
           </div>
         </header>
 
@@ -440,6 +457,7 @@ export default function DriftConsole() {
         </section>
 
         {!persistenceAvailable && <section className="safety-banner persistence-banner" role="status"><CloudCog /><div><strong>PERSISTENCE REQUIRED</strong><span>{persistenceMessage} The current public dashboard and DRIFT AI remain available in read-only mode.</span></div><button type="button" onClick={() => setWorkspace("hardware")}>VIEW HARDWARE GUIDE <ChevronRight /></button></section>}
+        {transientSimulatorRun && <section className="safety-banner persistence-banner" role="status"><Play /><div><strong>TRANSIENT SIMULATOR WALKTHROUGH</strong><span>{transientSimulatorRun.findings.length} advisory demo findings and {transientSimulatorRun.telemetry.length} temporary telemetry points are visible only in this browser session. They are not project evidence and cannot create tickets, reports, CCTV candidates, security observations, or UAV actions.</span></div><button type="button" onClick={() => setTransientSimulatorRun(null)}>CLEAR TRANSIENT DEMO</button></section>}
 
         {activeAlerts.length > 0 && <section className="alert-strip"><AlertTriangle /><div><span className="eyebrow">OPEN MAINTENANCE ALERTS</span><strong>{activeAlerts[0]?.title}</strong><small>{activeAlerts[0]?.message}</small></div><button type="button" onClick={() => { setSeverityFilter("critical"); setWorkspace("defects"); }}>REVIEW {activeAlerts.length} ALERT{activeAlerts.length === 1 ? "" : "S"} <ChevronRight /></button></section>}
 
@@ -455,7 +473,7 @@ export default function DriftConsole() {
           <section className="operations-grid">
             <article className="panel map-panel">
               <div className="panel-heading"><div><span className="eyebrow">GEO-SPATIAL WORKBENCH</span><h2>Live defect field</h2></div><button type="button" className="icon-button" onClick={() => setWorkspace("defects")} aria-label="Open defect filters" title="Open defect filters"><SlidersHorizontal /></button></div>
-              <InspectionMap defects={defects} telemetry={telemetry} selectedId={selected.id || undefined} onSelect={setSelectedId} />
+              <InspectionMap defects={[...defects, ...transientMapDefects]} telemetry={[...telemetry, ...transientMapTelemetry]} selectedId={selected.id || undefined} onSelect={setSelectedId} />
               <div className="map-finding-summary"><div className="summary-counts">{severitySummary.map(item => <button key={item.severity} type="button" className={cn("summary-count", severityClass(item.severity), severityFilter === item.severity && "active")} onClick={() => { setSeverityFilter(item.severity); setWorkspace("defects"); }}><strong>{item.count}</strong><span>{item.severity}</span></button>)}</div><div className="selected-finding"><div><span className="eyebrow">SELECTED FINDING</span><strong>{selected.label}</strong><small>{selected.defectType} · {selected.inspectionDomain ?? "domain pending"} · {selected.reviewState} review</small></div><div className="selected-finding-metrics"><span><b>{selected.zeroErrorScore}</b> score</span><span><b>{selected.confidencePercent}%</b> confidence</span><span><b>{selected.latitude}, {selected.longitude}</b> GPS</span><span><b>{availableAssets.find(asset => asset.id === selected.assetId)?.name ?? `ASSET ${selected.assetId || "UNASSIGNED"}`}</b> asset</span><span><b>{selectedEvidence?.captureZone ?? "NOT RECORDED"}</b> capture zone</span><span><b>{selectedEvidence?.qualityStatus ?? "NOT GATED"}</b> quality gate</span></div><SeverityChip severity={selected.severity} /></div></div>
               <div className="mission-strip"><div><span className="eyebrow">CURRENT MISSION</span><strong>{missions[0]?.name}</strong></div><div><span className="eyebrow">FLIGHT STATE</span><strong className="status-active">{missions[0]?.status ?? "active"}</strong></div><div><span className="eyebrow">WAYPOINTS</span><strong>{telemetry.length} POINTS</strong></div><button type="button" onClick={() => setWorkspace("evidence")} disabled={!evidenceItems.length}>OPEN EVIDENCE <ChevronRight /></button></div>
             </article>
@@ -554,7 +572,7 @@ export default function DriftConsole() {
               <h3>{hardware.data?.adapter ?? "No bridge configured"}</h3>
               <p>{hardware.data?.operatorMessage ?? "No compatible hardware endpoint configured. The simulator is available without claiming a real flight."}</p>
               <div className="hardware-checklist"><span>Telemetry: GPS · altitude · battery · speed</span><span>Media: original photo/video + capture metadata</span><span>Report: evidence-bound, engineer sign-off required</span></div>
-              <button type="button" onClick={() => runSimulator.mutate({ name: missionName })} disabled={!persistenceAvailable || runSimulator.isPending} title={!persistenceAvailable ? persistenceMessage : undefined}>{runSimulator.isPending ? "SIMULATING" : !persistenceAvailable ? "PERSISTENCE REQUIRED" : "RUN CLEARLY LABELLED DEMO"} <ChevronRight /></button>
+              <button type="button" onClick={startAvailableSimulator} disabled={runSimulator.isPending || runStatelessSimulator.isPending} title={!persistenceAvailable ? "Runs a transient simulator walkthrough only; no operational records are stored." : undefined}>{runSimulator.isPending || runStatelessSimulator.isPending ? "SIMULATING" : !persistenceAvailable ? "RUN TRANSIENT DEMO" : "RUN CLEARLY LABELLED DEMO"} <ChevronRight /></button>
             </article>
             <article className="hardware-card border-amber-600/60 bg-amber-50">
               <ShieldCheck className="text-amber-900" />
