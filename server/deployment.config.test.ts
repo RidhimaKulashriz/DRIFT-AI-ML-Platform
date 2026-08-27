@@ -70,4 +70,13 @@ describe("external deployment artifacts", () => {
     expect(consoleSource).toContain("Showing the most recent {visibleReports.length} records");
     expect(consoleSource).toContain("older report record");
   });
+
+  it("keeps hardware security observations unavailable without an approved security adapter", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
+    expect(consoleSource).toContain("Security adapter not configured");
+    expect(consoleSource).toContain("does not scan camera firmware, traffic, devices, or CCTV feeds");
+    expect(consoleSource).toContain("does not claim malware, tamper, or intrusion detection");
+    expect(consoleSource).toContain("SECURITY INTEGRATION REQUIRED");
+  });
 });

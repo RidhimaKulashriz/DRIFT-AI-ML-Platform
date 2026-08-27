@@ -556,6 +556,14 @@ export default function DriftConsole() {
               <div className="hardware-checklist"><span>Telemetry: GPS · altitude · battery · speed</span><span>Media: original photo/video + capture metadata</span><span>Report: evidence-bound, engineer sign-off required</span></div>
               <button type="button" onClick={() => runSimulator.mutate({ name: missionName })} disabled={!persistenceAvailable || runSimulator.isPending} title={!persistenceAvailable ? persistenceMessage : undefined}>{runSimulator.isPending ? "SIMULATING" : !persistenceAvailable ? "PERSISTENCE REQUIRED" : "RUN CLEARLY LABELLED DEMO"} <ChevronRight /></button>
             </article>
+            <article className="hardware-card border-amber-600/60 bg-amber-50">
+              <ShieldCheck className="text-amber-900" />
+              <span className="eyebrow text-amber-900">04 · SECURITY OBSERVATION BOUNDARY</span>
+              <h3 className="text-amber-950">Security adapter not configured</h3>
+              <p className="text-amber-950/80">DRIFT currently records only authenticated bridge health and evidence provenance. It does not scan camera firmware, traffic, devices, or CCTV feeds and does not claim malware, tamper, or intrusion detection.</p>
+              <div className="hardware-checklist text-amber-950/80"><span>Available: authenticated bridge status and evidence provenance</span><span>Required: named security integration, owner approval, scope, retention, and analyst review</span><span>Blocked: malware, firmware, or network-security claim</span></div>
+              <button type="button" disabled title="A named, approved security integration and authorized audit data are required before security observations can be recorded.">SECURITY INTEGRATION REQUIRED</button>
+            </article>
           </div>
           <PublicDatasetVisualCard onPreview={() => setEvidencePreview(publicDatasetSamples[0]!)} onOpenEvidence={() => setWorkspace("evidence")} />
         </section>}
