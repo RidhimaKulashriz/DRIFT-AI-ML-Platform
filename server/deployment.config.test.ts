@@ -167,6 +167,20 @@ describe("external deployment artifacts", () => {
     expect(signInSource).toContain("magicLinkErrorMessage(error)");
   });
 
+  it("keeps Defect Control, reports, and DRIFT AI usable during an active transient walkthrough", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
+    const styleSource = readFileSync(resolve(root, "client/src/index.css"), "utf8");
+    expect(consoleSource).toContain("OPEN DRIFT AI");
+    expect(consoleSource).toContain("transient-workspace-banner");
+    expect(consoleSource).toContain("temporary advisories are available below");
+    expect(consoleSource).toContain("SIMULATED · NOT SAVED");
+    expect(consoleSource).toContain("No persistent findings in this public session");
+    expect(styleSource).toContain(".transient-workspace-banner");
+    expect(styleSource).toContain(".transient-defect-row");
+    expect(styleSource).toContain(".reports-workspace .report-preview-panel .ai-brief");
+  });
+
   it("keeps public walkthroughs transient even when production persistence is available", () => {
     const root = resolve(import.meta.dirname, "..");
     const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
