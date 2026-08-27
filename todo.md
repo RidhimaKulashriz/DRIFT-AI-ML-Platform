@@ -365,4 +365,4 @@
 - [ ] Implement and verify contractor-specific data scoping before granting contractor users access to assigned real work records.
 - [x] Add and live-verify a visible public sign-in trigger that starts the configured Supabase magic-link flow without changing the browser-only simulator boundary.
 - [x] Fix and live-verify transient-demo visibility and activation after Supabase sign-in, while retaining the browser-only no-persistence boundary.
-- [ ] Diagnose and fix the reported Google Maps visibility issue on the deployed DRIFT console, then live-verify map tiles, controls, and transient markers without exposing operational records.
+- [x] Diagnose and fix the reported Google Maps visibility issue on the deployed DRIFT console, then live-verify map tiles, controls, and transient markers without exposing operational records.
