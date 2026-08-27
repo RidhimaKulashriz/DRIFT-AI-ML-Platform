@@ -362,7 +362,7 @@
 - [ ] Configure the verified Supabase Auth environment values on Vercel and Render, then validate the production magic-link callback and default least-privilege citizen role.
 - [ ] Configure the verified Supabase server values and `DRIFT_SUPABASE_STORAGE_ENABLED=true` only on Render, then validate private portable evidence storage without creating a fake inspection record.
 - [ ] Keep public users on the transient walkthrough and approved public context only; require approved administrator/engineer roles before returning global persistent evidence, reports, contractor data, CCTV candidates, security observations, or UAV recommendations.
-- [ ] Implement and verify contractor-specific data scoping before granting contractor users access to assigned real work records.
+- [x] Implement and verify contractor-specific data scoping before granting contractor users access to assigned real work records.
 - [x] Add and live-verify a visible public sign-in trigger that starts the configured Supabase magic-link flow without changing the browser-only simulator boundary.
 - [x] Fix and live-verify transient-demo visibility and activation after Supabase sign-in, while retaining the browser-only no-persistence boundary.
 - [x] Diagnose and fix the reported Google Maps visibility issue on the deployed DRIFT console, then live-verify map tiles, controls, and transient markers without exposing operational records.

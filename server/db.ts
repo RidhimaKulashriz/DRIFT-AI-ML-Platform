@@ -418,6 +418,24 @@ export async function getAccountabilityOverview() {
   }
 }
 
+export async function listAssignedContractorTickets(actorId: number) {
+  const db = await getDb();
+  const persistence = db
+    ? { available: true, message: "Assigned contractor work is ready for approved project data." }
+    : { available: false, message: "Assigned contractor work requires the PostgreSQL migration and DATABASE_URL." };
+  if (!db) return { tickets: [], persistence };
+  try {
+    const assignments = await db.select({ contractorId: contractorUserAssignments.contractorId, active: contractorUserAssignments.active }).from(contractorUserAssignments).where(eq(contractorUserAssignments.userId, actorId));
+    const activeContractorIds = new Set(assignments.filter(assignment => assignment.active === 1).map(assignment => assignment.contractorId));
+    if (!activeContractorIds.size) return { tickets: [], persistence };
+    const tickets = await db.select().from(contractorTickets).where(eq(contractorTickets.assignedUserId, actorId)).orderBy(desc(contractorTickets.updatedAt)).limit(100);
+    return { tickets: tickets.filter(ticket => ticket.contractorId !== null && activeContractorIds.has(ticket.contractorId)), persistence };
+  } catch (error) {
+    console.warn("[Accountability] Assigned contractor work is unavailable:", error instanceof Error ? error.message : error);
+    return { tickets: [], persistence: { available: false, message: "Assigned contractor work is not configured yet. Apply the reviewed PostgreSQL migration before adding approved project data." } };
+  }
+}
+
 type KnowledgeRole = "admin" | "engineer" | "contractor" | "user" | "citizen";
 
 function parsePermittedRoles(value: unknown): KnowledgeRole[] {

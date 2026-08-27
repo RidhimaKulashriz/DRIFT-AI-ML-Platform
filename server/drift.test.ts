@@ -273,6 +273,17 @@ describe("authorized workspace roles", () => {
     expect(citizen.permissions).toEqual(["public:read"]);
   });
 
+  it("exposes only a dedicated assigned-work route to contractor roles", async () => {
+    const contractor = appRouter.createCaller({ ...baseContext, user: userFor("contractor") } as TrpcContext);
+    const engineer = appRouter.createCaller({ ...baseContext, user: userFor("engineer") } as TrpcContext);
+    const citizen = appRouter.createCaller({ ...baseContext, user: userFor("citizen") } as TrpcContext);
+    const assigned = await contractor.drift.accountability.assignedWork();
+    expect(assigned.tickets).toEqual(expect.any(Array));
+    expect(assigned.persistence).toEqual(expect.objectContaining({ available: expect.any(Boolean), message: expect.any(String) }));
+    await expect(engineer.drift.accountability.assignedWork()).rejects.toThrow(/does not permit/);
+    await expect(citizen.drift.accountability.assignedWork()).rejects.toThrow(/does not permit/);
+  });
+
   it("returns an explicit approved-source refusal when the knowledge base is not persistent", async () => {
     const engineer = appRouter.createCaller({ ...baseContext, user: userFor("engineer") } as TrpcContext);
     const result = await engineer.drift.accountability.knowledge.ask({ question: "What closure proof does this project require?" });
