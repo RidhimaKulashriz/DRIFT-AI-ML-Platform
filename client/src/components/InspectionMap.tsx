@@ -24,7 +24,8 @@ function removeMapMarker(marker: MapMarker) {
 }
 
 function createInspectionMarker(options: { map: google.maps.Map; position: google.maps.LatLngLiteral; title?: string; zIndex?: number; label: string; color: string; selected?: boolean; clickable?: boolean }): MapMarker {
-  const AdvancedMarkerElement = window.google.maps.marker?.AdvancedMarkerElement;
+  const configuredMapId = typeof options.map.get === "function" ? options.map.get("mapId") : undefined;
+  const AdvancedMarkerElement = configuredMapId && configuredMapId !== "DEMO_MAP_ID" ? window.google.maps.marker?.AdvancedMarkerElement : undefined;
   if (AdvancedMarkerElement) {
     const content = document.createElement("div");
     content.textContent = options.label;
@@ -87,7 +88,7 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
   const [selectedKartaViewPhoto, setSelectedKartaViewPhoto] = useState<KartaViewPhoto | null>(null);
   const [telemetryVisible, setTelemetryVisible] = useState(false);
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim();
-  const mapId = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID?.trim() || "DEMO_MAP_ID";
+  const mapId = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID?.trim();
   const validDefects = useMemo(() => defects.map(defect => ({ defect, point: asCoordinates(defect) })).filter((item): item is { defect: MapDefect; point: { lat: number; lng: number } } => Boolean(item.point)), [defects]);
   const validTelemetry = useMemo(() => telemetry.map(asCoordinates).filter((point): point is { lat: number; lng: number } => Boolean(point)), [telemetry]);
   const shouldShowTelemetry = telemetryVisible || validDefects.length === 0;
@@ -109,7 +110,7 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     loadGoogleMaps(apiKey).then(() => {
       if (cancelled || authFailed || !mapElement.current) return;
       const center = validDefects[0]?.point ?? { lat: publicNbiBridgeContext[0]!.latitude, lng: publicNbiBridgeContext[0]!.longitude };
-      mapRef.current = new window.google.maps.Map(mapElement.current, { center, zoom: validDefects.length ? 14 : 6, mapId, mapTypeControl: true, streetViewControl: true, fullscreenControl: true, clickableIcons: false, gestureHandling: "cooperative" });
+      mapRef.current = new window.google.maps.Map(mapElement.current, { center, zoom: validDefects.length ? 14 : 6, ...(mapId ? { mapId } : {}), mapTypeControl: true, streetViewControl: true, fullscreenControl: true, clickableIcons: false, gestureHandling: "cooperative" });
       mapRef.current.addListener("tilesloaded", () => { tileLoaded = true; window.clearTimeout(fallbackTimer); });
       setMapState("ready");
     }).catch(() => { if (!cancelled) setMapState("fallback"); });
