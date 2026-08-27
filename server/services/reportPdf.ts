@@ -109,7 +109,9 @@ function drawCoordinatePlot(doc: PDFKit.PDFDocument, defects: PdfDefect[], x: nu
   doc.fillColor("#9bb0c7").font("Helvetica").fontSize(7).text("NORTH ↑  ·  COORDINATE PLOT  ·  NOT A SURVEY BASEMAP", x + 15, y + height - 13, { width: width - 30, characterSpacing: 0.4 });
 }
 
-export async function renderInspectionPdf(input: { mission: PdfMission; evidence: PdfEvidence[]; defects: PdfDefect[]; repairTotalCents: number; }) {
+export type PdfContractorRoute = { contractorName: string; ragStatus: "green" | "amber" | "red"; workProfile: string; sourceLabel: string; sourceUrl: string; disclaimer: string };
+
+export async function renderInspectionPdf(input: { mission: PdfMission; evidence: PdfEvidence[]; defects: PdfDefect[]; repairTotalCents: number; contractorRoute?: PdfContractorRoute }) {
   const doc = new PDFDocument({ size: "A4", margin: 38, autoFirstPage: false, compress: false });
   doc.initForm();
   const chunks: Buffer[] = [];
@@ -138,9 +140,16 @@ export async function renderInspectionPdf(input: { mission: PdfMission; evidence
   metric(doc, "Evidence records", String(input.evidence.length), 240, 407, 110);
   metric(doc, "Candidate findings", String(input.defects.length), 410, 407, 130);
   doc.fillColor(COLORS.slate).font("Helvetica").fontSize(9).text("This report binds persisted evidence, coordinate context, model outputs, review state, uncertainty, and recommended next actions. It is not a substitute for a qualified field inspection.", 40, 490, { width: 485, lineGap: 3 });
-  doc.roundedRect(40, 560, 500, 92, 5).fill("#e8eef3");
-  doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(11).text("CONTROL BOUNDARY", 58, 580, { characterSpacing: 0.8 });
-  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(9).text("Automated outputs are advisory. Every critical and high finding must be reviewed by an authorised engineer before a work order, restriction, or release decision.", 58, 602, { width: 455, lineGap: 3 });
+  if (input.contractorRoute) {
+    doc.roundedRect(40, 530, 500, 58, 5).fill(input.contractorRoute.ragStatus === "green" ? "#e8f5ee" : input.contractorRoute.ragStatus === "amber" ? "#fff5df" : "#ffeded");
+    doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(9).text(`RAG HANDOFF CANDIDATE · ${input.contractorRoute.ragStatus.toUpperCase()}`, 58, 544, { characterSpacing: 0.5 });
+    doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(`${input.contractorRoute.contractorName} · ${input.contractorRoute.workProfile}`, 58, 560, { width: 455, ellipsis: true });
+    doc.fillColor(COLORS.slate).font("Helvetica").fontSize(7).text(`${input.contractorRoute.sourceLabel} · ${input.contractorRoute.disclaimer}`, 58, 574, { width: 455, ellipsis: true });
+  }
+  const controlY = input.contractorRoute ? 610 : 560;
+  doc.roundedRect(40, controlY, 500, 82, 5).fill("#e8eef3");
+  doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(11).text("CONTROL BOUNDARY", 58, controlY + 20, { characterSpacing: 0.8 });
+  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(9).text("Automated outputs are advisory. Every critical and high finding must be reviewed by an authorised engineer before a work order, restriction, or release decision.", 58, controlY + 42, { width: 455, lineGap: 3 });
   footer(doc);
 
   doc.addPage();
@@ -152,7 +161,7 @@ export async function renderInspectionPdf(input: { mission: PdfMission; evidence
   ];
   summaryCards.forEach(([label, value, color], index) => { const x = 38 + index * 132; doc.roundedRect(x, 145, 118, 78, 4).fill("#edf0f2"); doc.rect(x, 145, 118, 6).fill(color); doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(8).text(label, x + 12, 164, { characterSpacing: 0.9 }); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(28).text(value, x + 12, 183); });
   doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(13).text("Inspection controls", 38, 267);
-  const controls = [["Mission status", titleCase(safeText(input.mission.status, "completed"))], ["Review gate", reportStatus], ["Coordinate-bearing findings", `${coordinateCount} / ${input.defects.length}`], ["Repair exposure", `₹${Math.round(input.repairTotalCents / 100).toLocaleString("en-IN")}`], ["Evidence provenance", input.evidence.some(item => item.source === "simulator") ? "Simulator/reference media present" : "Uploaded/hardware media"], ["Coverage interpretation", "Media-linked, not a site-survey completeness claim"]];
+  const controls = [["Mission status", titleCase(safeText(input.mission.status, "completed"))], ["Review gate", reportStatus], ["Coordinate-bearing findings", `${coordinateCount} / ${input.defects.length}`], ["Repair exposure", `₹${Math.round(input.repairTotalCents / 100).toLocaleString("en-IN")}`], ["Evidence provenance", input.evidence.some(item => item.source === "simulator") ? "Simulator/reference media present" : "Uploaded/hardware media"], ["Coverage interpretation", "Media-linked, not a site-survey completeness claim"], ...(input.contractorRoute ? [["RAG route", `${input.contractorRoute.ragStatus.toUpperCase()} · ${input.contractorRoute.contractorName}`] as [string, string]] : [])];
   controls.forEach(([label, value], index) => { const y = 305 + index * 31; doc.strokeColor(COLORS.line).lineWidth(0.7).moveTo(38, y + 21).lineTo(574, y + 21).stroke(); doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(8).text(label.toUpperCase(), 38, y + 5, { width: 180, characterSpacing: 0.5 }); doc.fillColor(COLORS.ink).font("Helvetica").fontSize(9).text(value, 228, y + 5, { width: 340 }); });
   doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(13).text("Coordinate context", 38, 521);
   drawCoordinatePlot(doc, input.defects, 38, 548, 536, 165);
