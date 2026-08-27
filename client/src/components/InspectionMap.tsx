@@ -87,15 +87,16 @@ export function InspectionMap({ defects, telemetry, selectedId, imageryRequest =
         const y = (tileY + localY / extent) / n;
         return { lng: x * 360 - 180, lat: Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180 / Math.PI };
       };
-      const candidates: MapillaryImage[] = [];
-      for (const tileX of [centerX - 1, centerX, centerX + 1]) {
-        for (const tileY of [centerY - 1, centerY, centerY + 1]) {
+      const tileRequests = [centerX - 1, centerX, centerX + 1].flatMap(tileX => [centerY - 1, centerY, centerY + 1].map(tileY => ({ tileX, tileY })));
+      const tileResults = await Promise.all(tileRequests.map(async ({ tileX, tileY }) => {
+        try {
           const tileUrl = `https://tiles.mapillary.com/maps/vtp/mly1_public/2/${zoom}/${tileX}/${tileY}?access_token=${encodeURIComponent(mapillaryToken)}`;
           const response = await fetch(tileUrl, { headers: { Accept: "application/x-protobuf" } });
-          if (!response.ok) continue;
+          if (!response.ok) return [] as MapillaryImage[];
           const tile = new VectorTile(new PbfReader(await response.arrayBuffer()));
           const layer = tile.layers.image;
-          if (!layer) continue;
+          if (!layer) return [] as MapillaryImage[];
+          const images: MapillaryImage[] = [];
           for (let index = 0; index < layer.length; index += 1) {
             const feature = layer.feature(index);
             const geometry = feature.loadGeometry()[0]?.[0];
@@ -104,10 +105,14 @@ export function InspectionMap({ defects, telemetry, selectedId, imageryRequest =
             const id = String(properties.id ?? properties.image_id ?? "");
             if (!id) continue;
             const coordinates = tileToCoordinates(tileX, tileY, geometry.x, geometry.y, layer.extent);
-            candidates.push({ id, latitude: coordinates.lat, longitude: coordinates.lng, isPano: Boolean(properties.is_pano), capturedAt: properties.captured_at ? new Date(properties.captured_at).toISOString() : undefined, compassAngle: properties.compass_angle });
+            images.push({ id, latitude: coordinates.lat, longitude: coordinates.lng, isPano: Boolean(properties.is_pano), capturedAt: properties.captured_at ? new Date(properties.captured_at).toISOString() : undefined, compassAngle: properties.compass_angle });
           }
+          return images;
+        } catch {
+          return [] as MapillaryImage[];
         }
-      }
+      }));
+      const candidates = tileResults.flat();
       const images = Array.from(new Map(candidates.map(image => [image.id, image])).values()).sort((a, b) => Number(b.isPano) - Number(a.isPano) || distanceMeters(kartaViewCenter, { lat: a.latitude, lng: a.longitude }) - distanceMeters(kartaViewCenter, { lat: b.latitude, lng: b.longitude })).slice(0, 24);
       setMapillaryImages(images);
       setSelectedMapillaryImage(images[0] ?? null);
