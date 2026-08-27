@@ -363,4 +363,4 @@
 - [ ] Configure the verified Supabase server values and `DRIFT_SUPABASE_STORAGE_ENABLED=true` only on Render, then validate private portable evidence storage without creating a fake inspection record.
 - [ ] Keep public users on the transient walkthrough and approved public context only; require approved administrator/engineer roles before returning global persistent evidence, reports, contractor data, CCTV candidates, security observations, or UAV recommendations.
 - [ ] Implement and verify contractor-specific data scoping before granting contractor users access to assigned real work records.
-- [ ] Add and live-verify a visible public sign-in trigger that starts the configured Supabase magic-link flow without changing the browser-only simulator boundary.
+- [x] Add and live-verify a visible public sign-in trigger that starts the configured Supabase magic-link flow without changing the browser-only simulator boundary.
