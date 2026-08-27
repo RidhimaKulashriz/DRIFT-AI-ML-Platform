@@ -44,7 +44,7 @@ describe("external deployment artifacts", () => {
     const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
     expect(inspectionMap).not.toContain("MapView");
     expect(inspectionMap).not.toContain("forge.butterfly-effect.dev");
-    expect(inspectionMap).toContain("basemaps.cartocdn.com/light_all");
+    expect(inspectionMap).toContain("tile.openstreetmap.org");
     expect(inspectionMap).toContain("DRIFT real geographic inspection map");
     expect(inspectionMap).toContain("NBI context");
     expect(inspectionMap).toContain("Public third-party imagery only.");
@@ -173,6 +173,8 @@ describe("external deployment artifacts", () => {
     const styleSource = readFileSync(resolve(root, "client/src/index.css"), "utf8");
     expect(consoleSource).toContain("OPEN DRIFT AI");
     expect(consoleSource).toContain("transient-workspace-banner");
+    expect(consoleSource).toContain("const displayDefects = transientSimulatorRun ? transientMapDefects : defects");
+    expect(consoleSource).toContain("<span className=\"queue-count\">{displayDefects.length}</span>");
     expect(consoleSource).toContain("temporary advisories are available below");
     expect(consoleSource).toContain("SIMULATED · NOT SAVED");
     expect(consoleSource).toContain("No persistent findings in this public session");

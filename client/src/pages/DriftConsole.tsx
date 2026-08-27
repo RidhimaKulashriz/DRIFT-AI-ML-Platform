@@ -335,7 +335,6 @@ export default function DriftConsole() {
   ), [defects, severityFilter, defectTypeFilter, domainFilter, statusFilter, reviewFilter, missionFilter, assetFilter]);
   const repairTotal = (live?.estimates ?? []).reduce((sum, item) => sum + item.estimateCents, 0);
   const criticalCount = defects.filter(defect => defect.severity === "critical").length;
-  const severitySummary = (["critical", "high", "medium", "low"] as Severity[]).map(severity => ({ severity, count: defects.filter(defect => defect.severity === severity).length }));
   const connectedStatus = hardware.data?.status ?? "offline";
   const activeAlerts = (live?.alerts ?? []).filter(alert => alert.status === "open");
   const availableAssets = live?.assets ?? [];
@@ -352,6 +351,11 @@ export default function DriftConsole() {
   const canGeneratePublicReport = canOperate && persistenceAvailable;
   const transientMapDefects = useMemo(() => (transientSimulatorRun?.findings ?? []).map((finding, index) => ({ id: -(index + 1), label: `${finding.title} · transient demo`, defectType: finding.label, severity: finding.score.severity, zeroErrorScore: finding.score.score, confidencePercent: Math.round(finding.confidence * 100), latitude: finding.latitude, longitude: finding.longitude, isTransient: true })), [transientSimulatorRun]);
   const transientMapTelemetry = transientSimulatorRun?.telemetry ?? [];
+  const mapDefects = transientSimulatorRun ? transientMapDefects : defects.filter(defect => defect.missionId === missionIdForEvidence);
+  const mapTelemetry = transientSimulatorRun ? transientMapTelemetry : telemetry.filter(point => (point as typeof point & { missionId?: number }).missionId === missionIdForEvidence);
+  const displayDefects = transientSimulatorRun ? transientMapDefects : defects;
+  const displayCriticalCount = displayDefects.filter(defect => defect.severity === "critical").length;
+  const severitySummary = (["critical", "high", "medium", "low"] as Severity[]).map(severity => ({ severity, count: displayDefects.filter(defect => defect.severity === severity).length }));
   const startAvailableSimulator = () => {
     if (canPersistSimulation) runSimulator.mutate({ name: missionName });
     else runStatelessSimulator.mutate({ name: missionName });
@@ -552,7 +556,7 @@ export default function DriftConsole() {
         {workspace === "operations" && <>
           <section className="stats-grid">
             <StatBlock label="ACTIVE MISSIONS" value={String(missions.length).padStart(2, "0")} detail={isAuthenticated ? "approved persisted missions" : "sign in for mission records"} direction="up" />
-            <StatBlock label="OPEN FINDINGS" value={String(defects.length).padStart(2, "0")} detail={isAuthenticated ? `${criticalCount} critical review` : "sign in for reviewed findings"} direction="down" />
+            <StatBlock label="OPEN FINDINGS" value={String(displayDefects.length).padStart(2, "0")} detail={transientSimulatorRun ? `${displayCriticalCount} critical advisory` : isAuthenticated ? `${criticalCount} critical review` : "sign in for reviewed findings"} direction="down" />
             <StatBlock label="EXPOSURE ESTIMATE" value={formatCurrency(repairTotal)} detail={isAuthenticated ? "repair rules v1.0" : "no public cost data"} />
             <StatBlock label="FLEET BATTERY" value={telemetry[0]?.batteryPercent === undefined ? "—" : `${telemetry[0].batteryPercent}%`} detail={isAuthenticated && telemetry.length ? "latest reported" : "no public telemetry"} direction="up" />
           </section>
@@ -569,9 +573,9 @@ export default function DriftConsole() {
             </article>
 
             <article className="panel priority-panel">
-              <div className="panel-heading"><div><span className="eyebrow">ZEROERROR QUEUE</span><h2>Action first</h2></div><span className="queue-count">{defects.length}</span></div>
+              <div className="panel-heading"><div><span className="eyebrow">ZEROERROR QUEUE</span><h2>Action first</h2></div><span className="queue-count">{displayDefects.length}</span></div>
               <div className="priority-list">
-                {defects.slice(0, 4).map(defect => <button type="button" key={defect.id} className={cn("priority-item", selected.id === defect.id && "selected")} onClick={() => setSelectedId(defect.id)}><span className={cn("item-index", severityClass(defect.severity))}>{String(defect.id).slice(-2)}</span><span className="priority-content"><strong>{defect.label}</strong><small>{defect.confidencePercent}% confidence · score {defect.zeroErrorScore}</small></span><SeverityChip severity={defect.severity} /></button>)}
+                {displayDefects.slice(0, 4).map(defect => <button type="button" key={defect.id} className={cn("priority-item", selected.id === defect.id && "selected")} onClick={() => setSelectedId(defect.id)}><span className={cn("item-index", severityClass(defect.severity))}>{String(defect.id).slice(-2)}</span><span className="priority-content"><strong>{defect.label}</strong><small>{defect.confidencePercent}% confidence · score {defect.zeroErrorScore}</small></span><SeverityChip severity={defect.severity} /></button>)}
               </div>
               <button type="button" className="secondary-action full" onClick={() => setWorkspace("defects")}>OPEN MAINTENANCE QUEUE <ChevronRight /></button>
             </article>
@@ -604,7 +608,7 @@ export default function DriftConsole() {
 
         {workspace === "evidence" && <section className="workspace-page evidence-workspace">
           <div className="workspace-header"><div><span className="eyebrow">SECURE MISSION MEDIA</span><h2>Evidence vault</h2></div><div><input ref={filePickerRef} className="file-picker" type="file" accept="image/*,video/*" onChange={event => handleEvidenceFile(event.target.files?.[0])} /><button type="button" className="primary-action" onClick={() => filePickerRef.current?.click()} disabled={!canOperate || !persistenceAvailable || !portableEvidenceStorageAvailable || uploadEvidence.isPending} title={!canOperate ? "Sign in as an engineer or administrator to upload original drone media." : !persistenceAvailable || !portableEvidenceStorageAvailable ? persistenceMessage : undefined}><Upload /> {uploadEvidence.isPending ? "STORING" : !canOperate ? "SIGN IN TO UPLOAD" : !persistenceAvailable || !portableEvidenceStorageAvailable ? "PORTABLE STORAGE REQUIRED" : "UPLOAD EVIDENCE"}</button></div></div>
-          <InspectionMap defects={defects.filter(defect => defect.missionId === missionIdForEvidence)} telemetry={telemetry.filter(point => (point as typeof point & { missionId?: number }).missionId === missionIdForEvidence)} selectedId={selected.id || undefined} onSelect={setSelectedId} />
+          <InspectionMap defects={mapDefects} telemetry={mapTelemetry} selectedId={selected.id || undefined} imageryRequest={imageryRequest} onSelect={setSelectedId} />
           <AuthenticReferenceVisuals />
           <section className="public-dataset-samples" aria-label="Public dataset demo samples"><div><span className="eyebrow">PUBLIC DATASET · DEMO INFERENCE</span><h3>Licensed road-defect samples</h3><p>These images are attributable training/demo material, not DRIFT-captured media. They have no DRIFT mission, drone, or map coordinates and are excluded from site-specific findings and reports.</p></div><div className="evidence-grid">{publicDatasetSamples.map((item, index) => <article key={item.id} className="evidence-card public-dataset-card"><button type="button" className={cn("evidence-thumb", `thumb-${index % 3}`)} onClick={() => setEvidencePreview(item)} aria-label={`Preview ${item.fileName}`}><span className="sr-only">Preview {item.fileName}</span><img src={item.storageUrl} alt={item.fileName} /><span>DS</span><div className="thumb-box" /></button><div><span className="severity-chip severity-medium">PUBLIC DATASET · DEMO ONLY</span><h3>{item.fileName}</h3><p>No GPS supplied · no flight provenance · no field-inspection claim</p><small className="provenance-line">{evidenceProvenance(item.provenance)}{evidenceSourceUrl(item.provenance) ? <a href={evidenceSourceUrl(item.provenance)!} target="_blank" rel="noreferrer"> · VIEW DATASET</a> : null}</small></div><div className="evidence-actions"><button type="button" onClick={() => setEvidencePreview(item)}>VIEW</button><a href={item.storageUrl} target="_blank" rel="noreferrer">OPEN SAMPLE <ChevronRight /></a><a href={PUBLIC_DATASET_CRACK_MASK_URL} target="_blank" rel="noreferrer">VIEW CRACK MASK</a><button type="button" disabled title="No published GPS coordinates are attached to this public dataset display sample.">NO GPS MAP</button></div></article>)}</div></section>
           <InfrastructureFootageEvidence onPreview={setEvidencePreview} />
