@@ -60,8 +60,6 @@ const navItems: Array<{ key: Workspace; label: string; icon: typeof Radar }> = [
 const PUBLIC_DATASET_IMAGE_URL = "https://raw.githubusercontent.com/biankatpas/Cracks-and-Potholes-in-Road-Images-Dataset/master/PreviewImages/1097248_DF_070_070BDF0010_04158_RAW.jpg";
 const PUBLIC_DATASET_CRACK_MASK_URL = "https://raw.githubusercontent.com/biankatpas/Cracks-and-Potholes-in-Road-Images-Dataset/master/PreviewImages/1097248_DF_070_070BDF0010_04158_CRACK.png";
 const BACKEND_ORIGIN = (import.meta.env.VITE_BACKEND_URL || "https://drift-node-api.onrender.com").replace(/\/$/, "");
-const DRONE_FOOTAGE_URL = "https://videos.pexels.com/video-files/38588305/16389117_2560_1440_25fps.mp4";
-const DRONE_FOOTAGE_SOURCE_URL = "https://www.pexels.com/video/aerial-view-of-building-under-construction-site-38588305/";
 
 function resolveBackendAssetUrl(url?: string | null) {
   if (!url) return undefined;
@@ -86,18 +84,6 @@ const publicDatasetSamples: EvidenceItem[] = [{
     note: "Public dataset sample for UI and inference demonstration only. Not DRIFT capture, not UAV evidence, not a site inspection, and no GPS was published for this display card.",
   },
 }];
-
-function DroneFootageCard({ onOpenEvidence }: { onOpenEvidence: () => void }) {
-  return <article className="drone-footage-card">
-    <div className="drone-footage-copy">
-      <div className="panel-heading"><div><span className="eyebrow">LIVE FLIGHT REFERENCE · REAL DRONE FOOTAGE</span><h2>Construction site pass</h2></div><span className="drone-footage-status"><CircleDot /> SOURCE VERIFIED</span></div>
-      <p>Real aerial footage of a building construction site, included as a visual reference for UAV inspection workflows. This clip is not a DRIFT evidence record and does not create findings, GPS telemetry, or engineering conclusions.</p>
-      <div className="drone-footage-meta"><span><Video /> 4K / 25 FPS source</span><span><MapPinned /> Site-overview perspective</span><span><ShieldCheck /> Pexels free-use license</span></div>
-      <div className="drone-footage-actions"><button type="button" className="primary-action" onClick={onOpenEvidence}>OPEN EVIDENCE WORKSPACE <ChevronRight /></button><a href={DRONE_FOOTAGE_SOURCE_URL} target="_blank" rel="noreferrer">VIEW SOURCE & LICENSE</a></div>
-    </div>
-    <div className="drone-footage-player"><video src={DRONE_FOOTAGE_URL} controls muted loop playsInline preload="metadata" aria-label="Real drone footage of a building construction site" /><span className="drone-footage-caption">REFERENCE ONLY · NOT FIELD-CAPTURED EVIDENCE</span></div>
-  </article>;
-}
 
 const infrastructureFootageSamples: Array<EvidenceItem & { analysis: string; sourceUrl: string }> = [
   { id: -201, fileName: "Road crack pass · real reference footage", storageUrl: "https://videos.pexels.com/video-files/14501261/14501261-hd_1920_1080_24fps.mp4", mediaKind: "video", source: "reference", latitude: null, longitude: null, analysis: "Demo observation: visible longitudinal asphalt cracking and surface breakup. No severity, depth, load rating, or repair decision is inferred.", sourceUrl: "https://www.pexels.com/video/14501261/", provenance: { kind: "real-reference-video", author: "Pexels contributor", license: "Pexels free-use", sourceUrl: "https://www.pexels.com/video/14501261/", note: "Reference footage only; not DRIFT field evidence." } },
@@ -559,7 +545,7 @@ export default function DriftConsole() {
           {transientSimulatorRun && <section className="stats-grid border border-sky-300 bg-sky-50" aria-label="Transient simulator metrics"><StatBlock label="TRANSIENT CANDIDATES" value={String(transientSimulatorRun.findings.length).padStart(2, "0")} detail="browser-only advisory data" /><StatBlock label="TRANSIENT TELEMETRY" value={String(transientSimulatorRun.telemetry.length).padStart(2, "0")} detail="map context only · not stored" /><StatBlock label="PERSISTENT LINKAGE" value="NONE" detail="no asset, evidence, ticket, report, CCTV, security, or UAV action" /><StatBlock label="SESSION STATUS" value="TEMP" detail="cleared when this browser session ends" /></section>}
 
           <PublicDatasetVisualCard onPreview={() => setEvidencePreview(publicDatasetSamples[0]!)} onOpenEvidence={() => setWorkspace("evidence")} />
-          <DroneFootageCard onOpenEvidence={() => setWorkspace("evidence")} />
+          <InfrastructureFootageEvidence onPreview={setEvidencePreview} />
           <section className="operations-grid">
             <article ref={mapPanelRef} className="panel map-panel">
               <div className="panel-heading"><div><span className="eyebrow">GEO-SPATIAL WORKBENCH</span><h2>Live defect field</h2></div><button type="button" className="icon-button" onClick={() => setWorkspace("defects")} aria-label="Open defect filters" title="Open defect filters"><SlidersHorizontal /></button></div>
