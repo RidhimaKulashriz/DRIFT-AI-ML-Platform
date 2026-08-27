@@ -135,6 +135,17 @@ describe("external deployment artifacts", () => {
     expect(inspectionMap).toContain("select any marker or report item");
   });
 
+  it("keeps the temporary advisory grid readable by making telemetry optional and focusing the simulated grid", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const inspectionMap = readFileSync(resolve(root, "client/src/components/InspectionMap.tsx"), "utf8");
+    expect(inspectionMap).toContain("const [telemetryVisible, setTelemetryVisible] = useState(false)");
+    expect(inspectionMap).toContain("const shouldShowTelemetry = telemetryVisible || validDefects.length === 0");
+    expect(inspectionMap).toContain("FOCUS 15-POINT GRID");
+    expect(inspectionMap).toContain("SHOW ${validTelemetry.length} TELEMETRY");
+    expect(inspectionMap).toContain("map.panTo(selectedDefect.point)");
+    expect(inspectionMap).toContain("map.fitBounds(bounds, validDefects.length ? 54 : 84)");
+  });
+
   it("allows a personal-email magic-link request without implying protected-role access", () => {
     const root = resolve(import.meta.dirname, "..");
     const signInSource = readFileSync(resolve(root, "client/src/const.ts"), "utf8");
@@ -143,6 +154,17 @@ describe("external deployment artifacts", () => {
     expect(signInSource).toContain("protected DRIFT roles require separate approval");
     expect(signInSource).not.toContain("approved work email");
     expect(consoleSource).toContain("Sign in with any email. Protected DRIFT roles require separate approval.");
+  });
+
+  it("explains Supabase magic-link input, rate-limit, and redirect failures without exposing configuration", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const supabaseSource = readFileSync(resolve(root, "client/src/lib/supabase.ts"), "utf8");
+    const signInSource = readFileSync(resolve(root, "client/src/const.ts"), "utf8");
+    expect(supabaseSource).toContain("const emailPattern");
+    expect(supabaseSource).toContain("Wait at least 60 seconds before retrying");
+    expect(supabaseSource).toContain("Supabase Auth URL Configuration");
+    expect(supabaseSource).toContain("A work email is not required");
+    expect(signInSource).toContain("magicLinkErrorMessage(error)");
   });
 
   it("keeps public walkthroughs transient even when production persistence is available", () => {
