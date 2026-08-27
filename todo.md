@@ -325,7 +325,7 @@
 - [ ] Add low-friction government handoff records with expiring review links and approved-system export adapters, keeping work-order approval explicitly human-authorized and integration credentials server-only.
 - [ ] Add contractor SLA tracking and evidence-based reinspection verification so contractor closure remains distinct from engineer-verified repair.
 - [ ] Add a controlled public-trust view that publishes only approved, privacy-safe, non-sensitive ticket status information after owner authorization; never expose raw CCTV, personal data, restricted evidence, or unverified AI candidates.
-- [ ] Diagnose and fix all currently failing Vercel production assets and HTTP/2 resource-load errors, then verify the public frontend directly.
+- [x] Diagnose and fix all currently failing Vercel production assets and HTTP/2 resource-load errors, then verify the public frontend directly.
 - [x] Remove or conditionally configure the unresolved Vercel analytics script placeholder so production never requests `/%VITE_ANALYTICS_ENDPOINT%/umami`.
 - [ ] Verify and repair every public DRIFT frontend asset, visible control, Vercel-to-Render API flow, simulator, AI, map, evidence, report, authentication, storage, and safe drone-ingress boundary; label any unavoidable external-provider prerequisite rather than simulating success.
 - [x] Repair the public dataset preview action so it opens its modal from Operations, Defect Control, Reports, and Hardware Bridge, not only from Evidence Vault.
