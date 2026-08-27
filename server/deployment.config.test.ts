@@ -127,7 +127,12 @@ describe("external deployment artifacts", () => {
     const root = resolve(import.meta.dirname, "..");
     const inspectionMap = readFileSync(resolve(root, "client/src/components/InspectionMap.tsx"), "utf8");
     const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
-    expect(consoleSource).toContain("Temporary advisory inspection register");
+    expect(consoleSource).toContain("Infrastructure inspection set");
+    expect(consoleSource).toContain("VISIBLE LONGITUDINAL RAIL CRACK");
+    expect(consoleSource).toContain("VISIBLE CONCRETE SPALLING / EXPOSED REBAR");
+    expect(consoleSource).toContain("upload.wikimedia.org");
+    expect(consoleSource).not.toContain("TRACK CONDITION REVIEW ZONE · NOT CONFIRMED DAMAGE");
+    expect(consoleSource).not.toContain("UNDERSIDE INSPECTION ZONE · NOT CONFIRMED CRACK");
     expect(consoleSource).toContain("transientSimulatorRun.findings.map");
     expect(consoleSource).toContain("View marker + KartaView");
     expect(consoleSource).toContain("inspectTransientAdvisory");
