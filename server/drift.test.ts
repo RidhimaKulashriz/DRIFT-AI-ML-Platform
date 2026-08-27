@@ -118,6 +118,11 @@ describe("simulator lifecycle", () => {
     expect(result.findings).toHaveLength(3);
     expect(result.telemetry).toHaveLength(12);
   });
+
+  it("blocks unauthenticated callers from creating persistent simulator records", async () => {
+    const ctx = { user: null, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
+    await expect(appRouter.createCaller(ctx).drift.runSimulator({ name: "Public persistent demo attempt" })).rejects.toThrow(/login|unauthorized|authentication/i);
+  });
 });
 
 describe("engineering review state and role boundary", () => {

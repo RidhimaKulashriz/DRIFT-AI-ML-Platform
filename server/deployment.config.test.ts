@@ -86,7 +86,7 @@ describe("external deployment artifacts", () => {
     expect(consoleSource).toContain("BROWSER-ONLY WALKTHROUGH · NO PERSISTENCE");
     expect(consoleSource).toContain("Not an engineering report, not field evidence, not a safety determination");
     expect(consoleSource).toContain("**Persistence:** None. This content is discarded when the page session ends.");
-    expect(consoleSource).toContain("RUN TRANSIENT DEMO FIRST");
+    expect(consoleSource).toContain("BUILD TRANSIENT BRIEFING");
   });
 
   it("keeps transient simulator metrics visibly separate from persisted Operations metrics", () => {
@@ -96,5 +96,16 @@ describe("external deployment artifacts", () => {
     expect(consoleSource).toContain("TRANSIENT TELEMETRY");
     expect(consoleSource).toContain("PERSISTENT LINKAGE");
     expect(consoleSource).toContain("no asset, evidence, ticket, report, CCTV, security, or UAV action");
+  });
+
+  it("keeps public walkthroughs transient even when production persistence is available", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
+    const routerSource = readFileSync(resolve(root, "server/routers.ts"), "utf8");
+    expect(consoleSource).toContain("const canPersistSimulation = canOperate && persistenceAvailable");
+    expect(consoleSource).toContain("RUN PERSISTENT ENGINEERING DEMO");
+    expect(consoleSource).toContain("{transientSimulatorRun && <article className=\"report-preview-panel\">");
+    expect(routerSource).toContain("runSimulator: protectedProcedure");
+    expect(routerSource).toContain('requireDriftRole(ctx.user, ["admin", "engineer"])');
   });
 });

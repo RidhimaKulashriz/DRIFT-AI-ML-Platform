@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: free
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
-    startCommand: pnpm start
+    startCommand: pnpm drizzle-kit migrate && pnpm start
     healthCheckPath: /
     autoDeploy: true
     envVars:

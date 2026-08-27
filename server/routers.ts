@@ -38,9 +38,10 @@ export const appRouter = router({
       if (!validation.valid) throw new Error(validation.message);
       return addTelemetryRecord(input);
     }),
-    runSimulator: publicProcedure.input(z.object({ name: z.string().min(3).max(180).default("Demo corridor patrol") })).mutation(async ({ ctx, input }) => {
+    runSimulator: protectedProcedure.input(z.object({ name: z.string().min(3).max(180).default("Demo corridor patrol") })).mutation(async ({ ctx, input }) => {
+      requireDriftRole(ctx.user, ["admin", "engineer"]);
       const simulator = await buildSimulatorMission(input.name);
-      const record = await createDemoMissionRecord({ name: input.name, createdBy: ctx.user?.id ?? null, simulator });
+      const record = await createDemoMissionRecord({ name: input.name, createdBy: ctx.user.id, simulator });
       return { ...record, findings: simulator.findings, telemetry: simulator.telemetry };
     }),
     runStatelessSimulator: publicProcedure.input(z.object({ name: z.string().min(3).max(180).default("Demo corridor patrol") })).mutation(async ({ input }) => {

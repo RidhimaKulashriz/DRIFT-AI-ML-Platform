@@ -356,4 +356,6 @@
 - [ ] Model camera/bridge security observations only from authorized health and audit inputs; do not claim malware detection or scan firmware/network traffic without an approved, deployed security integration.
 - [x] Add a visible Hardware Bridge security-readiness panel that distinguishes authenticated bridge health/provenance from unavailable malware, firmware, device, network, CCTV, tamper, and intrusion detection; the unsupported operation remains disabled.
 - [x] Separate active transient simulator candidate and telemetry counts from persisted Operations metrics so browser-only demo output cannot be misread as a real inspection record.
-- [ ] Perform a read-only assessment of the rotated Render PostgreSQL schema and Drizzle migration history before considering any additive migration.
+- [x] Perform a read-only assessment of the rotated Render PostgreSQL schema and Drizzle migration history before considering any additive migration.
+- [x] Apply the confirmed additive PostgreSQL migrations through the secure Render service configuration and verify core, accountability, contractor/UAV, and security schema readiness without creating operational records.
+- [x] Prevent unauthenticated public demo requests from creating persistent simulator missions, evidence, reports, alerts, or map findings now that the production PostgreSQL database is available.
