@@ -31,8 +31,14 @@ export function magicLinkErrorMessage(error: unknown) {
 export async function getSupabaseAccessToken() {
   const client = getBrowserClient();
   if (!client) return null;
-  const { data } = await client.auth.getSession();
-  return data.session?.access_token ?? null;
+  try {
+    const sessionPromise = client.auth.getSession();
+    const timeoutPromise = new Promise<null>(resolve => window.setTimeout(() => resolve(null), 1500));
+    const result = await Promise.race([sessionPromise, timeoutPromise]);
+    return result && "data" in result ? result.data.session?.access_token ?? null : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function requestSupabaseMagicLink(email: string) {
