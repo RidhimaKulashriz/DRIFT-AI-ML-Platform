@@ -113,7 +113,7 @@ describe("external deployment artifacts", () => {
     const root = resolve(import.meta.dirname, "..");
     const inspectionMap = readFileSync(resolve(root, "client/src/components/InspectionMap.tsx"), "utf8");
     const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
-    expect(inspectionMap).toContain("OPEN KARTAVIEW");
+    expect(inspectionMap).toContain("OPEN STREET IMAGE");
     expect(inspectionMap).toContain("KARTAVIEW · STREET-LEVEL IMAGERY");
     expect(inspectionMap).toContain("KartaView could not be reached");
     expect(inspectionMap).toContain("not DRIFT evidence, not a crack confirmation");
@@ -140,6 +140,8 @@ describe("external deployment artifacts", () => {
     expect(inspectionMap).toContain("imageryRequest?: number");
     expect(inspectionMap).toContain("completedImageryRequest");
     expect(inspectionMap).toContain("select any marker");
+    expect(inspectionMap).toContain("OPEN FULL STREET IMAGE");
+    expect(inspectionMap).toContain("Green marker = public street image");
   });
 
   it("keeps the temporary advisory grid readable by making telemetry optional and focusing the simulated grid", () => {
