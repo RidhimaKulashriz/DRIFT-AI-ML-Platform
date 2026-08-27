@@ -163,7 +163,8 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
   useEffect(() => {
     const map = mapRef.current;
     if (!map || mapState !== "ready" || !selectedDefect) return;
-    map.getStreetView().setVisible(false);
+    const panorama = map.getStreetView?.();
+    panorama?.setVisible?.(false);
     map.panTo(selectedDefect.point);
     map.setZoom(Math.max(map.getZoom() ?? 15, 16));
   }, [mapState, selectedDefect]);
@@ -202,7 +203,8 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     if (!map || !window.google?.maps) return;
     const bounds = new window.google.maps.LatLngBounds();
     publicNbiBridgeContext.forEach(point => bounds.extend({ lat: point.latitude, lng: point.longitude }));
-    map.getStreetView().setVisible(false);
+    const panorama = map.getStreetView?.();
+    panorama?.setVisible?.(false);
     map.fitBounds(bounds, 60);
   };
   const focusTemporaryGrid = () => {
@@ -210,7 +212,8 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     if (!map || !window.google?.maps || !transientDefects.length) return;
     const bounds = new window.google.maps.LatLngBounds();
     transientDefects.forEach(item => bounds.extend(item.point));
-    map.getStreetView().setVisible(false);
+    const panorama = map.getStreetView?.();
+    panorama?.setVisible?.(false);
     setStreetViewStatus("idle");
     map.fitBounds(bounds, 54);
   };
@@ -222,7 +225,8 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
       const response = await new window.google.maps.StreetViewService().getPanorama({ location: selectedDefect.point, radius: 250 });
       const pano = response.data.location?.pano;
       if (!pano) throw new Error("No panorama");
-      const panorama = map.getStreetView();
+      const panorama = map.getStreetView?.();
+      if (!panorama) throw new Error("Street View panorama is unavailable");
       panorama.setPano(pano);
       panorama.setPov({ heading: 0, pitch: 0 });
       panorama.setVisible(true);
