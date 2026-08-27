@@ -107,7 +107,7 @@ export function InspectionMap({ defects, telemetry, selectedId, imageryRequest =
           }
         }
       }
-      const images = Array.from(new Map(candidates.map(image => [image.id, image])).values()).sort((a, b) => distanceMeters(kartaViewCenter, { lat: a.latitude, lng: a.longitude }) - distanceMeters(kartaViewCenter, { lat: b.latitude, lng: b.longitude }) || Number(b.isPano) - Number(a.isPano)).slice(0, 24);
+      const images = Array.from(new Map(candidates.map(image => [image.id, image])).values()).sort((a, b) => Number(b.isPano) - Number(a.isPano) || distanceMeters(kartaViewCenter, { lat: a.latitude, lng: a.longitude }) - distanceMeters(kartaViewCenter, { lat: b.latitude, lng: b.longitude })).slice(0, 24);
       setMapillaryImages(images);
       setSelectedMapillaryImage(images[0] ?? null);
       setMapillaryStatus(images.length ? "ready" : "empty");
