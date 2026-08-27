@@ -87,8 +87,10 @@ export function InspectionMap({ defects, telemetry, selectedId, imageryRequest =
         const y = (tileY + localY / extent) / n;
         return { lng: x * 360 - 180, lat: Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) * 180 / Math.PI };
       };
-      const tileRequests = [centerX - 1, centerX, centerX + 1].flatMap(tileX => [centerY - 1, centerY, centerY + 1].map(tileY => ({ tileX, tileY })));
-      const tileResults = await Promise.all(tileRequests.map(async ({ tileX, tileY }) => {
+      const tileRequests = [{ tileX: centerX, tileY: centerY }, ...[centerX - 1, centerX, centerX + 1].flatMap(tileX => [centerY - 1, centerY, centerY + 1].map(tileY => ({ tileX, tileY }))).filter(tile => tile.tileX !== centerX || tile.tileY !== centerY)];
+      const tileResults: MapillaryImage[][] = [];
+      for (const { tileX, tileY } of tileRequests) {
+        const result = await (async () => {
         try {
           const tileUrl = `https://tiles.mapillary.com/maps/vtp/mly1_public/2/${zoom}/${tileX}/${tileY}?access_token=${encodeURIComponent(mapillaryToken)}`;
           const response = await fetch(tileUrl, { headers: { Accept: "application/x-protobuf" } });
@@ -111,7 +113,10 @@ export function InspectionMap({ defects, telemetry, selectedId, imageryRequest =
         } catch {
           return [] as MapillaryImage[];
         }
-      }));
+        })();
+        tileResults.push(result);
+        if (result.length) break;
+      }
       const candidates = tileResults.flat();
       const images = Array.from(new Map(candidates.map(image => [image.id, image])).values()).sort((a, b) => Number(b.isPano) - Number(a.isPano) || distanceMeters(kartaViewCenter, { lat: a.latitude, lng: a.longitude }) - distanceMeters(kartaViewCenter, { lat: b.latitude, lng: b.longitude })).slice(0, 24);
       setMapillaryImages(images);
