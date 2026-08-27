@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 type Severity = "low" | "medium" | "high" | "critical";
 type MapDefect = { id: number; label: string; severity: Severity; latitude: string | number; longitude: string | number; isTransient?: boolean };
-type InspectionMapProps = { defects: MapDefect[]; telemetry: Array<{ latitude: string | number; longitude: string | number }>; selectedId?: number; onSelect: (id: number) => void; className?: string };
+type InspectionMapProps = { defects: MapDefect[]; telemetry: Array<{ latitude: string | number; longitude: string | number }>; selectedId?: number; streetViewRequest?: number; onSelect: (id: number) => void; className?: string };
 type PublicBridgeContext = { structureNumber: string; title: string; latitude: number; longitude: number; deckCondition: string; source: string; sourceUrl: string };
 
 const colors: Record<Severity, string> = { critical: "#c81e1e", high: "#e26d16", medium: "#b98600", low: "#177a47" };
@@ -36,11 +36,12 @@ function asCoordinates(value: { latitude: string | number; longitude: string | n
   return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 ? { lat, lng } : null;
 }
 
-export function InspectionMap({ defects, telemetry, selectedId, onSelect, className }: InspectionMapProps) {
+export function InspectionMap({ defects, telemetry, selectedId, streetViewRequest = 0, onSelect, className }: InspectionMapProps) {
   const mapElement = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const projectMarkers = useRef<google.maps.Marker[]>([]);
   const contextMarkers = useRef<google.maps.Marker[]>([]);
+  const completedStreetViewRequest = useRef(0);
   const [mapState, setMapState] = useState<"loading" | "ready" | "missing-key" | "error">("loading");
   const [streetViewStatus, setStreetViewStatus] = useState<"idle" | "checking" | "open" | "unavailable">("idle");
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim();
@@ -95,7 +96,7 @@ export function InspectionMap({ defects, telemetry, selectedId, onSelect, classN
   }, [mapState, onSelect, selectedId, validDefects, validTelemetry]);
 
   const showNbiContext = () => { const map = mapRef.current; if (!map || !window.google?.maps) return; const bounds = new window.google.maps.LatLngBounds(); publicNbiBridgeContext.forEach(point => bounds.extend({ lat: point.latitude, lng: point.longitude })); map.getStreetView().setVisible(false); map.fitBounds(bounds, 60); };
-  const openStreetView = async () => {
+  const openStreetView = useCallback(async () => {
     const map = mapRef.current;
     if (!map || !selectedDefect || !window.google?.maps) return;
     setStreetViewStatus("checking");
@@ -111,7 +112,13 @@ export function InspectionMap({ defects, telemetry, selectedId, onSelect, classN
     } catch {
       setStreetViewStatus("unavailable");
     }
-  };
+  }, [selectedDefect]);
+
+  useEffect(() => {
+    if (!streetViewRequest || streetViewRequest === completedStreetViewRequest.current || mapState !== "ready" || !selectedDefect) return;
+    completedStreetViewRequest.current = streetViewRequest;
+    void openStreetView();
+  }, [mapState, openStreetView, selectedDefect, streetViewRequest]);
 
   return <section className={cn("relative min-h-[430px] overflow-hidden border border-slate-700 bg-slate-950", className)} aria-label="Google Maps infrastructure context">
     <div ref={mapElement} className="absolute inset-0" />
@@ -119,7 +126,7 @@ export function InspectionMap({ defects, telemetry, selectedId, onSelect, classN
     {mapState === "missing-key" && <div className="absolute inset-0 grid place-items-center bg-slate-950 p-8 text-center text-xs font-semibold uppercase tracking-[.14em] text-slate-200"><div><strong className="block text-sm text-white">Google Maps configuration required</strong><span className="mt-3 block max-w-md normal-case font-normal leading-5 tracking-normal text-slate-400">Set the browser-visible Vercel variable <code>VITE_GOOGLE_MAPS_API_KEY</code> with a domain-restricted Google Maps JavaScript API key. No fallback map or invented locations are shown.</span></div></div>}
     {mapState === "error" && <div className="absolute inset-0 grid place-items-center bg-slate-950 p-8 text-center text-xs font-semibold uppercase tracking-[.14em] text-slate-200"><div><strong className="block text-sm text-white">Google Maps could not load</strong><span className="mt-3 block max-w-md normal-case font-normal leading-5 tracking-normal text-slate-400">Verify the browser key, allowed Vercel domain, and Google Maps JavaScript API. Project and public-context markers remain intentionally unavailable until the map is live.</span></div></div>}
     <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[calc(100%-1.5rem)] bg-slate-950/95 px-3 py-2 text-[10px] font-semibold uppercase tracking-[.13em] text-slate-100 shadow-xl"><div>{validDefects.length} DRIFT project finding{validDefects.length === 1 ? "" : "s"} · {validTelemetry.length} telemetry point{validTelemetry.length === 1 ? "" : "s"}</div><div className="mt-2 flex flex-wrap gap-2 text-[9px] tracking-[.08em]">{severityCounts.map(item => <span key={item.severity} className="flex items-center gap-1"><i className="h-2 w-2 rounded-full" style={{ backgroundColor: colors[item.severity] }} />{item.count} {item.severity}</span>)}</div></div>
-    <div className="absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-center gap-2 bg-slate-950/95 p-2.5 text-[9px] font-semibold uppercase tracking-[.1em] text-slate-100 shadow-xl"><span className="mr-auto">● numbered temporary advisory · ◆ public NBI context</span><button type="button" onClick={openStreetView} disabled={!selectedDefect || mapState !== "ready" || streetViewStatus === "checking"} className="pointer-events-auto border border-sky-300/70 bg-sky-900/90 px-2.5 py-1.5 text-[9px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">{streetViewStatus === "checking" ? "CHECKING STREET VIEW" : "OPEN STREET VIEW"}</button><button type="button" onClick={showNbiContext} className="pointer-events-auto border border-violet-300/70 bg-violet-900/90 px-2.5 py-1.5 text-[9px] font-bold text-white">FOCUS PUBLIC NBI CONTEXT</button><a className="pointer-events-auto border border-slate-500 px-2.5 py-1.5 text-[9px] font-bold text-slate-100" href="https://geodata.bts.gov/datasets/usdot::national-bridge-inventory/about" target="_blank" rel="noreferrer">NBI SOURCE</a></div>
+    <div className="absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-center gap-2 bg-slate-950/95 p-2.5 text-[9px] font-semibold uppercase tracking-[.1em] text-slate-100 shadow-xl"><span className="mr-auto">● numbered temporary advisory · select any marker or report item · ◆ public NBI context</span><button type="button" onClick={openStreetView} disabled={!selectedDefect || mapState !== "ready" || streetViewStatus === "checking"} className="pointer-events-auto border border-sky-300/70 bg-sky-900/90 px-2.5 py-1.5 text-[9px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">{streetViewStatus === "checking" ? "CHECKING STREET VIEW" : "OPEN STREET VIEW"}</button><button type="button" onClick={showNbiContext} className="pointer-events-auto border border-violet-300/70 bg-violet-900/90 px-2.5 py-1.5 text-[9px] font-bold text-white">FOCUS PUBLIC NBI CONTEXT</button><a className="pointer-events-auto border border-slate-500 px-2.5 py-1.5 text-[9px] font-bold text-slate-100" href="https://geodata.bts.gov/datasets/usdot::national-bridge-inventory/about" target="_blank" rel="noreferrer">NBI SOURCE</a></div>
     {streetViewStatus === "unavailable" && <div className="absolute bottom-16 left-3 z-10 max-w-xs bg-amber-950/95 px-3 py-2 text-[10px] leading-4 text-amber-50 shadow-xl" role="status">Street View is not available within 250 m of this selected coordinate. No imagery is substituted or treated as DRIFT evidence.</div>}
     {streetViewStatus === "open" && <div className="absolute bottom-16 left-3 z-10 max-w-xs bg-sky-950/95 px-3 py-2 text-[10px] leading-4 text-sky-50 shadow-xl" role="status">Public Street View opened for the selected coordinate. It is third-party public imagery, not DRIFT evidence or a defect confirmation.</div>}
   </section>;

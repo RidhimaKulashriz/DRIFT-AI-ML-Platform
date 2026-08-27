@@ -121,6 +121,20 @@ describe("external deployment artifacts", () => {
     expect(consoleSource).toContain("scrollIntoView({ behavior: \"smooth\", block: \"center\" })");
   });
 
+  it("gives every temporary report advisory its own map and Street View inspection action", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const inspectionMap = readFileSync(resolve(root, "client/src/components/InspectionMap.tsx"), "utf8");
+    const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
+    expect(consoleSource).toContain("Temporary advisory inspection register");
+    expect(consoleSource).toContain("transientSimulatorRun.findings.map");
+    expect(consoleSource).toContain("View marker + Street View");
+    expect(consoleSource).toContain("inspectTransientAdvisory");
+    expect(consoleSource).toContain("streetViewRequest={streetViewRequest}");
+    expect(inspectionMap).toContain("streetViewRequest?: number");
+    expect(inspectionMap).toContain("completedStreetViewRequest");
+    expect(inspectionMap).toContain("select any marker or report item");
+  });
+
   it("keeps public walkthroughs transient even when production persistence is available", () => {
     const root = resolve(import.meta.dirname, "..");
     const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
