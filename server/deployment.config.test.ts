@@ -87,10 +87,15 @@ describe("external deployment artifacts", () => {
   it("keeps transient simulator briefings browser-only and distinct from stored engineering reports", () => {
     const root = resolve(import.meta.dirname, "..");
     const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
-    expect(consoleSource).toContain("BROWSER-ONLY WALKTHROUGH · NO PERSISTENCE");
-    expect(consoleSource).toContain("Not an engineering report, not field evidence, not a safety determination");
-    expect(consoleSource).toContain("**Persistence:** None. This content is discarded when the page session ends.");
-    expect(consoleSource).toContain("BUILD TRANSIENT BRIEFING");
+    expect(consoleSource).toContain("BROWSER-ONLY AI-ANALYSIS · NO PERSISTENCE");
+    expect(consoleSource).toContain("Transient simulator briefing is ready");
+    expect(consoleSource).toContain("# DRIFT transient AI-analysis briefing");
+    expect(consoleSource).toContain("Numbered temporary advisory register");
+    expect(consoleSource).toContain("AI-analysis interpretation");
+    expect(consoleSource).toContain("**Persistence:** None. This briefing is held only in the current browser session and is discarded when the session ends.");
+    expect(consoleSource).toContain("DOWNLOAD TRANSIENT AI-ANALYSIS");
+    expect(consoleSource).toContain("Persistent PDF reports are protected");
+    expect(consoleSource).toContain("SIGN IN TO VIEW APPROVED REPORTS");
   });
 
   it("keeps transient simulator metrics visibly separate from persisted Operations metrics", () => {
@@ -100,6 +105,20 @@ describe("external deployment artifacts", () => {
     expect(consoleSource).toContain("TRANSIENT TELEMETRY");
     expect(consoleSource).toContain("PERSISTENT LINKAGE");
     expect(consoleSource).toContain("no asset, evidence, ticket, report, CCTV, security, or UAV action");
+  });
+
+  it("keeps Street View and numbered temporary markers available without treating public imagery as DRIFT evidence", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const inspectionMap = readFileSync(resolve(root, "client/src/components/InspectionMap.tsx"), "utf8");
+    const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
+    expect(inspectionMap).toContain("streetViewControl: true");
+    expect(inspectionMap).toContain("OPEN STREET VIEW");
+    expect(inspectionMap).toContain("Street View is not available within 250 m");
+    expect(inspectionMap).toContain("not DRIFT evidence or a defect confirmation");
+    expect(inspectionMap).toContain("SIMULATED DEMO advisory");
+    expect(inspectionMap).toContain("numbered temporary advisory");
+    expect(consoleSource).toContain("isTransient: true");
+    expect(consoleSource).toContain("scrollIntoView({ behavior: \"smooth\", block: \"center\" })");
   });
 
   it("keeps public walkthroughs transient even when production persistence is available", () => {
