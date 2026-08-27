@@ -366,3 +366,6 @@
 - [x] Add and live-verify a visible public sign-in trigger that starts the configured Supabase magic-link flow without changing the browser-only simulator boundary.
 - [x] Fix and live-verify transient-demo visibility and activation after Supabase sign-in, while retaining the browser-only no-persistence boundary.
 - [x] Diagnose and fix the reported Google Maps visibility issue on the deployed DRIFT console, then live-verify map tiles, controls, and transient markers without exposing operational records.
+- [ ] Expand the browser-only transient simulator to at least 15 correctly placed advisory findings and matching temporary telemetry, retaining no persistent linkage or fabricated operational records.
+- [ ] Restore and live-verify the transient browser-only report/briefing workflow without creating a real report record or engineering artifact.
+- [ ] Diagnose and correct the reported Google Maps configuration-required state using a browser-safe domain-restricted key only; do not introduce an invented-location fallback.

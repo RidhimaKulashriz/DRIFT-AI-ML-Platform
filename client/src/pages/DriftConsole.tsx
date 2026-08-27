@@ -379,6 +379,10 @@ export default function DriftConsole() {
     setTransientBriefing(`# DRIFT transient simulator briefing\n\n**Status:** Browser-only demonstration artifact. Not an engineering report, not field evidence, not a safety determination, and not suitable for contractor routing, closure, CCTV validation, security observation, or UAV action.\n\n**Walkthrough:** ${transientSimulatorRun.name}\n**Generated in browser:** ${new Date().toISOString()}\n**Persistence:** None. This content is discarded when the page session ends.\n\n## Temporary advisory candidates\n${entries}\n\n## Required real-world controls before any operational action\n- Capture authorised original media with provenance, consent/privacy scope, and retention controls.\n- Obtain qualified engineer review and approved asset/owner context.\n- Use real contractor identity, ticket assignment, evidence proof, and independent verification.\n- Complete operator, site, legal, airspace, and aircraft checks before any separately authorised UAV activity.`);
     toast.success("Transient briefing ready. It remains browser-only and non-operational.");
   };
+  const openTransientReport = () => {
+    buildTransientBriefing();
+    setWorkspace("reports");
+  };
   const downloadTransientBriefing = () => {
     if (!transientBriefing) return;
     const url = URL.createObjectURL(new Blob([transientBriefing], { type: "text/markdown;charset=utf-8" }));
@@ -486,7 +490,7 @@ export default function DriftConsole() {
         </section>
 
         {!persistenceAvailable && <section className="safety-banner persistence-banner" role="status"><CloudCog /><div><strong>PERSISTENCE REQUIRED</strong><span>{persistenceMessage} The current public dashboard and DRIFT AI remain available in read-only mode.</span></div><button type="button" onClick={() => setWorkspace("hardware")}>VIEW HARDWARE GUIDE <ChevronRight /></button></section>}
-        {transientSimulatorRun && <section className="safety-banner persistence-banner" role="status"><Play /><div><strong>TRANSIENT SIMULATOR WALKTHROUGH</strong><span>{transientSimulatorRun.findings.length} advisory demo findings and {transientSimulatorRun.telemetry.length} temporary telemetry points are visible only in this browser session. They are not project evidence and cannot create tickets, reports, CCTV candidates, security observations, or UAV actions.</span></div><button type="button" onClick={() => setTransientSimulatorRun(null)}>CLEAR TRANSIENT DEMO</button></section>}
+        {transientSimulatorRun && <section className="safety-banner persistence-banner" role="status"><Play /><div><strong>TRANSIENT SIMULATOR WALKTHROUGH</strong><span>{transientSimulatorRun.findings.length} advisory demo findings and {transientSimulatorRun.telemetry.length} temporary telemetry points are visible only in this browser session. They are not project evidence and cannot create tickets, reports, CCTV candidates, security observations, or UAV actions.</span></div><div className="safety-banner-actions"><button type="button" onClick={openTransientReport}><FileText /> OPEN DEMO REPORT</button><button type="button" onClick={() => setTransientSimulatorRun(null)}>CLEAR TRANSIENT DEMO</button></div></section>}
 
         {activeAlerts.length > 0 && <section className="alert-strip"><AlertTriangle /><div><span className="eyebrow">OPEN MAINTENANCE ALERTS</span><strong>{activeAlerts[0]?.title}</strong><small>{activeAlerts[0]?.message}</small></div><button type="button" onClick={() => { setSeverityFilter("critical"); setWorkspace("defects"); }}>REVIEW {activeAlerts.length} ALERT{activeAlerts.length === 1 ? "" : "S"} <ChevronRight /></button></section>}
 

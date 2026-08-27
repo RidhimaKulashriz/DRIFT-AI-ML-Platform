@@ -103,9 +103,9 @@ describe("simulator lifecycle", () => {
   it("creates a complete no-hardware patrol with telemetry and prioritized findings", async () => {
     const mission = await buildSimulatorMission("Integration demo");
     expect(mission.name).toBe("Integration demo");
-    expect(mission.telemetry).toHaveLength(12);
-    expect(mission.findings).toHaveLength(3);
-    expect(mission.findings.map(finding => finding.label)).toEqual(expect.arrayContaining(["structural", "crack", "pothole"]));
+    expect(mission.telemetry).toHaveLength(30);
+    expect(mission.findings).toHaveLength(15);
+    expect(mission.findings.map(finding => finding.label)).toEqual(expect.arrayContaining(["structural", "crack", "pothole", "corrosion", "rail_alignment"]));
     expect(mission.findings[0]?.score.severity).toBe("critical");
     expect(mission.findings.some(finding => finding.label === "pothole")).toBe(true);
   });
@@ -115,8 +115,10 @@ describe("simulator lifecycle", () => {
     const result = await appRouter.createCaller(ctx).drift.runStatelessSimulator({ name: "Transient corridor walkthrough" });
     expect(result).toMatchObject({ mode: "stateless_demo", transient: true, storage: "none" });
     expect(result.message).toMatch(/No mission, finding, telemetry, evidence, ticket, report, CCTV candidate, security observation, or UAV action was stored/i);
-    expect(result.findings).toHaveLength(3);
-    expect(result.telemetry).toHaveLength(12);
+    expect(result.findings).toHaveLength(15);
+    expect(result.telemetry).toHaveLength(30);
+    expect(result.findings.every(finding => finding.title.startsWith("SIMULATED DEMO ·"))).toBe(true);
+    expect(new Set(result.findings.map(finding => `${finding.latitude},${finding.longitude}`)).size).toBe(15);
   });
 
   it("blocks unauthenticated callers from creating persistent simulator records", async () => {
