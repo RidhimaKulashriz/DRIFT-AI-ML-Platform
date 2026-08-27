@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { desc, eq, getTableColumns, inArray } from "drizzle-orm";
+import { desc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { alerts, assets, auditEvents, authorities, cameraSources, contractorTicketEvidence, contractorTicketNotes, contractorTickets, contractorUserAssignments, contractors, cctvCandidates, defects, dsiAssessments, evidence, handoffPackages, inspectionCorrelations, InsertUser, knowledgeChunks, knowledgeDocuments, knowledgeRetrievalRuns, missions, publicStatusPublications, repairEstimates, reports, reviews, routingDecisions, routingRules, securityObservations, severityHistory, slaRules, telemetry, uavFollowUpRecommendations, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
@@ -32,6 +32,75 @@ export async function getDb() {
     }
   }
   return _db;
+}
+
+const READINESS_TABLE_GROUPS = {
+  core: ["assets", "missions", "telemetry", "evidence", "defects", "reports", "alerts", "auditEvents"],
+  accountability: ["contractors", "contractorTickets", "dsiAssessments", "cameraSources", "cctvCandidates", "knowledgeDocuments", "knowledgeChunks", "knowledgeRetrievalRuns", "authorities", "slaRules", "routingRules", "routingDecisions", "handoffPackages", "publicStatusPublications"],
+  contractorAndUav: ["contractorUserAssignments", "contractorTicketNotes", "contractorTicketEvidence", "uavFollowUpRecommendations"],
+  security: ["securityObservations"],
+} as const;
+
+type ReadinessGroup = keyof typeof READINESS_TABLE_GROUPS;
+
+export function summarizeReadOnlySchemaReadiness(presentTableNames: readonly string[], migrationJournal: { present: boolean; appliedCount: number | null }) {
+  const present = new Set(presentTableNames);
+  const groups = Object.fromEntries(
+    (Object.keys(READINESS_TABLE_GROUPS) as ReadinessGroup[]).map(group => {
+      const expected = READINESS_TABLE_GROUPS[group];
+      const missing = expected.filter(table => !present.has(table));
+      return [group, { ready: missing.length === 0, expectedTableCount: expected.length, missing }];
+    }),
+  ) as Record<ReadinessGroup, { ready: boolean; expectedTableCount: number; missing: string[] }>;
+
+  return {
+    queryMode: "read_only" as const,
+    schemaReachable: true,
+    groups,
+    migrationJournal,
+    safeToApplyLaterMigrations: groups.core.ready && migrationJournal.present,
+  };
+}
+
+export async function getReadOnlySchemaReadiness() {
+  const db = await getDb();
+  if (!db) {
+    return {
+      queryMode: "read_only" as const,
+      schemaReachable: false,
+      groups: null,
+      migrationJournal: { present: false, appliedCount: null },
+      safeToApplyLaterMigrations: false,
+      message: "PostgreSQL DATABASE_URL is not configured or reachable. No schema change was attempted.",
+    };
+  }
+
+  try {
+    const tables = await db.execute<{ table_name: string }>(sql`
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+    `);
+    const journal = await db.execute<{ appliedCount: number }>(sql`
+      SELECT COUNT(*)::int AS "appliedCount"
+      FROM drizzle.__drizzle_migrations
+    `).then(result => ({ present: true, appliedCount: Number(result.rows[0]?.appliedCount ?? 0) })).catch(() => ({ present: false, appliedCount: null }));
+
+    return {
+      ...summarizeReadOnlySchemaReadiness(tables.rows.map(row => row.table_name), journal),
+      message: "Read-only catalog and migration-journal assessment completed. No database record or schema was changed.",
+    };
+  } catch (error) {
+    console.warn("[Database] Read-only schema readiness query failed:", error instanceof Error ? error.message : error);
+    return {
+      queryMode: "read_only" as const,
+      schemaReachable: false,
+      groups: null,
+      migrationJournal: { present: false, appliedCount: null },
+      safeToApplyLaterMigrations: false,
+      message: "Read-only schema assessment could not complete. No schema change was attempted.",
+    };
+  }
 }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
