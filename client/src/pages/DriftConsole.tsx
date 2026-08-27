@@ -171,6 +171,7 @@ export default function DriftConsole() {
   const workspaceAccess = trpc.drift.workspace.useQuery(undefined, { enabled: isAuthenticated });
   const utils = trpc.useUtils();
   const filePickerRef = useRef<HTMLInputElement>(null);
+  const mapPanelRef = useRef<HTMLElement>(null);
   const runSimulator = trpc.drift.runSimulator.useMutation({
     onSuccess: data => {
       toast.success(`Simulator mission stored · ${data.findings.length} findings evaluated`);
@@ -312,6 +313,10 @@ export default function DriftConsole() {
   const startAvailableSimulator = () => {
     if (canPersistSimulation) runSimulator.mutate({ name: missionName });
     else runStatelessSimulator.mutate({ name: missionName });
+  };
+  const focusLiveMap = () => {
+    setWorkspace("operations");
+    requestAnimationFrame(() => mapPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }));
   };
 
   const roleCopy: Record<Role, { eyebrow: string; title: string; note: string }> = {
@@ -459,6 +464,7 @@ export default function DriftConsole() {
           <div className="crumbs"><span>OPERATIONS</span><b>/</b><span>{workspace.toUpperCase()}</span></div>
           <div className="topbar-actions">
             <span className="role-toggle"><ShieldCheck /> {roleSource} · {role}</span>
+            <button type="button" className="secondary-action" onClick={focusLiveMap} title="Scroll to the live Google Maps field."><MapPinned /> OPEN LIVE MAP</button>
             {!isAuthenticated && <button type="button" className="secondary-action" onClick={() => startLogin()} title="Sign in with an approved work email to access protected DRIFT workflows.">SIGN IN</button>}
             {canRunDemo && <button type="button" className="primary-action" onClick={startAvailableSimulator} disabled={runSimulator.isPending || runStatelessSimulator.isPending} title={!canPersistSimulation ? "Runs a transient simulator walkthrough only; no operational records are stored." : "Authenticated engineering demo only. Creates clearly labelled simulator records for review."}><Play /> {runSimulator.isPending || runStatelessSimulator.isPending ? "SIMULATING" : canPersistSimulation ? "RUN PERSISTENT ENGINEERING DEMO" : "RUN TRANSIENT DEMO"}</button>}
           </div>
@@ -495,7 +501,7 @@ export default function DriftConsole() {
 
           <PublicDatasetVisualCard onPreview={() => setEvidencePreview(publicDatasetSamples[0]!)} onOpenEvidence={() => setWorkspace("evidence")} />
           <section className="operations-grid">
-            <article className="panel map-panel">
+            <article ref={mapPanelRef} className="panel map-panel">
               <div className="panel-heading"><div><span className="eyebrow">GEO-SPATIAL WORKBENCH</span><h2>Live defect field</h2></div><button type="button" className="icon-button" onClick={() => setWorkspace("defects")} aria-label="Open defect filters" title="Open defect filters"><SlidersHorizontal /></button></div>
               <InspectionMap defects={[...defects, ...transientMapDefects]} telemetry={[...telemetry, ...transientMapTelemetry]} selectedId={selected.id || undefined} onSelect={setSelectedId} />
               <div className="map-finding-summary"><div className="summary-counts">{severitySummary.map(item => <button key={item.severity} type="button" className={cn("summary-count", severityClass(item.severity), severityFilter === item.severity && "active")} onClick={() => { setSeverityFilter(item.severity); setWorkspace("defects"); }}><strong>{item.count}</strong><span>{item.severity}</span></button>)}</div><div className="selected-finding"><div><span className="eyebrow">SELECTED FINDING</span><strong>{selected.label}</strong><small>{selected.defectType} · {selected.inspectionDomain ?? "domain pending"} · {selected.reviewState} review</small></div><div className="selected-finding-metrics"><span><b>{selected.zeroErrorScore}</b> score</span><span><b>{selected.confidencePercent}%</b> confidence</span><span><b>{selected.latitude}, {selected.longitude}</b> GPS</span><span><b>{availableAssets.find(asset => asset.id === selected.assetId)?.name ?? `ASSET ${selected.assetId || "UNASSIGNED"}`}</b> asset</span><span><b>{selectedEvidence?.captureZone ?? "NOT RECORDED"}</b> capture zone</span><span><b>{selectedEvidence?.qualityStatus ?? "NOT GATED"}</b> quality gate</span></div><SeverityChip severity={selected.severity} /></div></div>
