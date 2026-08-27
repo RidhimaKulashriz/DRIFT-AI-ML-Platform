@@ -15,11 +15,11 @@ export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 // stash across renders.
 export const startLogin = () => {
   if (isSupabaseAuthConfigured) {
-    const email = window.prompt("Enter your approved work email to receive a DRIFT sign-in link.");
+    const email = window.prompt("Enter your email to receive a DRIFT sign-in link. Personal email is accepted; protected DRIFT roles require separate approval.");
     if (!email) return;
     requestSupabaseMagicLink(email.trim())
-      .then(() => window.alert("A DRIFT sign-in link was sent. Open it in this browser to continue."))
-      .catch(() => window.alert("The sign-in link could not be sent. Confirm the approved work email and try again."));
+      .then(() => window.alert("A DRIFT sign-in link was sent. Open it in this browser to continue. New accounts remain in the public/citizen role until explicitly approved for protected work."))
+      .catch(() => window.alert("The sign-in link could not be sent. Confirm the email address and try again."));
     return;
   }
   const backendOrigin = (import.meta.env.VITE_BACKEND_URL ?? "").replace(/\/$/, "");

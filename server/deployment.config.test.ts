@@ -135,6 +135,16 @@ describe("external deployment artifacts", () => {
     expect(inspectionMap).toContain("select any marker or report item");
   });
 
+  it("allows a personal-email magic-link request without implying protected-role access", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const signInSource = readFileSync(resolve(root, "client/src/const.ts"), "utf8");
+    const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
+    expect(signInSource).toContain("Personal email is accepted");
+    expect(signInSource).toContain("protected DRIFT roles require separate approval");
+    expect(signInSource).not.toContain("approved work email");
+    expect(consoleSource).toContain("Sign in with any email. Protected DRIFT roles require separate approval.");
+  });
+
   it("keeps public walkthroughs transient even when production persistence is available", () => {
     const root = resolve(import.meta.dirname, "..");
     const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");

@@ -490,7 +490,7 @@ export default function DriftConsole() {
           <div className="topbar-actions">
             <span className="role-toggle"><ShieldCheck /> {roleSource} · {role}</span>
             <button type="button" className="secondary-action" onClick={focusLiveMap} title="Scroll to the live Google Maps field."><MapPinned /> OPEN LIVE MAP</button>
-            {!isAuthenticated && <button type="button" className="secondary-action" onClick={() => startLogin()} title="Sign in with an approved work email to access protected DRIFT workflows.">SIGN IN</button>}
+            {!isAuthenticated && <button type="button" className="secondary-action" onClick={() => startLogin()} title="Sign in with any email. Protected DRIFT roles require separate approval.">SIGN IN</button>}
             {transientSimulatorRun && <button type="button" className="secondary-action" onClick={openTransientReport} title="Open the active browser-only simulated AI-analysis briefing."><FileText /> OPEN DEMO REPORT</button>}
             {canRunDemo && <button type="button" className="primary-action" onClick={startAvailableSimulator} disabled={runSimulator.isPending || runStatelessSimulator.isPending} title={!canPersistSimulation ? "Runs a transient simulator walkthrough only; no operational records are stored." : "Authenticated engineering demo only. Creates clearly labelled simulator records for review."}><Play /> {runSimulator.isPending || runStatelessSimulator.isPending ? "SIMULATING" : canPersistSimulation ? "RUN PERSISTENT ENGINEERING DEMO" : "RUN TRANSIENT DEMO"}</button>}
           </div>
