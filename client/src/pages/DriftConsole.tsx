@@ -521,7 +521,7 @@ export default function DriftConsole() {
           <div className="crumbs"><span>OPERATIONS</span><b>/</b><span>{workspace.toUpperCase()}</span></div>
           <div className="topbar-actions">
             <span className="role-toggle"><ShieldCheck /> {roleSource} · {role}</span>
-            <button type="button" className="secondary-action" onClick={focusLiveMap} title="Scroll to the live Google Maps field."><MapPinned /> OPEN LIVE MAP</button>
+            <button type="button" className="secondary-action" onClick={focusLiveMap} title="Scroll to the live Leaflet geographic map."><MapPinned /> OPEN LIVE MAP</button>
             <button type="button" className="secondary-action" onClick={focusDriftAi} title="Scroll to the DRIFT AI inspection copilot."><Sparkles /> OPEN DRIFT AI</button>
             {!isAuthenticated && <button type="button" className="secondary-action" onClick={() => startLogin()} title="Sign in with any email. Protected DRIFT roles require separate approval.">SIGN IN</button>}
             {transientSimulatorRun && <button type="button" className="secondary-action" onClick={openTransientReport} title="Open the active browser-only simulated AI-analysis briefing."><FileText /> OPEN DEMO REPORT</button>}
