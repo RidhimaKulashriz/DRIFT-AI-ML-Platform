@@ -368,4 +368,4 @@
 - [x] Diagnose and fix the reported Google Maps visibility issue on the deployed DRIFT console, then live-verify map tiles, controls, and transient markers without exposing operational records.
 - [x] Expand the browser-only transient simulator to at least 15 correctly placed advisory findings and matching temporary telemetry, retaining no persistent linkage or fabricated operational records.
 - [x] Restore and live-verify the transient browser-only report/briefing workflow without creating a real report record or engineering artifact.
-- [x] Diagnose and correct the reported Google Maps configuration-required state using a browser-safe domain-restricted key only; do not introduce an invented-location fallback.
+- [x] Configure and verify the browser-visible Google Maps key in both Vercel Production and the managed preview; both now show real Google Maps tiles with no invented-location fallback.
