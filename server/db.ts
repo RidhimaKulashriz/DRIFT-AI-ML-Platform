@@ -6,6 +6,7 @@ import { ENV } from "./_core/env";
 import { resolveReviewState } from "./services/reviewState";
 import { summarizeSeverity, toMapMarker } from "./services/reportPresentation";
 import { storageGetSignedUrl, storagePutWithFallback } from "./storage";
+import { supabasePortableStorageConfigured } from "./services/supabaseStorage";
 import { renderInspectionPdf } from "./services/reportPdf";
 import { rankApprovedKnowledge, type KnowledgeCitation } from "./services/rag";
 import type { InferenceResult } from "./services/mlInference";
@@ -117,8 +118,10 @@ export async function upsertUser(user: InsertUser): Promise<void> {
   }
   values.lastSignedIn = user.lastSignedIn ?? new Date();
   updateSet.lastSignedIn = values.lastSignedIn;
-  values.role = user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "engineer");
-  updateSet.role = values.role;
+  // New externally authenticated users start with no operational authority.
+  // Role changes are explicit administrative actions and must never be reset on login.
+  values.role = user.role ?? (user.openId === ENV.ownerOpenId ? "admin" : "citizen");
+  if (user.role !== undefined) updateSet.role = user.role;
   await db.insert(users).values(values).onConflictDoUpdate({ target: users.openId, set: updateSet });
 }
 
@@ -137,7 +140,7 @@ function insertId(result: unknown) {
 export async function getMissionOverview() {
   const db = await getDb();
   const persistence = db
-    ? { available: true, configured: true, driver: "postgresql", message: "Persistent mission, evidence, and report storage is ready." }
+    ? { available: true, configured: true, driver: "postgresql", portableEvidenceStorage: supabasePortableStorageConfigured(), message: supabasePortableStorageConfigured() ? "Persistent mission records and portable private evidence storage are ready." : "Persistent mission records are ready, but portable private evidence storage is not configured." }
     : { available: false, configured: Boolean(postgresDatabaseUrl()), driver: "postgresql", message: "Persistent missions, original evidence, and PDF reports require a compatible PostgreSQL DATABASE_URL." };
   if (!db) return { assets: [], missions: [], defects: [], telemetry: [], reports: [], estimates: [], reviews: [], audit: [], alerts: [], persistence };
   const [assetRows, missionRows, defectRows, telemetryRows, reportRows, estimateRows, reviewRows, auditRows, alertRows] = await Promise.all([
@@ -154,9 +157,17 @@ export async function getMissionOverview() {
   return { assets: assetRows, missions: missionRows, defects: defectRows, telemetry: telemetryRows, reports: reportRows, estimates: estimateRows, reviews: reviewRows, audit: auditRows, alerts: alertRows, persistence };
 }
 
+export function getPublicMissionOverview() {
+  return {
+    assets: [], missions: [], defects: [], telemetry: [], reports: [], estimates: [], reviews: [], audit: [], alerts: [],
+    persistence: { available: false, configured: true, driver: "postgresql", portableEvidenceStorage: false, message: "Sign in with an approved DRIFT role to access persistent project records. The public walkthrough is browser-session-only." },
+  };
+}
+
 export async function createDemoMissionRecord(input: { name: string; createdBy?: number | null; simulator: Awaited<ReturnType<typeof import("./services/simulator").buildSimulatorMission>> }) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable. Configure DATABASE_URL before creating persistent missions.");
+  if (!supabasePortableStorageConfigured()) throw new Error("Portable evidence storage is required before creating a persistent simulator mission.");
   const assetResult = await db.insert(assets).values({ name: "Rajpath Viaduct · North span", assetType: "bridge", locality: "New Delhi demo sector", latitude: "28.6139", longitude: "77.2090", criticality: 5, status: "watch" }).returning({ id: assets.id });
   const assetId = insertId(assetResult);
   const missionResult = await db.insert(missions).values({ assetId, createdBy: input.createdBy ?? null, name: input.name, mode: "demo", status: "completed", startedAt: new Date(input.simulator.startedAt), completedAt: new Date() }).returning({ id: missions.id });
@@ -198,6 +209,7 @@ export async function createDemoMissionRecord(input: { name: string; createdBy?:
 export async function createHardwareCaptureMission(input: { name: string; createdBy?: number | null; aircraftProfile: string; adapter: "mavlink-bridge" | "http-webhook" | "rtsp-media"; latitude: number; longitude: number; operatorNote?: string }) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable. Configure DATABASE_URL before creating a UAV capture mission.");
+  if (!supabasePortableStorageConfigured()) throw new Error("Portable evidence storage is required before creating a hardware capture mission.");
   const assetResult = await db.insert(assets).values({ name: `${input.name} · UAV capture asset`, assetType: "bridge", locality: "Operator-supplied capture location", latitude: input.latitude.toFixed(6), longitude: input.longitude.toFixed(6), criticality: 3, status: "watch" }).returning({ id: assets.id });
   const assetId = insertId(assetResult);
   const missionResult = await db.insert(missions).values({ assetId, createdBy: input.createdBy ?? null, name: input.name, mode: "hardware", status: "preflight", hardwareAdapter: input.adapter, operatorNote: input.operatorNote ?? "Operator-created UAV capture mission. No aircraft command is issued by DRIFT.", inspectionProfile: { aircraftProfile: input.aircraftProfile, mediaProvenance: "operator-captured-original-required", bridgeContract: input.adapter } }).returning({ id: missions.id });
@@ -234,6 +246,7 @@ export async function persistInferenceDefect(input: { missionId: number; assetId
 export async function generateMissionReport(input: { missionId: number; generatedBy?: number | null }) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable.");
+  if (!supabasePortableStorageConfigured()) throw new Error("Portable evidence storage is required before generating a report artifact.");
   const mission = (await db.select().from(missions).where(eq(missions.id, input.missionId)).limit(1))[0];
   if (!mission) throw new Error("Mission does not exist.");
   const [evidenceRows, defectRows] = await Promise.all([
@@ -374,6 +387,10 @@ function calculateDsi(input: DsiInput) {
 
 function emptyAccountabilityOverview(persistence: { available: boolean; message: string }) {
   return { contractors: [], tickets: [], assessments: [], authorities: [], routing: [], handoffs: [], publications: [], cameras: [], cameraCandidates: [], knowledgeDocuments: [], persistence };
+}
+
+export function getPublicAccountabilityOverview() {
+  return emptyAccountabilityOverview({ available: false, message: "Sign in with an approved DRIFT role to access contractor, CCTV, routing, and other accountability records." });
 }
 
 export async function getAccountabilityOverview() {

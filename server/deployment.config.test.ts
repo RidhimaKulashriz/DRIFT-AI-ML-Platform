@@ -15,6 +15,10 @@ describe("external deployment artifacts", () => {
     expect(docs).toContain("VITE_BACKEND_URL");
     expect(docs).toContain("DRIFT_INGEST_TOKEN");
     expect(docs).toContain("Provider adapters versus hosting");
+    expect(docs).toContain("VITE_SUPABASE_URL");
+    expect(docs).toContain("VITE_SUPABASE_PUBLISHABLE_KEY");
+    expect(docs).toContain("SUPABASE_SERVICE_ROLE_KEY");
+    expect(docs).toContain("DRIFT_SUPABASE_STORAGE_ENABLED");
     expect(render).toContain("DATABASE_URL");
     expect(render).toContain("FRONTEND_APP_URL");
     expect(render).toContain("DRIFT_ALLOWED_ORIGINS");

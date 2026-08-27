@@ -1,4 +1,5 @@
 import { OAUTH_STATE_COOKIE, encodeOAuthState } from "@shared/const";
+import { isSupabaseAuthConfigured, requestSupabaseMagicLink } from "@/lib/supabase";
 
 export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 
@@ -13,6 +14,14 @@ export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 // with "invalid oauth state". It returns void by design, so there is no URL to
 // stash across renders.
 export const startLogin = () => {
+  if (isSupabaseAuthConfigured) {
+    const email = window.prompt("Enter your approved work email to receive a DRIFT sign-in link.");
+    if (!email) return;
+    requestSupabaseMagicLink(email.trim())
+      .then(() => window.alert("A DRIFT sign-in link was sent. Open it in this browser to continue."))
+      .catch(() => window.alert("The sign-in link could not be sent. Confirm the approved work email and try again."));
+    return;
+  }
   const backendOrigin = (import.meta.env.VITE_BACKEND_URL ?? "").replace(/\/$/, "");
   if (backendOrigin) {
     window.location.href = `${backendOrigin}/api/oauth/start?returnTo=${encodeURIComponent(window.location.origin)}`;

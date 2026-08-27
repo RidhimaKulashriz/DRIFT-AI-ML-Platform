@@ -5,6 +5,7 @@ const addTelemetryRecord = vi.fn();
 const createEvidenceRecord = vi.fn();
 const persistInferenceDefect = vi.fn();
 const storagePut = vi.fn();
+const supabasePortableStorageConfigured = vi.fn();
 
 vi.mock("./db", async () => {
   const actual = await vi.importActual<typeof import("./db")>("./db");
@@ -12,6 +13,7 @@ vi.mock("./db", async () => {
 });
 
 vi.mock("./storage", () => ({ storagePut, storagePutWithFallback: storagePut }));
+vi.mock("./services/supabaseStorage", () => ({ supabasePortableStorageConfigured }));
 
 const { appRouter } = await import("./routers");
 
@@ -40,6 +42,7 @@ describe("DRIFT ingress route persistence", () => {
     storagePut.mockResolvedValue({ key: "drift/91/missions/77/inspection.jpg", url: "https://storage.test/inspection.jpg" });
     createEvidenceRecord.mockResolvedValue({ id: 502 });
     persistInferenceDefect.mockResolvedValue({ defectId: 503, source: "deterministic-fallback", model: "DRIFT-CV deterministic fallback v1" });
+    supabasePortableStorageConfigured.mockReturnValue(true);
   });
 
   it("persists a validated telemetry payload through the protected tRPC route", async () => {

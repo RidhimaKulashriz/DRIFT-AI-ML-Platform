@@ -5,6 +5,7 @@
 
 import { randomUUID } from "node:crypto";
 import { ENV } from "./_core/env";
+import { getSupabaseEvidenceSignedUrl, isSupabaseStorageKey, putInSupabaseEvidenceStorage, supabasePortableStorageConfigured } from "./services/supabaseStorage";
 
 function getForgeConfig() {
   const forgeUrl = ENV.forgeApiUrl;
@@ -41,6 +42,7 @@ export async function storagePut(
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream",
 ): Promise<{ key: string; url: string }> {
+  if (supabasePortableStorageConfigured()) return putInSupabaseEvidenceStorage(relKey, data, contentType);
   const { forgeUrl, forgeKey } = getForgeConfig();
   const key = appendHashSuffix(normalizeKey(relKey));
 
@@ -104,6 +106,7 @@ export async function storageGet(relKey: string): Promise<{ key: string; url: st
 }
 
 export async function storageGetSignedUrl(relKey: string): Promise<string> {
+  if (isSupabaseStorageKey(relKey)) return getSupabaseEvidenceSignedUrl(relKey);
   const { forgeUrl, forgeKey } = getForgeConfig();
   const key = normalizeKey(relKey);
 

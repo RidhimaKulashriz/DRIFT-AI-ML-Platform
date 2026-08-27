@@ -183,8 +183,8 @@ describe("report generation", () => {
 });
 
 describe("tRPC operations", () => {
-  it("exposes safe hardware, filter, map, alert, and report read operations", async () => {
-    const ctx = { user: null, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
+  it("exposes safe hardware, filter, map, alert, and report read operations to an approved role", async () => {
+    const ctx = { user: { id: 1, role: "engineer" }, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
     const caller = appRouter.createCaller(ctx);
     const [overview, hardware, defects, mapData, alerts, reportRecords, demoEvidence, accountability, publicStatuses] = await Promise.all([
       caller.drift.overview(),
@@ -215,14 +215,14 @@ describe("tRPC operations", () => {
     expect(Array.isArray(publicStatuses)).toBe(true);
   });
 
-  it("supports multi-pass defect correlation lookup by evidence key", async () => {
-    const ctx = { user: null, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
+  it("supports multi-pass defect correlation lookup by evidence key for an approved role", async () => {
+    const ctx = { user: { id: 1, role: "engineer" }, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
     const rows = await appRouter.createCaller(ctx).drift.correlatedDefects({ correlationKey: "simulator:120001:0" });
     expect(Array.isArray(rows)).toBe(true);
   });
 
-  it("returns source and provenance metadata for populated simulator evidence", async () => {
-    const ctx = { user: null, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
+  it("returns source and provenance metadata for populated simulator evidence to an approved role", async () => {
+    const ctx = { user: { id: 1, role: "engineer" }, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
     const caller = appRouter.createCaller(ctx);
     const rows = await caller.drift.evidence.demoList({ missionId: 120001 });
     if (!hasPostgresTestDatabase) {
@@ -233,6 +233,23 @@ describe("tRPC operations", () => {
     expect(reference?.source).toBe("simulator");
     expect(reference?.provenance).toEqual(expect.objectContaining({ kind: "reference-image", author: "Uncl3dad", license: "Public domain dedication", sourceUrl: "https://commons.wikimedia.org/wiki/File:Pothole_Big.jpg" }));
     expect(rows.some(item => item.provenance && typeof item.provenance === "object" && "kind" in item.provenance && item.provenance.kind === "generated-simulator")).toBe(true);
+  });
+
+  it("returns no persistent operational records to public or citizen sessions", async () => {
+    const publicContext = { user: null, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
+    const citizenContext = { user: { id: 4, role: "citizen" }, req: {} as TrpcContext["req"], res: {} as TrpcContext["res"] } as TrpcContext;
+    const [publicOverview, citizenOverview, publicAccountability] = await Promise.all([
+      appRouter.createCaller(publicContext).drift.overview(),
+      appRouter.createCaller(citizenContext).drift.overview(),
+      appRouter.createCaller(publicContext).drift.accountability.overview(),
+    ]);
+    expect(publicOverview.assets).toEqual([]);
+    expect(publicOverview.persistence.available).toBe(false);
+    expect(citizenOverview.defects).toEqual([]);
+    expect(publicAccountability.tickets).toEqual([]);
+    await expect(appRouter.createCaller(citizenContext).drift.reports.list()).rejects.toThrow(/does not permit/i);
+    await expect(appRouter.createCaller(citizenContext).drift.reports.generate({ missionId: 1 })).rejects.toThrow(/does not permit/i);
+    await expect(appRouter.createCaller(citizenContext).drift.ingestTelemetry({ missionId: 1, latitude: 28.6139, longitude: 77.209, altitude: 42, speedMps: 8, batteryPercent: 86, timestamp: Date.now() })).rejects.toThrow(/does not permit/i);
   });
 });
 

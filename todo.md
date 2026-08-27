@@ -359,3 +359,7 @@
 - [x] Perform a read-only assessment of the rotated Render PostgreSQL schema and Drizzle migration history before considering any additive migration.
 - [x] Apply the confirmed additive PostgreSQL migrations through the secure Render service configuration and verify core, accountability, contractor/UAV, and security schema readiness without creating operational records.
 - [x] Prevent unauthenticated public demo requests from creating persistent simulator missions, evidence, reports, alerts, or map findings now that the production PostgreSQL database is available.
+- [ ] Configure the verified Supabase Auth environment values on Vercel and Render, then validate the production magic-link callback and default least-privilege citizen role.
+- [ ] Configure the verified Supabase server values and `DRIFT_SUPABASE_STORAGE_ENABLED=true` only on Render, then validate private portable evidence storage without creating a fake inspection record.
+- [ ] Keep public users on the transient walkthrough and approved public context only; require approved administrator/engineer roles before returning global persistent evidence, reports, contractor data, CCTV candidates, security observations, or UAV recommendations.
+- [ ] Implement and verify contractor-specific data scoping before granting contractor users access to assigned real work records.
