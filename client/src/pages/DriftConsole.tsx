@@ -4,6 +4,7 @@ import { InspectionMap } from "@/components/InspectionMap";
 import { AuthenticReferenceVisuals, ContractorReadinessBoard } from "@/components/ContractorReadinessBoard";
 import { requestedSeverityFilter } from "@/lib/driftInteractions";
 import { AIChatBox, type Message } from "@/components/AIChatBox";
+import { startLogin } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 import {
@@ -456,6 +457,7 @@ export default function DriftConsole() {
           <div className="crumbs"><span>OPERATIONS</span><b>/</b><span>{workspace.toUpperCase()}</span></div>
           <div className="topbar-actions">
             <span className="role-toggle"><ShieldCheck /> {roleSource} · {role}</span>
+            {!isAuthenticated && <button type="button" className="secondary-action" onClick={() => startLogin()} title="Sign in with an approved work email to access protected DRIFT workflows.">SIGN IN</button>}
             {canRunDemo && <button type="button" className="primary-action" onClick={startAvailableSimulator} disabled={runSimulator.isPending || runStatelessSimulator.isPending} title={!canPersistSimulation ? "Runs a transient simulator walkthrough only; no operational records are stored." : "Authenticated engineering demo only. Creates clearly labelled simulator records for review."}><Play /> {runSimulator.isPending || runStatelessSimulator.isPending ? "SIMULATING" : canPersistSimulation ? "RUN PERSISTENT ENGINEERING DEMO" : "RUN TRANSIENT DEMO"}</button>}
           </div>
         </header>
