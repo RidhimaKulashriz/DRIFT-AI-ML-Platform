@@ -93,7 +93,9 @@ describe("external deployment artifacts", () => {
     expect(consoleSource).toContain("Numbered temporary advisory register");
     expect(consoleSource).toContain("AI-analysis interpretation");
     expect(consoleSource).toContain("**Persistence:** None. This briefing is held only in the current browser session and is discarded when the session ends.");
-    expect(consoleSource).toContain("DOWNLOAD TRANSIENT AI-ANALYSIS");
+    expect(consoleSource).toContain("DOWNLOAD AI-ANALYSIS");
+    expect(consoleSource).toContain("DOWNLOAD DEMO PDF");
+    expect(consoleSource).toContain("demoPdf");
     expect(consoleSource).toContain("Persistent PDF reports are protected");
     expect(consoleSource).toContain("SIGN IN TO VIEW APPROVED REPORTS");
   });
@@ -195,6 +197,10 @@ describe("external deployment artifacts", () => {
     expect(consoleSource).toContain('onClick={() => startLogin()}');
     expect(consoleSource).toContain(">SIGN IN</button>");
     expect(consoleSource).toContain("{transientSimulatorRun && <article className=\"report-preview-panel\">");
+    expect(routerSource).toContain("runStatelessSimulator");
+    expect(routerSource).toContain("demoPdf");
+    expect(routerSource).toContain("renderInspectionPdf");
+    expect(routerSource).toContain("transient: true");
     expect(routerSource).toContain("runSimulator: protectedProcedure");
     expect(routerSource).toContain('requireDriftRole(ctx.user, ["admin", "engineer"])');
   });

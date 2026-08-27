@@ -10,6 +10,7 @@ import { generateDecisionNarrative } from "./services/aiDecision";
 import { probeHardwareConnection, validateTelemetryPayload } from "./services/hardwareAdapter";
 import { runVisionInference } from "./services/mlInference";
 import { buildSimulatorMission } from "./services/simulator";
+import { renderInspectionPdf } from "./services/reportPdf";
 import { askDriftAi } from "./services/driftAi";
 import { storagePut } from "./storage";
 import { supabasePortableStorageConfigured } from "./services/supabaseStorage";
@@ -95,6 +96,33 @@ export const appRouter = router({
       generate: protectedProcedure.input(z.object({ missionId: z.number().int().positive() })).mutation(({ ctx, input }) => {
         requireDriftRole(ctx.user, ["admin", "engineer", "user"]);
         return generateMissionReport({ missionId: input.missionId });
+      }),
+      demoPdf: publicProcedure.input(z.object({ name: z.string().trim().min(3).max(180).default("Demo corridor patrol") })).mutation(async ({ input }) => {
+        const simulator = await buildSimulatorMission(input.name);
+        const pdf = await renderInspectionPdf({
+          mission: { id: 0, name: simulator.name, startedAt: new Date(simulator.startedAt), completedAt: new Date(), mode: "stateless_demo", status: "completed" },
+          evidence: [],
+          defects: simulator.findings.map((finding, index) => ({
+            id: index + 1,
+            label: finding.title,
+            defectType: finding.label,
+            severity: finding.score.severity,
+            zeroErrorScore: finding.score.score,
+            confidencePercent: Math.round(finding.confidence * 100),
+            coveragePercent: null,
+            status: "simulated",
+            reviewState: "pending",
+            inspectionDomain: "transient browser demo",
+            latitude: String(finding.latitude),
+            longitude: String(finding.longitude),
+            evidenceId: null,
+            explanation: finding.score.explanation,
+            uncertainty: ["Temporary simulator output; original authorised evidence and engineer review are required."],
+            correlationKey: `transient-demo-${index + 1}`,
+          })),
+          repairTotalCents: simulator.findings.reduce((sum, finding) => sum + finding.score.repairEstimateCents, 0),
+        });
+        return { title: `${simulator.name} · Transient demo PDF`, filename: "drift-transient-demo-report.pdf", contentType: "application/pdf", base64: pdf.toString("base64"), transient: true };
       }),
     }),
     accountability: router({
