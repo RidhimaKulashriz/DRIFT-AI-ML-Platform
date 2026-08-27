@@ -326,9 +326,9 @@
 - [ ] Add contractor SLA tracking and evidence-based reinspection verification so contractor closure remains distinct from engineer-verified repair.
 - [ ] Add a controlled public-trust view that publishes only approved, privacy-safe, non-sensitive ticket status information after owner authorization; never expose raw CCTV, personal data, restricted evidence, or unverified AI candidates.
 - [x] Diagnose and fix all currently failing Vercel production assets and HTTP/2 resource-load errors, then verify the public frontend directly.
-- [ ] Repair the transient report flow so all 15 current simulated advisory entries are always visible and individually selectable after the demo runs.
-- [ ] Provide a per-numbered-advisory map action that selects, centers, and opens available Google Street View for that temporary coordinate rather than leaving the walkthrough on one selected point.
-- [ ] Keep demo report and Street View public-imagery labels clear so neither is represented as real DRIFT evidence, a validated defect, or an engineering action.
+- [x] Repair the transient report flow so all 15 current simulated advisory entries are always visible and individually selectable after the demo runs.
+- [x] Provide a per-numbered-advisory map action that selects, centers, and opens available Google Street View for that temporary coordinate rather than leaving the walkthrough on one selected point.
+- [x] Keep demo report and Street View public-imagery labels clear so neither is represented as real DRIFT evidence, a validated defect, or an engineering action.
 - [x] Remove or conditionally configure the unresolved Vercel analytics script placeholder so production never requests `/%VITE_ANALYTICS_ENDPOINT%/umami`.
 - [ ] Verify and repair every public DRIFT frontend asset, visible control, Vercel-to-Render API flow, simulator, AI, map, evidence, report, authentication, storage, and safe drone-ingress boundary; label any unavoidable external-provider prerequisite rather than simulating success.
 - [x] Repair the public dataset preview action so it opens its modal from Operations, Defect Control, Reports, and Hardware Bridge, not only from Evidence Vault.
