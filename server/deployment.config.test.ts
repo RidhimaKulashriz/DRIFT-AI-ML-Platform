@@ -62,4 +62,12 @@ describe("external deployment artifacts", () => {
     expect(readinessBoard).toContain("Public domain");
     expect(readinessBoard).toContain("U.S. federal government public domain");
   });
+
+  it("bounds the public operational report list without altering the stored history", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
+    expect(consoleSource).toContain("const visibleReports = reports.slice(0, 8)");
+    expect(consoleSource).toContain("Showing the most recent {visibleReports.length} records");
+    expect(consoleSource).toContain("older report record");
+  });
 });
