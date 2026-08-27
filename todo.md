@@ -329,7 +329,7 @@
 - [x] Repair the transient report flow so all 15 current simulated advisory entries are always visible and individually selectable after the demo runs.
 - [x] Provide a per-numbered-advisory map action that selects, centers, and opens available Google Street View for that temporary coordinate rather than leaving the walkthrough on one selected point.
 - [x] Keep demo report and Street View public-imagery labels clear so neither is represented as real DRIFT evidence, a validated defect, or an engineering action.
-- [ ] Replace misleading work-email-only sign-in copy with clear personal-email magic-link guidance while preserving explicit approval requirements for protected roles.
+- [x] Replace misleading work-email-only sign-in copy with clear personal-email magic-link guidance while preserving explicit approval requirements for protected roles.
 - [x] Remove or conditionally configure the unresolved Vercel analytics script placeholder so production never requests `/%VITE_ANALYTICS_ENDPOINT%/umami`.
 - [ ] Verify and repair every public DRIFT frontend asset, visible control, Vercel-to-Render API flow, simulator, AI, map, evidence, report, authentication, storage, and safe drone-ingress boundary; label any unavoidable external-provider prerequisite rather than simulating success.
 - [x] Repair the public dataset preview action so it opens its modal from Operations, Defect Control, Reports, and Hardware Bridge, not only from Evidence Vault.
