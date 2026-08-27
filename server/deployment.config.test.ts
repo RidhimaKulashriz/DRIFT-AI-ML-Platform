@@ -79,4 +79,13 @@ describe("external deployment artifacts", () => {
     expect(consoleSource).toContain("does not claim malware, tamper, or intrusion detection");
     expect(consoleSource).toContain("SECURITY INTEGRATION REQUIRED");
   });
+
+  it("keeps transient simulator briefings browser-only and distinct from stored engineering reports", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
+    expect(consoleSource).toContain("BROWSER-ONLY WALKTHROUGH · NO PERSISTENCE");
+    expect(consoleSource).toContain("Not an engineering report, not field evidence, not a safety determination");
+    expect(consoleSource).toContain("**Persistence:** None. This content is discarded when the page session ends.");
+    expect(consoleSource).toContain("RUN TRANSIENT DEMO FIRST");
+  });
 });
