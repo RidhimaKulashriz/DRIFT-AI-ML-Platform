@@ -34,18 +34,32 @@ describe("external deployment artifacts", () => {
 
   it("keeps the Vercel map surface independent of the Manus Forge proxy and serves a favicon", () => {
     const root = resolve(import.meta.dirname, "..");
-    const driftMap = readFileSync(resolve(root, "client/src/components/DriftMap.tsx"), "utf8");
+    const inspectionMap = readFileSync(resolve(root, "client/src/components/InspectionMap.tsx"), "utf8");
     const html = readFileSync(resolve(root, "client/index.html"), "utf8");
     const viteConfig = readFileSync(resolve(root, "vite.config.ts"), "utf8");
     const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
-    expect(driftMap).not.toContain("MapView");
-    expect(driftMap).not.toContain("forge.butterfly-effect.dev");
-    expect(driftMap).toContain("Coordinate geospatial defect map");
+    expect(inspectionMap).not.toContain("MapView");
+    expect(inspectionMap).not.toContain("forge.butterfly-effect.dev");
+    expect(inspectionMap).toContain("maps.googleapis.com/maps/api/js");
+    expect(inspectionMap).toContain("Google Maps infrastructure context");
+    expect(inspectionMap).toContain("Public NBI context only");
+    expect(inspectionMap).toContain("Not a DRIFT site, live defect, ticket, or safety determination");
     expect(html).toContain('href="/favicon.svg"');
     expect(html).not.toContain("%VITE_ANALYTICS_ENDPOINT%/umami");
     expect(viteConfig).not.toContain("vite-plugin-manus-runtime");
     expect(viteConfig).not.toContain("vitePluginManusRuntime");
     expect(consoleSource).toContain('workspace !== "evidence" && evidencePreview');
     expect(existsSync(resolve(root, "client/public/favicon.svg"))).toBe(true);
+  });
+
+  it("keeps authentic reference visuals and seven contractor-ready USPs outside the project evidence workflow", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const readinessBoard = readFileSync(resolve(root, "client/src/components/ContractorReadinessBoard.tsx"), "utf8");
+    expect(readinessBoard).toContain("7 CONTRACTOR-READY USPs");
+    expect((readinessBoard.match(/id: \"(?:provenance|quality|duplicate|dsi|sla|closure|audit)\"/g) ?? [])).toHaveLength(7);
+    expect(readinessBoard).toContain("Real images, never site evidence");
+    expect(readinessBoard).toContain("excluded from DRIFT assets, maps, tickets, reports, model claims, and closure verification");
+    expect(readinessBoard).toContain("Public domain");
+    expect(readinessBoard).toContain("U.S. federal government public domain");
   });
 });

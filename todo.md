@@ -343,3 +343,8 @@
 - [x] Add a prepared-only UAV follow-up recommendation requiring contractor closure proof, optional reviewed CCTV linkage, expiry, operator/site/airspace/legal/aircraft checks, and audit logging; it does not dispatch, arm, navigate, or command an aircraft.
 - [ ] Rotate the previously exposed Render PostgreSQL credential in the provider UI, inspect the actual schema and migration history, and apply the reviewed canonical migration only after clean-schema confirmation; do not provide credentials in chat.
 - [ ] Configure real external identity, approved object storage, and authorized contractor/camera records before enabling closure-proof uploads or contractor/CCTV actions in production.
+- [x] Add seven contractor-ready public control surfaces for provenance, quality, duplicate suppression, transparent DSI, SLA readiness, closure separation, and audit/RAG handover; each button opens an existing workspace rather than simulating success.
+- [x] Add two authentic public-domain issue-class reference visuals with in-product attribution/source controls and an explicit exclusion from DRIFT assets, maps, tickets, reports, model claims, and closure verification.
+- [x] Add a direct Google Maps-only public NBI context layer with three bounded 2025 USDOT/BTS public inventory locations, separate marker treatment, linked source, and explicit non-live/non-DRIFT/non-ticket limits.
+- [x] Add configuration-required states for missing or failed Google Maps loading so the deployed surface does not silently show a fallback map or invented issue location.
+- [ ] Complete a browser-level audit of remaining pre-existing public controls and remove any residual ambiguous simulated-success behavior before production rollout.
