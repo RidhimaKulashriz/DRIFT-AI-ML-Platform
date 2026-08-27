@@ -369,9 +369,9 @@
 - [x] Expand the browser-only transient simulator to at least 15 correctly placed advisory findings and matching temporary telemetry, retaining no persistent linkage or fabricated operational records.
 - [x] Restore and live-verify the transient browser-only report/briefing workflow without creating a real report record or engineering artifact.
 - [x] Configure and verify the browser-visible Google Maps key in both Vercel Production and the managed preview; both now show real Google Maps tiles with no invented-location fallback.
-- [ ] Diagnose and repair the reported live Vercel Google Maps visibility failure without adding any alternative map provider or fabricated operational data.
-- [ ] Add and verify a Google Maps Street View workflow for available public imagery at selected temporary advisory coordinates, with truthful availability/error states and no claim that imagery is DRIFT evidence.
-- [ ] Improve transient demo-marker spacing, hit areas, labels, and selected-marker behavior so all temporary advisories remain readable and individually accessible in the map canvas.
-- [ ] Diagnose and repair the report visibility flow so a transient demo always exposes an immediately discoverable browser-only report preview and download action.
-- [ ] Add a truthful transient AI-analysis report section that summarizes the current 15 advisory outputs, confidence, severity distribution, coordinate coverage, and required human review without claiming a real engineering assessment.
-- [ ] Preserve role-gated persistent PDF/report records and clearly explain why they are unavailable to public/citizen sessions instead of silently hiding reports.
+- [x] Diagnose and repair the reported live Vercel Google Maps visibility failure without adding any alternative map provider or fabricated operational data.
+- [x] Add and verify a Google Maps Street View workflow for available public imagery at selected temporary advisory coordinates, with truthful availability/error states and no claim that imagery is DRIFT evidence.
+- [x] Improve transient demo-marker spacing, hit areas, labels, and selected-marker behavior so all temporary advisories remain readable and individually accessible in the map canvas.
+- [x] Diagnose and repair the report visibility flow so a transient demo always exposes an immediately discoverable browser-only report preview and download action.
+- [x] Add a truthful transient AI-analysis report section that summarizes the current 15 advisory outputs, confidence, severity distribution, coordinate coverage, and required human review without claiming a real engineering assessment.
+- [x] Preserve role-gated persistent PDF/report records and clearly explain why they are unavailable to public/citizen sessions instead of silently hiding reports.
