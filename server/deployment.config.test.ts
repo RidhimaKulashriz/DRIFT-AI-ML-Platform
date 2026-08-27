@@ -88,4 +88,13 @@ describe("external deployment artifacts", () => {
     expect(consoleSource).toContain("**Persistence:** None. This content is discarded when the page session ends.");
     expect(consoleSource).toContain("RUN TRANSIENT DEMO FIRST");
   });
+
+  it("keeps transient simulator metrics visibly separate from persisted Operations metrics", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
+    expect(consoleSource).toContain("TRANSIENT CANDIDATES");
+    expect(consoleSource).toContain("TRANSIENT TELEMETRY");
+    expect(consoleSource).toContain("PERSISTENT LINKAGE");
+    expect(consoleSource).toContain("no asset, evidence, ticket, report, CCTV, security, or UAV action");
+  });
 });

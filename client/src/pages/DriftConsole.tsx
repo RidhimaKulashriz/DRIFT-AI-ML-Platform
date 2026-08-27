@@ -485,6 +485,7 @@ export default function DriftConsole() {
             <StatBlock label="EXPOSURE ESTIMATE" value={formatCurrency(repairTotal)} detail="repair rules v1.0" />
             <StatBlock label="FLEET BATTERY" value={telemetry[0]?.batteryPercent === undefined ? "—" : `${telemetry[0].batteryPercent}%`} detail={telemetry.length ? "latest reported" : "no telemetry"} direction="up" />
           </section>
+          {transientSimulatorRun && <section className="stats-grid border border-sky-300 bg-sky-50" aria-label="Transient simulator metrics"><StatBlock label="TRANSIENT CANDIDATES" value={String(transientSimulatorRun.findings.length).padStart(2, "0")} detail="browser-only advisory data" /><StatBlock label="TRANSIENT TELEMETRY" value={String(transientSimulatorRun.telemetry.length).padStart(2, "0")} detail="map context only · not stored" /><StatBlock label="PERSISTENT LINKAGE" value="NONE" detail="no asset, evidence, ticket, report, CCTV, security, or UAV action" /><StatBlock label="SESSION STATUS" value="TEMP" detail="cleared when this browser session ends" /></section>}
 
           <PublicDatasetVisualCard onPreview={() => setEvidencePreview(publicDatasetSamples[0]!)} onOpenEvidence={() => setWorkspace("evidence")} />
           <section className="operations-grid">

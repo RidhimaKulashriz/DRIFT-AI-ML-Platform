@@ -355,3 +355,4 @@
 - [ ] Configure and independently approve a named security integration, authorization scope, retention policy, analyst review process, and real source records before recording any security observation in production.
 - [ ] Model camera/bridge security observations only from authorized health and audit inputs; do not claim malware detection or scan firmware/network traffic without an approved, deployed security integration.
 - [x] Add a visible Hardware Bridge security-readiness panel that distinguishes authenticated bridge health/provenance from unavailable malware, firmware, device, network, CCTV, tamper, and intrusion detection; the unsupported operation remains disabled.
+- [x] Separate active transient simulator candidate and telemetry counts from persisted Operations metrics so browser-only demo output cannot be misread as a real inspection record.
