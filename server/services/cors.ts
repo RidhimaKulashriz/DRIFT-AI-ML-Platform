@@ -1,12 +1,30 @@
 import type { NextFunction, Request, Response } from "express";
 
 const DEPLOYED_VERCEL_ORIGIN = "https://drift-ai-ml-platform.vercel.app";
+// Vercel exposes immutable deployment URLs in this project/team namespace. Keep
+// this narrowly scoped instead of allowing every `*.vercel.app` origin.
+const PROJECT_VERCEL_PREVIEW_ORIGIN = /^https:\/\/drift-ai-ml-platform(?:-[a-z0-9-]+)?-sckulashri-7163s-projects\.vercel\.app$/i;
 
-export function createCorsMiddleware(allowedOriginsValue = process.env.DRIFT_ALLOWED_ORIGINS ?? "") {
-  const allowedOrigins = new Set([DEPLOYED_VERCEL_ORIGIN, ...allowedOriginsValue.split(",").map(value => value.trim()).filter(Boolean)]);
+function splitOrigins(value: string) {
+  return value.split(",").map(origin => origin.trim()).filter(Boolean);
+}
+
+function isProjectVercelPreviewOrigin(origin: string) {
+  return PROJECT_VERCEL_PREVIEW_ORIGIN.test(origin);
+}
+
+export function createCorsMiddleware(
+  allowedOriginsValue = process.env.DRIFT_ALLOWED_ORIGINS ?? "",
+  frontendAppUrl = process.env.FRONTEND_APP_URL ?? "",
+) {
+  const allowedOrigins = new Set([
+    DEPLOYED_VERCEL_ORIGIN,
+    frontendAppUrl.trim(),
+    ...splitOrigins(allowedOriginsValue),
+  ].filter(Boolean));
   return (req: Request, res: Response, next: NextFunction) => {
     const origin = req.header("origin");
-    const allowed = Boolean(origin && allowedOrigins.has(origin));
+    const allowed = Boolean(origin && (allowedOrigins.has(origin) || isProjectVercelPreviewOrigin(origin)));
     if (allowed) {
       res.setHeader("Access-Control-Allow-Origin", origin!);
       res.setHeader("Access-Control-Allow-Credentials", "true");
