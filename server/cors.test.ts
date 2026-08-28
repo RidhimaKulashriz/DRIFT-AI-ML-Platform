@@ -26,13 +26,39 @@ describe("split-host CORS middleware", () => {
     expect(next).toHaveBeenCalledOnce();
   });
 
-  it("allows configured Vercel origins with credentials", () => {
+  it("allows configured origins with credentials", () => {
     const res = response();
     const next = vi.fn();
     createCorsMiddleware("https://drift.vercel.app, https://drift.example.com")(request("https://drift.example.com"), res as any, next);
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://drift.example.com");
     expect(res.headers.get("Access-Control-Allow-Credentials")).toBe("true");
     expect(next).toHaveBeenCalledOnce();
+  });
+
+  it("allows the project-scoped Vercel preview origin from the production console error", () => {
+    const res = response();
+    const next = vi.fn();
+    const previewOrigin = "https://drift-ai-ml-platform-9nn48wpsd-sckulashri-7163s-projects.vercel.app";
+    createCorsMiddleware("")(request(previewOrigin), res as any, next);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(previewOrigin);
+    expect(res.headers.get("Access-Control-Allow-Credentials")).toBe("true");
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it("allows the configured frontend app URL", () => {
+    const res = response();
+    const next = vi.fn();
+    createCorsMiddleware("", "https://staging.drift.example.com")(request("https://staging.drift.example.com"), res as any, next);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://staging.drift.example.com");
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it("rejects unrelated Vercel deployments on preflight", () => {
+    const res = response();
+    const next = vi.fn();
+    createCorsMiddleware("")(request("https://unrelated-project.vercel.app", "OPTIONS"), res as any, next);
+    expect(res.sendStatus).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
   });
 
   it("rejects unconfigured origins on preflight", () => {
