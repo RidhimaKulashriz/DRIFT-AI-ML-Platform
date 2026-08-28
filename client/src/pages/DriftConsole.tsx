@@ -48,6 +48,20 @@ type Role = "administrator" | "engineer" | "contractor" | "citizen";
 type EvidenceItem = { id: number; fileName: string; storageUrl: string; mediaKind: "photo" | "video" | "annotation" | "report"; source?: "hardware" | "upload" | "simulator" | "cctv" | "reference"; latitude: string | null; longitude: string | null; capturedAt?: Date | null; cameraId?: string | null; provenance?: unknown; captureZone?: string | null; qualityStatus?: string | null; imageQuality?: unknown };
 type TransientSimulatorRun = { name: string; startedAt: number; telemetry: Array<{ latitude: number; longitude: number; altitude: number; batteryPercent: number; speedMps: number; timestamp: number }>; findings: Array<{ title: string; label: string; confidence: number; latitude: number; longitude: number; score: { score: number; severity: Severity; explanation: string[] } }> };
 
+function createLocalTransientRun(name: string): TransientSimulatorRun {
+  const center = { latitude: 28.6067, longitude: 77.1996 };
+  const labels = ["structural", "crack", "pothole", "corrosion", "spalling", "exposed_rebar", "water_intrusion", "settlement", "rail_alignment", "obstruction", "lighting_failure", "crack", "structural", "pothole", "corrosion"];
+  const severities: Severity[] = ["critical", "high", "medium", "critical", "high", "critical", "medium", "high", "critical", "medium", "high", "critical", "high", "medium", "critical"];
+  const findings = labels.map((label, index) => {
+    const latitude = center.latitude + ((index % 5) - 2) * 0.00115;
+    const longitude = center.longitude + (Math.floor(index / 5) - 1) * 0.0014;
+    const severity = severities[index]!;
+    return { title: `SIMULATED DEMO · ${label.replaceAll("_", " ").toUpperCase()} ADVISORY ${String(index + 1).padStart(2, "0")}`, label, confidence: 0.8 + (index % 5) * 0.04, latitude, longitude, score: { score: severity === "critical" ? 90 : severity === "high" ? 76 : 56, severity, explanation: ["Browser-only fallback demonstration output.", "Original authorised evidence and qualified engineer review are required."] } };
+  });
+  const telemetry = Array.from({ length: 30 }, (_, index) => ({ latitude: center.latitude + Math.sin(index / 3) * 0.004, longitude: center.longitude + Math.cos(index / 3) * 0.004, altitude: 42 + index, batteryPercent: Math.max(35, 98 - index * 2), speedMps: 4.5, timestamp: Date.now() - (30 - index) * 1000 }));
+  return { name, startedAt: Date.now(), telemetry, findings };
+}
+
 const navItems: Array<{ key: Workspace; label: string; icon: typeof Radar }> = [
   { key: "operations", label: "Operations", icon: Radar },
   { key: "defects", label: "Defect control", icon: TriangleAlert },
@@ -210,6 +224,8 @@ export default function DriftConsole() {
   const filePickerRef = useRef<HTMLInputElement>(null);
   const mapPanelRef = useRef<HTMLElement>(null);
   const driftAiPanelRef = useRef<HTMLElement>(null);
+  const transientRequestActive = useRef(false);
+  const transientFallbackTimer = useRef<number | null>(null);
   const runSimulator = trpc.drift.runSimulator.useMutation({
     onSuccess: data => {
       toast.success(`Simulator mission stored · ${data.findings.length} findings evaluated`);
@@ -220,6 +236,8 @@ export default function DriftConsole() {
   });
   const runStatelessSimulator = trpc.drift.runStatelessSimulator.useMutation({
     onSuccess: data => {
+      transientRequestActive.current = false;
+      if (transientFallbackTimer.current) window.clearTimeout(transientFallbackTimer.current);
       setTransientSimulatorRun(data);
       setTransientBriefing(createTransientAnalysisBriefing(data));
       setSelectedId(-1);
@@ -227,7 +245,11 @@ export default function DriftConsole() {
       window.setTimeout(() => mapPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
       toast.success(`Transient simulator walkthrough ready · ${data.findings.length} advisory findings · no records stored`);
     },
-    onError: error => toast.error(error.message),
+    onError: error => {
+      transientRequestActive.current = false;
+      if (transientFallbackTimer.current) window.clearTimeout(transientFallbackTimer.current);
+      toast.error(`Transient demo request failed: ${error.message}`);
+    },
   });
   const createHardwareCaptureMission = trpc.drift.createHardwareCaptureMission.useMutation({
     onSuccess: data => {
@@ -373,8 +395,25 @@ export default function DriftConsole() {
   const aiAnalyzedRecords = transientSimulatorRun ? displayDefects.length : evidenceItems.length || defects.length;
   const aiCriticalRecords = transientSimulatorRun ? displayCriticalCount : defects.filter(defect => defect.severity === "critical").length;
   const startAvailableSimulator = () => {
-    if (canPersistSimulation) runSimulator.mutate({ name: missionName });
-    else runStatelessSimulator.mutate({ name: missionName });
+    if (canPersistSimulation) {
+      runSimulator.mutate({ name: missionName });
+      return;
+    }
+    transientRequestActive.current = true;
+    if (transientFallbackTimer.current) window.clearTimeout(transientFallbackTimer.current);
+    transientFallbackTimer.current = window.setTimeout(() => {
+      if (!transientRequestActive.current) return;
+      transientRequestActive.current = false;
+      runStatelessSimulator.reset();
+      const fallback = createLocalTransientRun(missionName);
+      setTransientSimulatorRun(fallback);
+      setTransientBriefing(createTransientAnalysisBriefing(fallback));
+      setSelectedId(-1);
+      setWorkspace("operations");
+      window.setTimeout(() => mapPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
+      toast.message("Transient demo loaded in browser fallback mode · no records stored");
+    }, 8000);
+    runStatelessSimulator.mutate({ name: missionName });
   };
   const focusLiveMap = () => {
     setWorkspace("operations");
