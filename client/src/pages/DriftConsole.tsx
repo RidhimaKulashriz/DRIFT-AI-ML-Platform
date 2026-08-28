@@ -4,7 +4,7 @@ import { InspectionMap } from "@/components/InspectionMap";
 import { AuthenticReferenceVisuals, ContractorReadinessBoard } from "@/components/ContractorReadinessBoard";
 import { requestedSeverityFilter } from "@/lib/driftInteractions";
 import { AIChatBox, type Message } from "@/components/AIChatBox";
-import { startLogin } from "@/const";
+import { getBackendOrigin, startLogin } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { toast } from "sonner";
 import {
@@ -73,7 +73,7 @@ const navItems: Array<{ key: Workspace; label: string; icon: typeof Radar }> = [
 
 const PUBLIC_DATASET_IMAGE_URL = "https://raw.githubusercontent.com/biankatpas/Cracks-and-Potholes-in-Road-Images-Dataset/master/PreviewImages/1097248_DF_070_070BDF0010_04158_RAW.jpg";
 const PUBLIC_DATASET_CRACK_MASK_URL = "https://raw.githubusercontent.com/biankatpas/Cracks-and-Potholes-in-Road-Images-Dataset/master/PreviewImages/1097248_DF_070_070BDF0010_04158_CRACK.png";
-const BACKEND_ORIGIN = (import.meta.env.VITE_BACKEND_URL || "https://drift-node-api.onrender.com").replace(/\/$/, "");
+const BACKEND_ORIGIN = getBackendOrigin() || "https://drift-node-api.onrender.com";
 
 function resolveBackendAssetUrl(url?: string | null) {
   if (!url) return undefined;

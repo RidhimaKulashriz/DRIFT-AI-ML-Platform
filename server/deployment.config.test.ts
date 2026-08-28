@@ -27,6 +27,16 @@ describe("external deployment artifacts", () => {
     expect(render).not.toMatch(/mysql:\/\/[^\n]+/i);
   });
 
+  it("keeps the split-host API client pointed at Render when Vercel omits VITE_BACKEND_URL", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const constants = readFileSync(resolve(root, "client/src/const.ts"), "utf8");
+    const main = readFileSync(resolve(root, "client/src/main.tsx"), "utf8");
+    expect(constants).toContain('export const DEFAULT_BACKEND_ORIGIN = "https://drift-node-api.onrender.com"');
+    expect(constants).toContain("import.meta.env.PROD ? DEFAULT_BACKEND_ORIGIN");
+    expect(main).toContain("const backendOrigin = getBackendOrigin();");
+    expect(main).not.toContain('const backendOrigin = (import.meta.env.VITE_BACKEND_URL ?? "").replace');
+  });
+
   it("uses externally accessible source media for the labelled public dataset demonstration", () => {
     const root = resolve(import.meta.dirname, "..");
     const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
