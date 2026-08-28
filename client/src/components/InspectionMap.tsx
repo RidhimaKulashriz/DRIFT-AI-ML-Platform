@@ -69,6 +69,7 @@ export function InspectionMap({ defects, telemetry, selectedId, imageryRequest =
 
   const openMapillary = useCallback(async () => {
     setMapillaryOpen(true);
+    setKartaViewOpen(false);
     setMapillaryStatus("loading");
     setSelectedMapillaryImage(null);
     if (!mapillaryToken) {
@@ -144,8 +145,9 @@ export function InspectionMap({ defects, telemetry, selectedId, imageryRequest =
     return () => { mapillaryViewer.current?.remove(); mapillaryViewer.current = null; };
   }, [mapillaryOpen, mapillaryToken, selectedMapillaryImage]);
 
-  const openKartaView = useCallback(async () => {
-    setKartaViewOpen(true);
+  const openKartaView = useCallback(async (showPanel = true) => {
+    setKartaViewOpen(showPanel);
+    setMapillaryOpen(false);
     setKartaViewStatus("loading");
     setSelectedKartaViewPhoto(null);
     try {
@@ -214,14 +216,14 @@ export function InspectionMap({ defects, telemetry, selectedId, imageryRequest =
     if (!selectedDefect || autoImageryDefect.current === selectedDefect.defect.id) return;
     autoImageryDefect.current = selectedDefect.defect.id;
     void openMapillary();
-    void openKartaView();
+    void openKartaView(false);
   }, [openKartaView, openMapillary, selectedDefect]);
 
   useEffect(() => {
     if (!imageryRequest || imageryRequest === completedImageryRequest.current || !selectedDefect) return;
     completedImageryRequest.current = imageryRequest;
     void openMapillary();
-    void openKartaView();
+    void openKartaView(false);
   }, [imageryRequest, openKartaView, openMapillary, selectedDefect]);
 
   const focusTemporaryGrid = () => {
