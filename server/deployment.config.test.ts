@@ -131,7 +131,7 @@ describe("external deployment artifacts", () => {
     const root = resolve(import.meta.dirname, "..");
     const inspectionMap = readFileSync(resolve(root, "client/src/components/InspectionMap.tsx"), "utf8");
     const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
-    expect(inspectionMap).toContain("OPEN STREET IMAGE");
+    expect(inspectionMap).toContain("OPEN KARTAVIEW IMAGE");
     expect(inspectionMap).toContain("KARTAVIEW · STREET-LEVEL IMAGERY");
     expect(inspectionMap).toContain("KartaView could not be reached");
     expect(inspectionMap).toContain("not DRIFT evidence, not a crack confirmation");
@@ -156,9 +156,15 @@ describe("external deployment artifacts", () => {
     expect(consoleSource).toContain("inspectTransientAdvisory");
     expect(consoleSource).toContain("imageryRequest={imageryRequest}");
     expect(inspectionMap).toContain("imageryRequest?: number");
+    expect(inspectionMap).toContain('url.searchParams.set("map_action", "pano")');
+    expect(inspectionMap).toContain("viewpoint");
+    expect(inspectionMap).toContain("googlePinnedMapUrl");
+    expect(inspectionMap).toContain("OPEN REAL GOOGLE STREET VIEW");
+    expect(inspectionMap).toContain("OPEN PINNED RB POINT");
     expect(inspectionMap).toContain("completedImageryRequest");
     expect(inspectionMap).toContain("select any marker");
     expect(inspectionMap).toContain("OPEN FULL STREET IMAGE");
+    expect(inspectionMap).toContain("OPEN KARTAVIEW IMAGE");
     expect(inspectionMap).toContain("Green marker = public street image");
   });
 
