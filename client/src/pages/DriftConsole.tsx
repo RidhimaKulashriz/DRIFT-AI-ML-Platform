@@ -226,6 +226,16 @@ export default function DriftConsole() {
   const driftAiPanelRef = useRef<HTMLElement>(null);
   const transientRequestActive = useRef(false);
   const transientFallbackTimer = useRef<number | null>(null);
+  const applyTransientFallback = () => {
+    transientRequestActive.current = false;
+    if (transientFallbackTimer.current) window.clearTimeout(transientFallbackTimer.current);
+    const fallback = createLocalTransientRun(missionName);
+    setTransientSimulatorRun(fallback);
+    setTransientBriefing(createTransientAnalysisBriefing(fallback));
+    setSelectedId(-1);
+    setWorkspace("operations");
+    window.setTimeout(() => mapPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
+  };
   const runSimulator = trpc.drift.runSimulator.useMutation({
     onSuccess: data => {
       toast.success(`Simulator mission stored · ${data.findings.length} findings evaluated`);
@@ -246,9 +256,9 @@ export default function DriftConsole() {
       toast.success(`Transient simulator walkthrough ready · ${data.findings.length} advisory findings · no records stored`);
     },
     onError: error => {
-      transientRequestActive.current = false;
-      if (transientFallbackTimer.current) window.clearTimeout(transientFallbackTimer.current);
-      toast.error(`Transient demo request failed: ${error.message}`);
+      console.warn("[DRIFT] Transient simulator API unavailable; using browser fallback:", error);
+      applyTransientFallback();
+      toast.message("Transient demo loaded in browser fallback mode · no records stored");
     },
   });
   const createHardwareCaptureMission = trpc.drift.createHardwareCaptureMission.useMutation({
@@ -403,14 +413,7 @@ export default function DriftConsole() {
     if (transientFallbackTimer.current) window.clearTimeout(transientFallbackTimer.current);
     transientFallbackTimer.current = window.setTimeout(() => {
       if (!transientRequestActive.current) return;
-      transientRequestActive.current = false;
-      runStatelessSimulator.reset();
-      const fallback = createLocalTransientRun(missionName);
-      setTransientSimulatorRun(fallback);
-      setTransientBriefing(createTransientAnalysisBriefing(fallback));
-      setSelectedId(-1);
-      setWorkspace("operations");
-      window.setTimeout(() => mapPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
+      applyTransientFallback();
       toast.message("Transient demo loaded in browser fallback mode · no records stored");
     }, 8000);
     runStatelessSimulator.mutate({ name: missionName });

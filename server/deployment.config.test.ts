@@ -119,6 +119,14 @@ describe("external deployment artifacts", () => {
     expect(consoleSource).toContain("no asset, evidence, ticket, report, CCTV, security, or UAV action");
   });
 
+  it("falls back to the local transient walkthrough when the public API is unavailable", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
+    expect(consoleSource).toContain("const applyTransientFallback = () =>");
+    expect(consoleSource).toContain("using browser fallback");
+    expect(consoleSource).toContain("Transient demo loaded in browser fallback mode");
+  });
+
   it("keeps KartaView and numbered temporary markers available without treating public imagery as DRIFT evidence", () => {
     const root = resolve(import.meta.dirname, "..");
     const inspectionMap = readFileSync(resolve(root, "client/src/components/InspectionMap.tsx"), "utf8");
