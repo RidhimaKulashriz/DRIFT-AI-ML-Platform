@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Loader2, Send, User, Sparkles, Volume2, VolumeX, Square } from "lucide-react";
+import { Loader2, Send, User, Sparkles, Volume2, VolumeX, Square, Mic, RotateCcw, Play } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Streamdown } from "streamdown";
 
@@ -13,6 +13,11 @@ export type Message = {
   role: "system" | "user" | "assistant";
   content: string;
 };
+
+type SpeechRecognitionResultEventLike = Event & { results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> };
+type SpeechRecognitionLike = { lang: string; interimResults: boolean; continuous: boolean; start: () => void; stop: () => void; onresult: ((event: SpeechRecognitionResultEventLike) => void) | null; onerror: (() => void) | null; onend: (() => void) | null };
+
+type SpeechWindow = Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
 
 export type AIChatBoxProps = {
   /**
@@ -133,8 +138,60 @@ export function AIChatBox({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [autoSpeak, setAutoSpeak] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
+  const [recordedTranscript, setRecordedTranscript] = useState("");
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaChunksRef = useRef<Blob[]>([]);
+  const speechRecognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const recordingTimerRef = useRef<number | null>(null);
   const lastSpokenAssistantCount = useRef(0);
   const speechSupported = typeof window !== "undefined" && "speechSynthesis" in window;
+  const recordingSupported = typeof window !== "undefined" && "MediaRecorder" in window && "mediaDevices" in navigator;
+  const recognitionSupported = typeof window !== "undefined" && Boolean((window as SpeechWindow).SpeechRecognition || (window as SpeechWindow).webkitSpeechRecognition);
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    speechRecognitionRef.current?.stop();
+    if (recordingTimerRef.current) window.clearInterval(recordingTimerRef.current);
+    recordingTimerRef.current = null;
+    setIsRecording(false);
+  };
+
+  const startRecording = async () => {
+    if (!recordingSupported || isRecording) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaChunksRef.current = [];
+      setRecordedTranscript("");
+      if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+      setRecordedUrl(null);
+      const recorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = event => { if (event.data.size) mediaChunksRef.current.push(event.data); };
+      recorder.onstop = () => { const blob = new Blob(mediaChunksRef.current, { type: recorder.mimeType || "audio/webm" }); setRecordedUrl(URL.createObjectURL(blob)); stream.getTracks().forEach(track => track.stop()); };
+      recorder.start();
+      setRecordingSeconds(0);
+      setIsRecording(true);
+      recordingTimerRef.current = window.setInterval(() => setRecordingSeconds(seconds => seconds + 1), 1000);
+      const Recognition = (window as SpeechWindow).SpeechRecognition || (window as SpeechWindow).webkitSpeechRecognition;
+      if (Recognition) {
+        const recognition = new Recognition();
+        recognition.lang = "en-IN";
+        recognition.interimResults = false;
+        recognition.continuous = true;
+        recognition.onresult = event => { const transcript = Array.from({ length: event.results.length }, (_, index) => event.results[index]?.[0]?.transcript ?? "").join(" "); setRecordedTranscript(transcript.trim()); };
+        recognition.onerror = () => undefined;
+        recognition.onend = () => { if (isRecording) try { recognition.start(); } catch { /* browser already stopped */ } };
+        speechRecognitionRef.current = recognition;
+        recognition.start();
+      }
+    } catch {
+      setIsRecording(false);
+      setRecordedTranscript("Microphone permission was not granted. You can still type a question.");
+    }
+  };
 
   const stopSpeaking = () => {
     if (!speechSupported) return;
@@ -157,6 +214,10 @@ export function AIChatBox({
   // Filter out system messages
   const displayMessages = messages.filter((msg) => msg.role !== "system");
   const assistantMessages = displayMessages.filter((msg) => msg.role === "assistant");
+
+  useEffect(() => {
+    return () => { if (recordingTimerRef.current) window.clearInterval(recordingTimerRef.current); if (recordedUrl) URL.revokeObjectURL(recordedUrl); speechRecognitionRef.current?.stop(); mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop()); };
+  }, [recordedUrl]);
 
   useEffect(() => {
     if (!enableSpeech || !autoSpeak || assistantMessages.length <= lastSpokenAssistantCount.current) return;
@@ -199,6 +260,24 @@ export function AIChatBox({
         });
       });
     }
+  };
+
+  const sendRecordedMessage = () => {
+    const transcript = recordedTranscript.trim();
+    if (!transcript || isLoading) return;
+    onSendMessage(`Voice message: ${transcript}`);
+    if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+    setRecordedUrl(null);
+    setRecordedTranscript("");
+    setRecordingSeconds(0);
+  };
+
+  const discardRecording = () => {
+    stopRecording();
+    if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+    setRecordedUrl(null);
+    setRecordedTranscript("");
+    setRecordingSeconds(0);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -353,6 +432,12 @@ export function AIChatBox({
         onSubmit={handleSubmit}
         className="flex gap-2 p-4 border-t bg-background/50 items-end"
       >
+        {enableSpeech && <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" onClick={isRecording ? stopRecording : startRecording} disabled={!recordingSupported} className={cn("h-[38px] shrink-0 px-3 text-[10px] uppercase tracking-[.08em]", isRecording && "border-red-500 text-red-600")} aria-label={isRecording ? "Stop recording voice message" : "Record voice message"}>
+            {isRecording ? <Square className="mr-1 size-3" /> : <Mic className="mr-1 size-3" />}{isRecording ? `STOP ${String(Math.floor(recordingSeconds / 60)).padStart(2, "0")}:${String(recordingSeconds % 60).padStart(2, "0")}` : "RECORD VOICE"}
+          </Button>
+          {!recordingSupported && <span className="text-[9px] text-muted-foreground">MIC NOT AVAILABLE</span>}
+        </div>}
         <Textarea
           ref={textareaRef}
           value={input}
@@ -362,6 +447,12 @@ export function AIChatBox({
           className="flex-1 max-h-32 resize-none min-h-9"
           rows={1}
         />
+        {recordedUrl && <div className="flex min-w-full flex-wrap items-center gap-2 rounded border border-cyan-700/40 bg-cyan-50 px-2 py-1.5 text-[10px] text-cyan-900">
+          <audio controls src={recordedUrl} className="h-8 max-w-[170px]" aria-label="Recorded voice preview" />
+          <span className="max-w-[280px] truncate" title={recordedTranscript}>{recordedTranscript || "Audio recorded; speak clearly or type the transcript before sending."}</span>
+          <Button type="button" variant="outline" size="sm" onClick={sendRecordedMessage} disabled={!recordedTranscript.trim() || isLoading} className="h-7 px-2 text-[9px]"><Send className="mr-1 size-3" />SEND VOICE</Button>
+          <Button type="button" variant="outline" size="sm" onClick={discardRecording} className="h-7 px-2 text-[9px]"><RotateCcw className="mr-1 size-3" />RE-RECORD</Button>
+        </div>}
         <Button
           type="submit"
           size="icon"
