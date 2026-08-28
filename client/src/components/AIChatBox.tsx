@@ -203,8 +203,11 @@ export function AIChatBox({
     if (!speechSupported || !content.trim()) return;
     stopSpeaking();
     const utterance = new SpeechSynthesisUtterance(content.replace(/[#*_`>|-]/g, " ").replace(/\s+/g, " ").trim());
-    utterance.rate = 0.96;
-    utterance.pitch = 1;
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(voice => /^(en-IN|hi-IN)$/i.test(voice.lang)) ?? voices.find(voice => /^en(-US|-GB)?$/i.test(voice.lang)) ?? voices.find(voice => voice.lang.toLowerCase().startsWith("en"));
+    if (preferredVoice) utterance.voice = preferredVoice;
+    utterance.rate = 0.94;
+    utterance.pitch = 1.02;
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = () => setIsSpeaking(false);
