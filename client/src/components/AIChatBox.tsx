@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
-import { Loader2, Send, User, Sparkles } from "lucide-react";
+import { Loader2, Send, User, Sparkles, Volume2, VolumeX, Square } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { Streamdown } from "streamdown";
 
@@ -57,6 +57,10 @@ export type AIChatBoxProps = {
    * Click to send directly
    */
   suggestedPrompts?: string[];
+  /** Enables built-in browser speech controls for assistant/agent messages. */
+  enableSpeech?: boolean;
+  /** Label announced for assistant messages. */
+  assistantLabel?: string;
 };
 
 /**
@@ -119,15 +123,47 @@ export function AIChatBox({
   height = "600px",
   emptyStateMessage = "Start a conversation with AI",
   suggestedPrompts,
+  enableSpeech = true,
+  assistantLabel = "AI agent",
 }: AIChatBoxProps) {
   const [input, setInput] = useState("");
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputAreaRef = useRef<HTMLFormElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [autoSpeak, setAutoSpeak] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const lastSpokenAssistantCount = useRef(0);
+  const speechSupported = typeof window !== "undefined" && "speechSynthesis" in window;
+
+  const stopSpeaking = () => {
+    if (!speechSupported) return;
+    window.speechSynthesis.cancel();
+    setIsSpeaking(false);
+  };
+
+  const speak = (content: string) => {
+    if (!speechSupported || !content.trim()) return;
+    stopSpeaking();
+    const utterance = new SpeechSynthesisUtterance(content.replace(/[#*_`>|-]/g, " ").replace(/\s+/g, " ").trim());
+    utterance.rate = 0.96;
+    utterance.pitch = 1;
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+  };
 
   // Filter out system messages
   const displayMessages = messages.filter((msg) => msg.role !== "system");
+  const assistantMessages = displayMessages.filter((msg) => msg.role === "assistant");
+
+  useEffect(() => {
+    if (!enableSpeech || !autoSpeak || assistantMessages.length <= lastSpokenAssistantCount.current) return;
+    const latest = assistantMessages[assistantMessages.length - 1];
+    if (latest) speak(latest.content);
+    lastSpokenAssistantCount.current = assistantMessages.length;
+  }, [assistantMessages, autoSpeak, enableSpeech]);
 
   // Calculate min-height for last assistant message to push user message to top
   const [minHeightForLastMessage, setMinHeightForLastMessage] = useState(0);
@@ -196,6 +232,15 @@ export function AIChatBox({
       )}
       style={{ height }}
     >
+      {enableSpeech && <div className="flex items-center justify-between gap-2 border-b bg-background/70 px-3 py-2 text-[10px] uppercase tracking-[.1em]">
+        <span className="text-muted-foreground">VOICE · {speechSupported ? (isSpeaking ? `${assistantLabel} speaking` : "ready") : "not supported in this browser"}</span>
+        <div className="flex items-center gap-1">
+          <Button type="button" variant="outline" size="sm" onClick={() => setAutoSpeak(current => !current)} disabled={!speechSupported} className="h-7 px-2 text-[10px]" aria-pressed={autoSpeak}>{autoSpeak ? <Volume2 className="mr-1 size-3" /> : <VolumeX className="mr-1 size-3" />}AUTO SPEAK</Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => { const latest = assistantMessages[assistantMessages.length - 1]; if (latest) speak(latest.content); }} disabled={!speechSupported || !assistantMessages.length} className="h-7 px-2 text-[10px]"><Volume2 className="mr-1 size-3" />SPEAK</Button>
+          <Button type="button" variant="outline" size="sm" onClick={stopSpeaking} disabled={!speechSupported || !isSpeaking} className="h-7 px-2 text-[10px]"><Square className="mr-1 size-3" />STOP</Button>
+        </div>
+      </div>}
+
       {/* Messages Area */}
       <div ref={scrollAreaRef} className="flex-1 overflow-hidden">
         {displayMessages.length === 0 ? (
@@ -262,7 +307,7 @@ export function AIChatBox({
                     >
                       {message.role === "assistant" ? (
                         <div className="prose prose-sm dark:prose-invert max-w-none">
-                          <Streamdown>{message.content}</Streamdown>
+                          <div className="mb-1 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[.08em] text-muted-foreground"><span>{assistantLabel}</span><button type="button" onClick={() => speak(message.content)} disabled={!speechSupported} className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[9px] hover:bg-accent disabled:opacity-50" aria-label={`Speak ${assistantLabel} response`}><Volume2 className="size-3" />SPEAK</button></div><Streamdown>{message.content}</Streamdown>
                         </div>
                       ) : (
                         <p className="whitespace-pre-wrap text-sm">
