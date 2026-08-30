@@ -1,52 +1,97 @@
-# DRIFT — Drone Based Reconnaissance & Infrastructure Fault Tracking
+# DRIFT — Drone-Based Reconnaissance & Infrastructure Fault Tracking
 
-> **Public interactive demo:** [Open DRIFT](https://drift-ai-ml-platform.vercel.app/)
+AI-assisted infrastructure inspection platform.
+Reviews drone/operator evidence → prioritises defects → maps findings to coordinates & telemetry → generates audit-ready reports.
 
-DRIFT is an AI-assisted infrastructure-inspection platform for reviewing drone and operator-captured evidence, prioritising defects, correlating findings with coordinates and telemetry, generating audit-ready reports, and supporting accountable engineer review. The public demo is designed to be explored without sign-in.
+🔗 **Live demo:** https://drift-ai-ml-platform.vercel.app/ (no sign-in needed)
 
-## Interactive demo
+> ⚠️ **Safety boundary:** DRIFT never arms, launches, or controls an aircraft. It only *ingests* operator-approved telemetry and media.
 
-Use the links below to open each live workspace directly.
+---
 
-| Workspace | Open live demo |
-| --- | --- |
-| Operations overview | [Open Operations](https://drift-ai-ml-platform.vercel.app/?workspace=operations) |
-| Defect control | [Open Defect Control](https://drift-ai-ml-platform.vercel.app/?workspace=defects) |
-| Evidence vault | [Open Evidence Vault](https://drift-ai-ml-platform.vercel.app/?workspace=evidence) |
-| Reports and PDF generation | [Open Reports](https://drift-ai-ml-platform.vercel.app/?workspace=reports) |
-| Hardware bridge boundary | [Open Hardware Bridge](https://drift-ai-ml-platform.vercel.app/?workspace=hardware) |
+## 🧭 What it does
 
-### Recommended public demo flow
+- Reviews drone / operator-captured evidence
+- Prioritises and scores defects by severity
+- Correlates findings with GPS coordinates + telemetry
+- Generates audit-ready AI narrative + PDF reports
+- Supports accountable engineer review before action is taken
 
-Open **Operations**, select **RUN DEMO**, and wait for the simulator mission to persist. The mission creates telemetry, evidence-linked findings, severity scores, repair estimates, and maintenance alerts. Open **Defect Control** to inspect findings and map markers, then use **Evidence Vault** to review stored media. Finally, open **Reports**, choose **AI NARRATIVE** or **GENERATE PDF REPORT**, and use **OPEN PDF** to view the generated report.
+---
 
-The map uses Google Maps when the configured provider is available. If the provider is unavailable because of key restrictions or billing configuration, the dashboard automatically presents a visible OpenStreetMap fallback so coordinate context remains usable. Marker buttons remain available for selecting findings.
+## 🖥️ Demo workspaces
 
-## Verified production endpoints
+| Workspace | Purpose |
+|---|---|
+| **Operations** | Run the simulator, see mission status |
+| **Defect Control** | List of findings + map markers |
+| **Evidence Vault** | Stored photos/video linked to findings |
+| **Reports** | Generate AI narrative or PDF report |
+| **Hardware Bridge** | View the ingestion boundary (no flight control) |
 
-| Endpoint | Link |
-| --- | --- |
-| Frontend | [drift-ai-ml-platform.vercel.app](https://drift-ai-ml-platform.vercel.app/) |
-| Render backend | [drift-node-api.onrender.com](https://drift-node-api.onrender.com/) |
-| Live overview API | [Open overview response](https://drift-node-api.onrender.com/api/trpc/drift.overview) |
-| Latest verified PDF attachment | [Open verified report](https://drift-node-api.onrender.com/api/drift/attachments/db:1b2b3c0b-e1fa-44f5-9e18-6bb0382685ec) |
-| Google Maps credentials | [Open Google Cloud Maps credentials](https://console.cloud.google.com/google/maps-apis/credentials) |
+### Demo flow
 
-The report endpoint above is a durable PostgreSQL-backed attachment URL served by the Node backend. It is included as a verification sample; newly generated reports expose their own backend URL in the Reports workspace.
+```mermaid
+flowchart LR
+    A[Open Operations] --> B[Click RUN DEMO]
+    B --> C[Simulator generates:<br/>telemetry, findings,<br/>severity, alerts]
+    C --> D[Open Defect Control<br/>inspect findings + map]
+    D --> E[Open Evidence Vault<br/>review stored media]
+    E --> F[Open Reports]
+    F --> G[Generate AI Narrative<br/>or PDF Report]
+```
 
-## What is implemented
+---
 
-The application includes a React dashboard, a Node.js/tRPC API, PostgreSQL-compatible Drizzle persistence, durable database-backed evidence and report attachments, simulator mode, a validated hardware-ingestion boundary, explainable defect-inference adapters, geospatial mission context, severity and repair rules, AI decision-support narratives, and engineer-review state.
+## 🏗️ Architecture
 
-The public demo permits monitoring, simulator execution, report generation, map exploration, and report downloads without requiring sign-in. Authentication remains an integration boundary for protected operational actions such as engineer approvals, original-media uploads, and hardware-bridge operations.
+```mermaid
+flowchart TB
+    U[Operator / Browser] --> FE
 
-## Safety boundary
+    subgraph FE[Frontend — Vercel]
+        R[React dashboard]
+        M[Google Maps API]
+        O[OpenStreetMap fallback]
+    end
 
-> DRIFT never arms, launches, or controls an aircraft.
+    FE --> BE
 
-The hardware layer is an authenticated ingestion adapter for operator-approved telemetry and media bridges. Configure a compatible endpoint through `DRIFT_HARDWARE_ENDPOINT`, validate payloads through the integration route, and complete an on-site integration test before operational use. Simulator mode does not issue flight commands.
+    subgraph BE[Backend — Render, Node.js / tRPC]
+        API[tRPC API + auth]
+        INF[Inference engine<br/>severity & repair rules]
+        REP[Report engine<br/>AI narrative + PDF]
+    end
 
-## Local development
+    BE --> DB[(PostgreSQL<br/>via Drizzle ORM)]
+    HW[Hardware bridge<br/>MAVLink / RTSP / HTTP] --> BE
+    ML[ML inference<br/>optional, external] --> BE
+```
+
+**In short:**
+- 🖼️ **Frontend (Vercel)** — React dashboard, maps with automatic OSM fallback
+- ⚙️ **Backend (Render)** — Node.js + tRPC API, defect inference, report generation
+- 🗄️ **Database** — PostgreSQL via Drizzle ORM
+- 📡 **Hardware bridge** — authenticated, read-only ingestion (no flight control)
+- 🧠 **ML inference** — optional external computer-vision service
+
+---
+
+## ✅ What's implemented
+
+- React dashboard (all 5 workspaces above)
+- Node.js/tRPC API with validated hardware-ingestion boundary
+- PostgreSQL persistence (Drizzle), durable evidence + report storage
+- Simulator mode — generates demo data with no real hardware
+- Explainable defect-inference adapters + geospatial context
+- Severity scoring, repair-cost estimates, AI narratives
+- Engineer-review state for accountability
+
+🔒 **Not open in the public demo:** engineer approvals, original-media uploads, hardware-bridge operations — these need authentication.
+
+---
+
+## 🚀 Local development
 
 ```bash
 pnpm install
@@ -57,37 +102,86 @@ pnpm test
 pnpm build
 ```
 
-Copy `.env.example` only when operating an external hardware or computer-vision service. Do not commit environment files, API keys, database URLs, or provider credentials.
+> Only copy `.env.example` if you're wiring up real hardware or a CV service. Never commit `.env` files or credentials.
 
-## Integration configuration
+---
 
-| Variable | Required | Purpose |
-| --- | --- | --- |
-| `DRIFT_HARDWARE_ENDPOINT` | No | Operator-approved HTTP, MAVLink bridge, or RTSP media endpoint. |
-| `ML_INFERENCE_URL` | No | Optional external vision-service endpoint. |
-| `VITE_BACKEND_URL` | Production | Public Node API origin used by the frontend for tRPC and stored assets. |
-| `VITE_GOOGLE_MAPS_API_KEY` | Optional | Browser-restricted Google Maps JavaScript API key. OpenStreetMap fallback remains available. |
+## ⚙️ Configuration
 
-Configure production secrets through Vercel and Render environment settings rather than committing them to GitHub. Restrict browser map keys by allowed domains and API product before using them in production.
+| Variable | Required | What it's for |
+|---|---|---|
+| `DRIFT_HARDWARE_ENDPOINT` | No | Operator-approved MAVLink / RTSP / HTTP feed |
+| `ML_INFERENCE_URL` | No | External computer-vision endpoint |
+| `VITE_BACKEND_URL` | Yes (prod) | Node API origin for tRPC + stored assets |
+| `VITE_GOOGLE_MAPS_API_KEY` | Optional | Falls back to OSM if unset/restricted |
 
-## Deployment
+Set production secrets in **Vercel** and **Render** dashboards — never in the repo.
 
-The frontend is deployed on Vercel and the Node API is deployed on Render. GitHub pushes to `main` trigger the configured deployment pipelines.
+---
 
-- [GitHub repository](https://github.com/RidhimaKulashriz/DRIFT-AI-ML-Platform)
-- [Latest production fix commit](https://github.com/RidhimaKulashriz/DRIFT-AI-ML-Platform/commit/4197d6e)
-- [Render service definition](render.yaml)
-- [Deployment documentation](docs/deployment.md)
+## 📦 Deployment
 
-## Test coverage
+```mermaid
+flowchart LR
+    G[git push to main] --> V[Vercel<br/>builds frontend]
+    G --> R[Render<br/>builds backend]
+    V --> P1[drift-ai-ml-platform.vercel.app]
+    R --> P2[drift-node-api.onrender.com]
+```
 
-`pnpm test` covers ZeroError scoring, simulator-safe hardware fallback, telemetry validation, inference adapters, authentication boundaries, and report-generation behavior. Run `pnpm check` and `pnpm build` before pushing changes. The CI workflow is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+- Frontend → **Vercel**
+- Backend → **Render**
+- Both auto-deploy on push to `main`
 
-See [`docs/hardware_adapter_contract.md`](docs/hardware_adapter_contract.md) for the authenticated telemetry payload contract, media-ingestion boundary, and safe operator integration-test sequence.
+---
 
-## References
+## 🧪 Testing
 
-[1]: https://drift-ai-ml-platform.vercel.app/ "DRIFT public interactive demo"
-[2]: https://drift-node-api.onrender.com/ "DRIFT Render Node API"
-[3]: https://github.com/RidhimaKulashriz/DRIFT-AI-ML-Platform "DRIFT GitHub repository"
-[4]: https://console.cloud.google.com/google/maps-apis/credentials "Google Cloud Maps credentials"
+```bash
+pnpm test    # ZeroError scoring, hardware fallback, telemetry validation,
+             # inference adapters, auth boundaries, report generation
+pnpm check   # run before every push
+pnpm build   # run before every push
+```
+
+CI config: [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+
+---
+
+## 📁 Project structure
+
+```
+client/              → React + Vite frontend
+server/              → Node.js / tRPC backend
+shared/              → Shared types & schemas
+drizzle/             → Drizzle schema (dev)
+drizzle-postgres/    → Drizzle schema (prod, PostgreSQL)
+docs/                → Architecture & deployment docs
+scripts/             → Utility scripts
+```
+
+---
+
+## 🛡️ Safety boundary
+
+```mermaid
+flowchart LR
+    HW[Drone / Operator hardware] -- "telemetry + media only" --> API[DRIFT ingestion API]
+    API -. "❌ no flight commands ever sent" .-> HW
+```
+
+- DRIFT **never** arms, launches, or controls an aircraft
+- Hardware layer = authenticated, one-way ingestion only
+- Simulator mode issues **zero** flight commands
+- Before going live: configure `DRIFT_HARDWARE_ENDPOINT`, validate the payload contract, run an on-site integration test
+
+See [`docs/hardware_adapter_contract.md`](docs/hardware_adapter_contract.md) for the full contract.
+
+---
+
+## 🔗 References
+
+- [Live demo](https://drift-ai-ml-platform.vercel.app/)
+- [Deployment docs](docs/deployment.md)
+- [Hardware adapter contract](docs/hardware_adapter_contract.md)
+- [CI workflow](.github/workflows/ci.yml)
