@@ -85,6 +85,90 @@ The frontend is deployed on Vercel and the Node API is deployed on Render. GitHu
 
 See [`docs/hardware_adapter_contract.md`](docs/hardware_adapter_contract.md) for the authenticated telemetry payload contract, media-ingestion boundary, and safe operator integration-test sequence.
 
+## System Architecture
+                         ┌─────────────────────┐
+                         │       USER          │
+                         │ Engineer / Operator  │
+                         └──────────┬──────────┘
+                                    │
+                                    ▼
+                  ┌─────────────────────────────────┐
+                  │       REACT DASHBOARD            │
+                  │                                  │
+                  │ Operations │ Defects │ Evidence │
+                  │ Maps       │ Reports  │ Alerts   │
+                  └────────────────┬────────────────┘
+                                   │
+                              tRPC / HTTP
+                                   │
+                                   ▼
+                  ┌─────────────────────────────────┐
+                  │       NODE.JS + tRPC API         │
+                  │                                  │
+                  │ Mission Management               │
+                  │ Telemetry Validation             │
+                  │ Finding Management               │
+                  │ Auth Boundaries                  │
+                  │ Report Generation                │
+                  └───────┬──────────────┬──────────┘
+                          │              │
+              ┌───────────▼──────┐   ┌──▼────────────────┐
+              │   AI / ML ENGINE │   │ POSTGRESQL        │
+              │                  │   │ + DRIZZLE ORM     │
+              │ Computer Vision  │   │                  │
+              │ Defect Detection │   │ Missions         │
+              │ Classification   │   │ Findings         │
+              │ Severity         │   │ Telemetry        │
+              │ Repair Estimate  │   │ Evidence         │
+              │ AI Narrative     │   │ Reports          │
+              └────────┬─────────┘   └───────────────────┘
+                       │
+                       ▼
+              ┌────────────────────┐
+              │ DECISION ENGINE    │
+              │                    │
+              │ Severity           │
+              │ Priority           │
+              │ Maintenance Alert  │
+              │ Repair Estimate     │
+              └─────────┬──────────┘
+                        │
+                        ▼
+              ┌────────────────────┐
+              │ GEO-SPATIAL ENGINE │
+              │                    │
+              │ GPS + Telemetry    │
+              │ Maps               │
+              │ Defect Markers     │
+              └─────────┬──────────┘
+                        │
+                        ▼
+              ┌────────────────────┐
+              │ REPORTING ENGINE   │
+              │                    │
+              │ AI Narrative       │
+              │ Audit Report       │
+              │ PDF Generation     │
+              └────────────────────┘
+
+
+     ───────────── EXTERNAL INPUT ─────────────
+
+       ┌─────────────────────────────────────┐
+       │ DRONE / OPERATOR HARDWARE            │
+       │                                     │
+       │ Camera │ Telemetry │ RTSP │ MAVLink │
+       └──────────────────┬──────────────────┘
+                          │
+                          ▼
+                ┌───────────────────┐
+                │ HARDWARE ADAPTER  │
+                │ AUTHENTICATED     │
+                │ INGESTION         │
+                └─────────┬─────────┘
+                          │
+                          └──────────────► BACKEND
+
 ## References
 
 [1]: https://drift-ai-ml-platform.vercel.app/ "DRIFT public interactive demo"
