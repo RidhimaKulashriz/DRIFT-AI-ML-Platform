@@ -494,18 +494,26 @@ export default function DriftConsole() {
   };
 
   const sendSelectedReportToContractor = () => {
-    if (!selected.id || !selected.assetId) { toast.error("Select a persisted finding linked to an asset before sending a report."); return; }
+    if (!selected.id) { toast.error("Select a finding before sending a report."); return; }
+    // Resolve contractor from geo-boundary (backend does the same)
+    const lat = typeof selected.latitude === 'number' ? selected.latitude : parseFloat(String(selected.latitude));
+    const lng = typeof selected.longitude === 'number' ? selected.longitude : parseFloat(String(selected.longitude));
+    const matchedContractor = (Number.isFinite(lat) && Number.isFinite(lng))
+      ? contractorData.find(c => Math.sqrt((lat - c.centerLat) ** 2 + (lng - c.centerLng) ** 2) <= c.radiusDegrees)
+      : contractorData[0];
+    const contractorName = matchedContractor?.name ?? "Unassigned";
+    const priority = calculateOverallPriority({ defectSeverity: { pothole: 45, crack: 55, structural: 85, corrosion: 70, spalling: 75, exposed_rebar: 88, water_intrusion: 60, settlement: 90, rail_alignment: 82, obstruction: 40, lighting_failure: 50 }[selected.defectType] ?? 50, mlConfidence: (selected.confidencePercent ?? 0) / 100, trafficImpact: 0, sensorAnomaly: 0, infrastructureCriticality: 3 }, selected.defectType);
     sendReportEmail.mutate({
       ticketId: lastTicketId ?? undefined,
-      subject: `DRIFT inspection report · ${selected.label}`,
-      contractor: "Assigned contractor · server-routed",
+      subject: `DRIFT inspection report · ${selected.label} · ${contractorName}`,
+      contractor: contractorName,
       defect: selected.defectType,
       confidencePercent: selected.confidencePercent,
       severity: selected.severity,
       latitude: String(selected.latitude),
       longitude: String(selected.longitude),
-      estimatedRepairCost: formatCurrency(repairTotal),
-      recommendedDeadline: selected.severity === "critical" ? "Engineer review within 4 hours" : selected.severity === "high" ? "Engineer review within 24 hours" : "Next maintenance cycle",
+      estimatedRepairCost: priority.repairCostEstimateINR > 0 ? formatRepairCost(priority.repairCostEstimateINR) : formatCurrency(repairTotal),
+      recommendedDeadline: priority.recommendedDeadline,
       reportUrl: reportResult?.storageUrl ? resolveBackendAssetUrl(reportResult.storageUrl) : undefined,
       evidenceUrl: selectedEvidence?.storageUrl ? resolveBackendAssetUrl(selectedEvidence.storageUrl) : undefined,
     });

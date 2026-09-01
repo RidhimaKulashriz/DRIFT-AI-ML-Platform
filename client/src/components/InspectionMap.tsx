@@ -5,14 +5,8 @@ import { cn } from "@/lib/utils";
 type Severity = "low" | "medium" | "high" | "critical";
 type MapDefect = { id: number; label: string; severity: Severity; latitude: string | number; longitude: string | number; isTransient?: boolean };
 type InspectionMapProps = { defects: MapDefect[]; telemetry: Array<{ latitude: string | number; longitude: string | number }>; selectedId?: number; streetViewRequest?: number; onSelect: (id: number) => void; className?: string };
-type PublicBridgeContext = { structureNumber: string; title: string; latitude: number; longitude: number; deckCondition: string; source: string; sourceUrl: string };
 
 const colors: Record<Severity, string> = { critical: "#c81e1e", high: "#e26d16", medium: "#b98600", low: "#177a47" };
-const publicNbiBridgeContext: PublicBridgeContext[] = [
-  { structureNumber: "0518", title: "Johnson River", latitude: 63.704797, longitude: -144.640464, deckCondition: "4", source: "USDOT/BTS NBI 2025", sourceUrl: "https://geodata.bts.gov/datasets/usdot::national-bridge-inventory/about" },
-  { structureNumber: "0574", title: "Gulkana River", latitude: 62.268856, longitude: -145.373803, deckCondition: "4", source: "USDOT/BTS NBI 2025", sourceUrl: "https://geodata.bts.gov/datasets/usdot::national-bridge-inventory/about" },
-  { structureNumber: "0581", title: "Upper Miller Creek", latitude: 63.375533, longitude: -145.729814, deckCondition: "4", source: "USDOT/BTS NBI 2025", sourceUrl: "https://geodata.bts.gov/datasets/usdot::national-bridge-inventory/about" },
-];
 
 let googleMapsPromise: Promise<typeof google> | null = null;
 
@@ -43,11 +37,140 @@ function asCoordinates(value: { latitude: string | number; longitude: string | n
   return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 ? { lat, lng } : null;
 }
 
+/* ─── Leaflet fallback map (no Google Maps key required) ─── */
+
+function loadLeafletCSS() {
+  if (document.getElementById("leaflet-css")) return;
+  const link = document.createElement("link");
+  link.id = "leaflet-css";
+  link.rel = "stylesheet";
+  link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+  document.head.appendChild(link);
+}
+
+function LeafletFallbackMap({ defects, telemetry, selectedId, onSelect }: {
+  defects: Array<{ defect: MapDefect; point: { lat: number; lng: number } }>;
+  telemetry: Array<{ lat: number; lng: number }>;
+  selectedId?: number;
+  onSelect: (id: number) => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
+  const [ready, setReady] = useState(false);
+
+  // Load Leaflet dynamically
+  useEffect(() => {
+    loadLeafletCSS();
+    if ((window as any).L) { setReady(true); return; }
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    script.onload = () => setReady(true);
+    document.head.appendChild(script);
+  }, []);
+
+  // Init map
+  useEffect(() => {
+    if (!ready || !containerRef.current || mapRef.current) return;
+    const L = (window as any).L;
+    const allPoints = [...defects.map(d => d.point), ...telemetry];
+    const center = allPoints.length
+      ? { lat: allPoints.reduce((s, p) => s + p.lat, 0) / allPoints.length, lng: allPoints.reduce((s, p) => s + p.lng, 0) / allPoints.length }
+      : { lat: 28.6139, lng: 77.209 };
+
+    const map = L.map(containerRef.current, {
+      center: [center.lat, center.lng],
+      zoom: defects.length > 0 ? 13 : 11,
+      zoomControl: true,
+      attributionControl: true,
+    });
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+      maxZoom: 19,
+    }).addTo(map);
+
+    mapRef.current = map;
+
+    // Add campus labels
+    const campusStyle = { className: "campus-label" };
+    L.marker([28.6876, 77.2100], { icon: L.divIcon({ className: "campus-marker", html: '<div style="background:#1e40af;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">IGDTUW</div>', iconSize: [60, 20], iconAnchor: [30, 10] }) }).addTo(map);
+    L.marker([28.5449, 77.2750], { icon: L.divIcon({ className: "campus-marker", html: '<div style="background:#047857;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">IIIT-Delhi</div>', iconSize: [70, 20], iconAnchor: [35, 10] }) }).addTo(map);
+
+    return () => { map.remove(); mapRef.current = null; };
+  }, [ready, defects.length, telemetry.length]);
+
+  // Update markers
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !(window as any).L) return;
+    const L = (window as any).L;
+
+    // Clear old markers
+    markersRef.current.forEach(m => m.remove());
+    markersRef.current = [];
+
+    // Add defect markers
+    const bounds: any[] = [];
+    defects.forEach(({ defect, point }) => {
+      const isSelected = defect.id === selectedId;
+      const color = colors[defect.severity];
+      const size = isSelected ? 18 : 12;
+      const marker = L.circleMarker([point.lat, point.lng], {
+        radius: size / 2,
+        fillColor: color,
+        color: "#fff",
+        weight: isSelected ? 3 : 2,
+        fillOpacity: 0.9,
+      }).addTo(map);
+
+      marker.bindPopup(`<div style="font:13px Arial,sans-serif"><strong>${defect.label}</strong><br/>Severity: ${defect.severity}<br/>GPS: ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}<br/><em>Engineer review required.</em></div>`);
+      marker.on("click", () => onSelect(defect.id));
+      markersRef.current.push(marker);
+      bounds.push([point.lat, point.lng]);
+    });
+
+    // Add telemetry dots
+    telemetry.forEach(point => {
+      const marker = L.circleMarker([point.lat, point.lng], {
+        radius: 2, fillColor: "#16b7d4", color: "#fff", weight: 0.5, fillOpacity: 0.5,
+      }).addTo(map);
+      markersRef.current.push(marker);
+      bounds.push([point.lat, point.lng]);
+    });
+
+    // Add campus markers
+    const igdtuw = L.circleMarker([28.6876, 77.2100], { radius: 6, fillColor: "#1e40af", color: "#fff", weight: 2, fillOpacity: 0.8 }).addTo(map);
+    igdtuw.bindPopup("<b>IGDTUW Campus</b><br/>Contractor: Manu<br/>ridhimakulashri07042025@gmail.com");
+    markersRef.current.push(igdtuw);
+
+    const iiitd = L.circleMarker([28.5449, 77.2750], { radius: 6, fillColor: "#047857", color: "#fff", weight: 2, fillOpacity: 0.8 }).addTo(map);
+    iiitd.bindPopup("<b>IIIT-Delhi Campus</b><br/>Contractor: Ridhima Kulashriz<br/>ridhimakulashriz@gmail.com");
+    markersRef.current.push(iiitd);
+    bounds.push([28.6876, 77.2100], [28.5449, 77.2750]);
+
+    if (bounds.length > 0) {
+      map.fitBounds(bounds, { padding: [40, 40] });
+    }
+  }, [defects, telemetry, selectedId, onSelect]);
+
+  // Pan to selected defect
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !selectedId) return;
+    const found = defects.find(d => d.defect.id === selectedId);
+    if (found) map.flyTo([found.point.lat, found.point.lng], Math.max(map.getZoom() ?? 14, 15));
+  }, [selectedId, defects]);
+
+  return <div ref={containerRef} className="absolute inset-0" style={{ minHeight: 500, background: "#e5e7eb" }} />;
+}
+
+/* ─── Main InspectionMap component ─── */
+
 export function InspectionMap({ defects, telemetry, selectedId, streetViewRequest = 0, onSelect, className }: InspectionMapProps) {
   const mapElement = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const projectMarkers = useRef<google.maps.Marker[]>([]);
-  const contextMarkers = useRef<google.maps.Marker[]>([]);
   const completedStreetViewRequest = useRef(0);
   const [mapState, setMapState] = useState<"loading" | "ready" | "missing-key" | "error">("loading");
   const [streetViewStatus, setStreetViewStatus] = useState<"idle" | "checking" | "open" | "unavailable">("idle");
@@ -60,26 +183,27 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
   const selectedDefect = useMemo(() => validDefects.find(item => item.defect.id === selectedId) ?? null, [selectedId, validDefects]);
   const transientDefects = useMemo(() => validDefects.filter(item => item.defect.isTransient === true || item.defect.id < 0), [validDefects]);
 
+  const useLeaflet = !apiKey;
+
+  // Google Maps path
   useEffect(() => {
-    if (!apiKey) { setMapState("missing-key"); return; }
+    if (useLeaflet) { setMapState("missing-key"); return; }
     let cancelled = false;
     setMapState("loading");
-    loadGoogleMaps(apiKey).then(() => {
+    loadGoogleMaps(apiKey!).then(() => {
       if (cancelled || !mapElement.current) return;
-      const center = validDefects[0]?.point ?? { lat: publicNbiBridgeContext[0]!.latitude, lng: publicNbiBridgeContext[0]!.longitude };
-      mapRef.current = new window.google.maps.Map(mapElement.current, { center, zoom: validDefects.length ? 14 : 6, mapTypeControl: true, streetViewControl: true, fullscreenControl: true, clickableIcons: false, gestureHandling: "cooperative" });
+      const center = validDefects[0]?.point ?? { lat: 28.6139, lng: 77.209 };
+      mapRef.current = new window.google.maps.Map(mapElement.current, { center, zoom: validDefects.length ? 13 : 11, mapTypeControl: true, streetViewControl: true, fullscreenControl: true, clickableIcons: false, gestureHandling: "cooperative" });
       setMapState("ready");
     }).catch(() => { if (!cancelled) setMapState("error"); });
     return () => { cancelled = true; };
-  }, [apiKey]);
+  }, [apiKey, useLeaflet]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || mapState !== "ready" || !window.google?.maps) return;
     projectMarkers.current.forEach(marker => marker.setMap(null));
-    contextMarkers.current.forEach(marker => marker.setMap(null));
     projectMarkers.current = [];
-    contextMarkers.current = [];
     const bounds = new window.google.maps.LatLngBounds();
     const infoWindow = new window.google.maps.InfoWindow();
 
@@ -89,7 +213,7 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
       const marker = new window.google.maps.Marker({
         map,
         position: point,
-        title: `${isTransient ? "SIMULATED DEMO advisory" : "DRIFT project finding"}: ${defect.label}`,
+        title: defect.label,
         zIndex: selected ? 10_000 : 1_000 + index,
         label: { text: isTransient ? String(index + 1) : defect.severity[0]!.toUpperCase(), color: "#ffffff", fontWeight: "700", fontSize: isTransient ? "10px" : "12px" },
         icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: colors[defect.severity], fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: selected ? 4 : 2, scale: selected ? 15 : 10 },
@@ -97,7 +221,7 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
       marker.addListener("click", () => {
         onSelect(defect.id);
         setStreetViewStatus("idle");
-        infoWindow.setContent(`<div style="max-width:240px;font:13px Arial,sans-serif"><strong>${isTransient ? "SIMULATED DEMO advisory" : "DRIFT project finding"}</strong><br/>${defect.label}<br/>Severity: ${defect.severity}<br/>Coordinates: ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}<br/><em>${isTransient ? "Temporary browser-only data. Not field evidence." : "Engineer review required."}</em></div>`);
+        infoWindow.setContent(`<div style="max-width:240px;font:13px Arial,sans-serif"><strong>${defect.label}</strong><br/>Severity: ${defect.severity}<br/>GPS: ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}<br/><em>Engineer review required.</em></div>`);
         infoWindow.open({ map, anchor: marker });
       });
       projectMarkers.current.push(marker);
@@ -112,15 +236,18 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
       });
     }
 
-    publicNbiBridgeContext.forEach(context => {
-      const marker = new window.google.maps.Marker({ map, position: { lat: context.latitude, lng: context.longitude }, title: `Public NBI context: ${context.title}`, label: { text: "NBI", color: "#ffffff", fontSize: "9px", fontWeight: "700" }, icon: { path: window.google.maps.SymbolPath.BACKWARD_CLOSED_ARROW, fillColor: "#5646b0", fillOpacity: .95, strokeColor: "#ffffff", strokeWeight: 1.5, scale: 6 } });
-      marker.addListener("click", () => {
-        infoWindow.setContent(`<div style="max-width:250px;font:13px Arial,sans-serif"><strong>Public NBI context only</strong><br/>${context.title} · Structure ${context.structureNumber}<br/>Published deck-condition field: ${context.deckCondition}<br/><em>2025 public inventory record. Not a DRIFT site, live defect, ticket, or safety determination.</em></div>`);
-        infoWindow.open({ map, anchor: marker });
-      });
-      contextMarkers.current.push(marker);
-    });
-    if (validDefects.length || (shouldShowTelemetry && validTelemetry.length)) map.fitBounds(bounds, validDefects.length ? 54 : 84);
+    // Campus markers
+    const igdtuwMarker = new window.google.maps.Marker({ map, position: { lat: 28.6876, lng: 77.2100 }, title: "IGDTUW Campus", label: { text: "IGDTUW", color: "#ffffff", fontSize: "10px", fontWeight: "700" }, icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: "#1e40af", fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 10 } });
+    igdtuwMarker.addListener("click", () => { infoWindow.setContent('<div style="font:13px Arial,sans-serif"><b>IGDTUW Campus</b><br/>Contractor: Manu<br/>ridhimakulashri07042025@gmail.com</div>'); infoWindow.open({ map, anchor: igdtuwMarker }); });
+    projectMarkers.current.push(igdtuwMarker);
+    bounds.extend({ lat: 28.6876, lng: 77.2100 });
+
+    const iiitdMarker = new window.google.maps.Marker({ map, position: { lat: 28.5449, lng: 77.2750 }, title: "IIIT-Delhi Campus", label: { text: "IIIT-D", color: "#ffffff", fontSize: "10px", fontWeight: "700" }, icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: "#047857", fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 10 } });
+    iiitdMarker.addListener("click", () => { infoWindow.setContent('<div style="font:13px Arial,sans-serif"><b>IIIT-Delhi Campus</b><br/>Contractor: Ridhima Kulashriz<br/>ridhimakulashriz@gmail.com</div>'); infoWindow.open({ map, anchor: iiitdMarker }); });
+    projectMarkers.current.push(iiitdMarker);
+    bounds.extend({ lat: 28.5449, lng: 77.2750 });
+
+    if (validDefects.length || (shouldShowTelemetry && validTelemetry.length)) map.fitBounds(bounds, 54);
   }, [mapState, onSelect, selectedId, shouldShowTelemetry, validDefects, validTelemetry]);
 
   useEffect(() => {
@@ -131,14 +258,6 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     map.setZoom(Math.max(map.getZoom() ?? 15, 16));
   }, [mapState, selectedDefect]);
 
-  const showNbiContext = () => {
-    const map = mapRef.current;
-    if (!map || !window.google?.maps) return;
-    const bounds = new window.google.maps.LatLngBounds();
-    publicNbiBridgeContext.forEach(point => bounds.extend({ lat: point.latitude, lng: point.longitude }));
-    map.getStreetView().setVisible(false);
-    map.fitBounds(bounds, 60);
-  };
   const focusTemporaryGrid = () => {
     const map = mapRef.current;
     if (!map || !window.google?.maps || !transientDefects.length) return;
@@ -148,6 +267,7 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     setStreetViewStatus("idle");
     map.fitBounds(bounds, 54);
   };
+
   const openStreetView = useCallback(async () => {
     const map = mapRef.current;
     if (!map || !selectedDefect || !window.google?.maps) return;
@@ -172,14 +292,32 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     void openStreetView();
   }, [mapState, openStreetView, selectedDefect, streetViewRequest]);
 
+  // Leaflet fallback rendering
+  if (useLeaflet) {
+    return (
+      <section className={cn("relative min-h-[500px] overflow-hidden border border-slate-200 bg-gray-100", className)} aria-label="Map infrastructure context">
+        <LeafletFallbackMap defects={validDefects} telemetry={validTelemetry} selectedId={selectedId} onSelect={onSelect} />
+        <div className="pointer-events-none absolute left-3 top-3 z-[1000] max-w-[calc(100%-1.5rem)] bg-white/95 px-3 py-2 text-[10px] font-semibold uppercase tracking-[.13em] text-gray-700 shadow-xl rounded">
+          <div>{validDefects.length} defect{validDefects.length === 1 ? "" : "s"} displayed &middot; {validTelemetry.length} telemetry {shouldShowTelemetry ? "points" : "hidden"}</div>
+          <div className="mt-2 flex flex-wrap gap-2 text-[9px] tracking-[.08em]">{severityCounts.map(item => <span key={item.severity} className="flex items-center gap-1"><i className="h-2 w-2 rounded-full" style={{ backgroundColor: colors[item.severity] }} />{item.count} {item.severity}</span>)}</div>
+        </div>
+        <div className="absolute bottom-3 left-3 right-3 z-[1000] flex flex-wrap items-center gap-2 bg-white/95 p-2.5 text-[9px] font-semibold uppercase tracking-[.1em] text-gray-700 shadow-xl rounded">
+          <span className="mr-auto">Defect markers &middot; Campus boundaries (IGDTUW + IIIT-Delhi) &middot; OpenStreetMap tiles</span>
+          <a className="pointer-events-auto border border-gray-300 px-2.5 py-1.5 text-[9px] font-bold text-gray-700 rounded hover:bg-gray-100" href="https://www.openstreetmap.org/" target="_blank" rel="noreferrer">OPENSTREETMAP</a>
+        </div>
+      </section>
+    );
+  }
+
+  // Google Maps rendering
   return <section className={cn("relative min-h-[500px] overflow-hidden border border-slate-700 bg-slate-950", className)} aria-label="Google Maps infrastructure context">
     <div ref={mapElement} className="absolute inset-0" />
-    {mapState === "loading" && <div className="absolute inset-0 grid place-items-center bg-slate-950 text-center text-xs font-semibold uppercase tracking-[.14em] text-slate-200">Loading Google Maps context…</div>}
-    {mapState === "missing-key" && <div className="absolute inset-0 grid place-items-center bg-slate-950 p-8 text-center text-xs font-semibold uppercase tracking-[.14em] text-slate-200"><div><strong className="block text-sm text-white">Google Maps configuration required</strong><span className="mt-3 block max-w-md normal-case font-normal leading-5 tracking-normal text-slate-400">Set the browser-visible Vercel variable <code>VITE_GOOGLE_MAPS_API_KEY</code> with a domain-restricted Google Maps JavaScript API key. No fallback map or invented locations are shown.</span></div></div>}
-    {mapState === "error" && <div className="absolute inset-0 grid place-items-center bg-slate-950 p-8 text-center text-xs font-semibold uppercase tracking-[.14em] text-slate-200"><div><strong className="block text-sm text-white">Google Maps could not load</strong><span className="mt-3 block max-w-md normal-case font-normal leading-5 tracking-normal text-slate-400">Verify the browser key, allowed Vercel domain, and Google Maps JavaScript API. Project and public-context markers remain intentionally unavailable until the map is live.</span></div></div>}
-    <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[calc(100%-1.5rem)] bg-slate-950/95 px-3 py-2 text-[10px] font-semibold uppercase tracking-[.13em] text-slate-100 shadow-xl"><div>{validDefects.length} displayed advisory point{validDefects.length === 1 ? "" : "s"} · {validTelemetry.length} telemetry {shouldShowTelemetry ? "shown" : "hidden for map clarity"}</div><div className="mt-2 flex flex-wrap gap-2 text-[9px] tracking-[.08em]">{severityCounts.map(item => <span key={item.severity} className="flex items-center gap-1"><i className="h-2 w-2 rounded-full" style={{ backgroundColor: colors[item.severity] }} />{item.count} {item.severity}</span>)}</div></div>
-    <div className="absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-center gap-2 bg-slate-950/95 p-2.5 text-[9px] font-semibold uppercase tracking-[.1em] text-slate-100 shadow-xl"><span className="mr-auto">● numbered temporary advisory · select any marker or report item · ◆ public NBI context</span><button type="button" onClick={focusTemporaryGrid} disabled={!transientDefects.length || mapState !== "ready"} className="pointer-events-auto border border-emerald-300/70 bg-emerald-900/90 px-2.5 py-1.5 text-[9px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">FOCUS 15-POINT GRID</button><button type="button" onClick={() => setTelemetryVisible(current => !current)} disabled={!validTelemetry.length || mapState !== "ready"} className="pointer-events-auto border border-cyan-300/70 bg-cyan-900/90 px-2.5 py-1.5 text-[9px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">{shouldShowTelemetry ? "HIDE TELEMETRY" : `SHOW ${validTelemetry.length} TELEMETRY`}</button><button type="button" onClick={openStreetView} disabled={!selectedDefect || mapState !== "ready" || streetViewStatus === "checking"} className="pointer-events-auto border border-sky-300/70 bg-sky-900/90 px-2.5 py-1.5 text-[9px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">{streetViewStatus === "checking" ? "CHECKING STREET VIEW" : "OPEN STREET VIEW"}</button><button type="button" onClick={showNbiContext} className="pointer-events-auto border border-violet-300/70 bg-violet-900/90 px-2.5 py-1.5 text-[9px] font-bold text-white">FOCUS PUBLIC NBI CONTEXT</button><a className="pointer-events-auto border border-slate-500 px-2.5 py-1.5 text-[9px] font-bold text-slate-100" href="https://geodata.bts.gov/datasets/usdot::national-bridge-inventory/about" target="_blank" rel="noreferrer">NBI SOURCE</a></div>
-    {streetViewStatus === "unavailable" && <div className="absolute bottom-16 left-3 z-10 max-w-xs bg-amber-950/95 px-3 py-2 text-[10px] leading-4 text-amber-50 shadow-xl" role="status">Street View is not available within 250 m of this selected coordinate. No imagery is substituted or treated as DRIFT evidence.</div>}
-    {streetViewStatus === "open" && <div className="absolute bottom-16 left-3 z-10 max-w-xs bg-sky-950/95 px-3 py-2 text-[10px] leading-4 text-sky-50 shadow-xl" role="status">Public Street View opened for the selected coordinate. It is third-party public imagery, not DRIFT evidence or a defect confirmation.</div>}
+    {mapState === "loading" && <div className="absolute inset-0 grid place-items-center bg-slate-950 text-center text-xs font-semibold uppercase tracking-[.14em] text-slate-200">Loading map...</div>}
+    {mapState === "missing-key" && <div className="absolute inset-0 grid place-items-center bg-slate-950 p-8 text-center text-xs font-semibold uppercase tracking-[.14em] text-slate-200"><div><strong className="block text-sm text-white">Loading map tiles...</strong><span className="mt-3 block max-w-md normal-case font-normal leading-5 tracking-normal text-slate-400">Map is loading from OpenStreetMap.</span></div></div>}
+    {mapState === "error" && <div className="absolute inset-0 grid place-items-center bg-slate-950 p-8 text-center text-xs font-semibold uppercase tracking-[.14em] text-slate-200"><div><strong className="block text-sm text-white">Google Maps could not load</strong><span className="mt-3 block max-w-md normal-case font-normal leading-5 tracking-normal text-slate-400">Set VITE_GOOGLE_MAPS_API_KEY on Vercel to enable Google Maps.</span></div></div>}
+    <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[calc(100%-1.5rem)] bg-slate-950/95 px-3 py-2 text-[10px] font-semibold uppercase tracking-[.13em] text-slate-100 shadow-xl"><div>{validDefects.length} defect{validDefects.length === 1 ? "" : "s"} &middot; {validTelemetry.length} telemetry {shouldShowTelemetry ? "points" : "hidden"}</div><div className="mt-2 flex flex-wrap gap-2 text-[9px] tracking-[.08em]">{severityCounts.map(item => <span key={item.severity} className="flex items-center gap-1"><i className="h-2 w-2 rounded-full" style={{ backgroundColor: colors[item.severity] }} />{item.count} {item.severity}</span>)}</div></div>
+    <div className="absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-center gap-2 bg-slate-950/95 p-2.5 text-[9px] font-semibold uppercase tracking-[.1em] text-slate-100 shadow-xl"><span className="mr-auto">Defect markers &middot; Campus boundaries</span><button type="button" onClick={focusTemporaryGrid} disabled={!transientDefects.length || mapState !== "ready"} className="pointer-events-auto border border-emerald-300/70 bg-emerald-900/90 px-2.5 py-1.5 text-[9px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">FOCUS CAMPUSES</button><button type="button" onClick={() => setTelemetryVisible(current => !current)} disabled={!validTelemetry.length || mapState !== "ready"} className="pointer-events-auto border border-cyan-300/70 bg-cyan-900/90 px-2.5 py-1.5 text-[9px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">{shouldShowTelemetry ? "HIDE TELEMETRY" : `SHOW ${validTelemetry.length} TELEMETRY`}</button><button type="button" onClick={openStreetView} disabled={!selectedDefect || mapState !== "ready" || streetViewStatus === "checking"} className="pointer-events-auto border border-sky-300/70 bg-sky-900/90 px-2.5 py-1.5 text-[9px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">{streetViewStatus === "checking" ? "CHECKING" : "STREET VIEW"}</button></div>
+    {streetViewStatus === "unavailable" && <div className="absolute bottom-16 left-3 z-10 max-w-xs bg-amber-950/95 px-3 py-2 text-[10px] leading-4 text-amber-50 shadow-xl" role="status">Street View is not available within 250m of this coordinate.</div>}
+    {streetViewStatus === "open" && <div className="absolute bottom-16 left-3 z-10 max-w-xs bg-sky-950/95 px-3 py-2 text-[10px] leading-4 text-sky-50 shadow-xl" role="status">Street View opened for the selected coordinate.</div>}
   </section>;
 }
