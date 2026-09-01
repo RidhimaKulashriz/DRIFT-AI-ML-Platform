@@ -486,7 +486,7 @@ export default function DriftConsole() {
           <span className={cn("connection-lamp", connectedStatus === "connected" && "connected", connectedStatus === "degraded" && "degraded")} />
           <div><span className="eyebrow">ADAPTER</span><strong>{connectedStatus}</strong></div>
         </div>
-        <div className="rail-footer"><span>ZEROERROR / 01</span><span>V 1.0.0</span></div>
+        <div className="rail-footer"><span>RISK-AWARE / 01</span><span>V 1.0.0</span></div>
       </aside>
 
       <main className="main-stage">
@@ -526,10 +526,11 @@ export default function DriftConsole() {
           <section className="stats-grid">
             <StatBlock label="ACTIVE MISSIONS" value={String(missions.length).padStart(2, "0")} detail={isAuthenticated ? "approved persisted missions" : "sign in for mission records"} direction="up" />
             <StatBlock label="OPEN FINDINGS" value={String(defects.length).padStart(2, "0")} detail={isAuthenticated ? `${criticalCount} critical review` : "sign in for reviewed findings"} direction="down" />
-            <StatBlock label="EXPOSURE ESTIMATE" value={formatCurrency(repairTotal)} detail={isAuthenticated ? "repair rules v1.0" : "no public cost data"} />
+            <StatBlock label="EXPOSURE ESTIMATE" value={formatCurrency(repairTotal)} detail={isAuthenticated ? "illustrative repair rules v1.0" : "no public cost data"} />
             <StatBlock label="FLEET BATTERY" value={telemetry[0]?.batteryPercent === undefined ? "—" : `${telemetry[0].batteryPercent}%`} detail={isAuthenticated && telemetry.length ? "latest reported" : "no public telemetry"} direction="up" />
           </section>
           {transientSimulatorRun && <section className="stats-grid border border-sky-300 bg-sky-50" aria-label="Transient simulator metrics"><StatBlock label="TRANSIENT CANDIDATES" value={String(transientSimulatorRun.findings.length).padStart(2, "0")} detail="browser-only advisory data" /><StatBlock label="TRANSIENT TELEMETRY" value={String(transientSimulatorRun.telemetry.length).padStart(2, "0")} detail="map context only · not stored" /><StatBlock label="PERSISTENT LINKAGE" value="NONE" detail="no asset, evidence, ticket, report, CCTV, security, or UAV action" /><StatBlock label="SESSION STATUS" value="TEMP" detail="cleared when this browser session ends" /></section>}
+          <section className="proof-panel" aria-labelledby="proof-panel-title"><div className="proof-panel-heading"><div><span className="eyebrow">CLAIM BOUNDARY · PLAIN LANGUAGE</span><h2 id="proof-panel-title">What DRIFT proves today</h2></div><BookOpenCheck /></div><div className="proof-grid"><div><span className="proof-label">DEMONSTRATED</span><strong>Inspection workflow</strong><p>Evidence context, telemetry, explainable scoring, provenance, and engineer checkpoints work together in one review surface.</p></div><div><span className="proof-label">MODEL LAYER</span><strong>Inference adapter</strong><p>Vision inference is separated from deterministic severity and repair rules. Provider-backed ML can be connected without changing the review contract.</p></div><div><span className="proof-label">NOT CLAIMED</span><strong>No zero-error promise</strong><p>Public demo outputs are advisory and simulated unless an authorised mission is connected. They are not a certified safety determination.</p></div><div><span className="proof-label">HUMAN CONTROL</span><strong>Engineer sign-off</strong><p>DRIFT ingests operator-approved evidence; it does not arm, launch, or control aircraft, and it cannot release work without review.</p></div></div></section>
 
           <PublicDatasetVisualCard onPreview={() => setEvidencePreview(publicDatasetSamples[0]!)} onOpenEvidence={() => setWorkspace("evidence")} />
           <section className="operations-grid">
@@ -541,7 +542,7 @@ export default function DriftConsole() {
             </article>
 
             <article className="panel priority-panel">
-              <div className="panel-heading"><div><span className="eyebrow">ZEROERROR QUEUE</span><h2>Action first</h2></div><span className="queue-count">{defects.length}</span></div>
+              <div className="panel-heading"><div><span className="eyebrow">RISK-AWARE QUEUE</span><h2>Action first</h2></div><span className="queue-count">{defects.length}</span></div>
               <div className="priority-list">
                 {defects.slice(0, 4).map(defect => <button type="button" key={defect.id} className={cn("priority-item", selected.id === defect.id && "selected")} onClick={() => setSelectedId(defect.id)}><span className={cn("item-index", severityClass(defect.severity))}>{String(defect.id).slice(-2)}</span><span className="priority-content"><strong>{defect.label}</strong><small>{defect.confidencePercent}% confidence · score {defect.zeroErrorScore}</small></span><SeverityChip severity={defect.severity} /></button>)}
               </div>
@@ -558,7 +559,7 @@ export default function DriftConsole() {
 
             <article className="panel decision-panel">
               <div className="panel-heading"><div><span className="eyebrow">ENGINEER DECISION</span><h2>Human checkpoint</h2></div><ClipboardCheck /></div>
-              <div className="decision-score"><span className={cn("score-orb", severityClass(selected.severity))}>{selected.zeroErrorScore}</span><div><span className="eyebrow">ZEROERROR PRIORITY</span><h3>{selected.severity} intervention</h3><p>AI is advisory. An authorised engineer must approve, override, or request a site visit.</p></div></div>
+              <div className="decision-score"><span className={cn("score-orb", severityClass(selected.severity))}>{selected.zeroErrorScore}</span><div><span className="eyebrow">RISK-AWARE PRIORITY</span><h3>{selected.severity} intervention</h3><p>AI is advisory. An authorised engineer must approve, override, or request a site visit.</p></div></div>
               {!canOperate ? <div className="citizen-notice">Sign in as an engineer or administrator to submit an engineering decision. Demo preview remains read-only for approvals and overrides.</div> : !persistenceAvailable ? <div className="citizen-notice">{persistenceMessage}</div> : <div className="decision-actions"><button type="button" onClick={() => submitReview("approve")}><CheckCheck /> APPROVE</button><button type="button" onClick={() => submitReview("override")}><Wrench /> OVERRIDE</button><button type="button" onClick={() => submitReview("needs_site_visit")}><MapPinned /> SITE VISIT</button></div>}
             </article>
           </section>
@@ -652,7 +653,7 @@ export default function DriftConsole() {
 
         {workspace !== "evidence" && evidencePreview && <div className="evidence-modal-backdrop" role="presentation" onClick={() => setEvidencePreview(null)}><div className="evidence-modal" role="dialog" aria-modal="true" aria-label={`Evidence preview ${evidencePreview.fileName}`} onClick={event => event.stopPropagation()}><div className="modal-header"><div><span className="eyebrow">EVIDENCE PREVIEW · {evidencePreview.source ?? "stored"}</span><h3>{evidencePreview.fileName}</h3></div><button type="button" onClick={() => setEvidencePreview(null)} aria-label="Close evidence preview">CLOSE</button></div>{evidencePreview.mediaKind === "video" ? <video src={resolveBackendAssetUrl(evidencePreview.storageUrl)} controls autoPlay /> : <img src={resolveBackendAssetUrl(evidencePreview.storageUrl)} alt={evidencePreview.fileName} />}{Boolean(evidencePreview.provenance) && <p className="provenance-line">{evidenceProvenance(evidencePreview.provenance)}</p>}<div className="modal-actions"><a href={resolveBackendAssetUrl(evidencePreview.storageUrl)} target="_blank" rel="noreferrer">OPEN ORIGINAL</a><a href={resolveBackendAssetUrl(evidencePreview.storageUrl)} download={evidencePreview.fileName}>DOWNLOAD</a></div></div></div>}
 
-        <footer className="console-footer"><span>DRIFT / ZEROERROR MAINTENANCE INTELLIGENCE</span><span>ENGINEER REVIEW REQUIRED FOR ALL AUTOMATED PRIORITIES</span></footer>
+        <footer className="console-footer"><span>DRIFT / RISK-AWARE MAINTENANCE INTELLIGENCE</span><span>ENGINEER REVIEW REQUIRED FOR ALL AUTOMATED PRIORITIES</span></footer>
       </main>
     </div>
   );
