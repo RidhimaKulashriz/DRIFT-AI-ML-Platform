@@ -1,0 +1,1 @@
+[{"result":{"data":{"json":{"contractors":[],"tickets":[],"assessments":[],"authorities":[],"routing":[],"handoffs":[],"publications":[],"cameras":[],"cameraCandidates":[],"knowledgeDocuments":[],"persistence":{"available":false,"message":"Accountability records are not configured yet. Apply the reviewed PostgreSQL migration before adding approved project data."}}}}}]

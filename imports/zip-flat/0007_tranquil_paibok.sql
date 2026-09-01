@@ -1,0 +1,1 @@
+ALTER TABLE `defects` MODIFY COLUMN `defectType` enum('pothole','crack','structural','corrosion','spalling','exposed_rebar','water_intrusion','settlement','rail_alignment','obstruction','lighting_failure') NOT NULL;
