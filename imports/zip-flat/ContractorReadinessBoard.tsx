@@ -1,0 +1,52 @@
+import { useState } from "react";
+import { BookOpenCheck, Camera, CheckCircle2, ClipboardCheck, ExternalLink, MapPinned, ShieldCheck, TimerReset, X } from "lucide-react";
+
+type WorkspaceTarget = "defects" | "evidence" | "reports" | "accountability" | "hardware";
+
+const referenceVisuals = [
+  {
+    id: "pothole-reference",
+    title: "Road pothole · public reference photograph",
+    imageUrl: "/manus-storage/public-domain-pothole-reference_32c6e2f7.jpg",
+    sourceUrl: "https://commons.wikimedia.org/wiki/File:Pothole_Big.jpg",
+    source: "Wikimedia Commons · author: Uncl3dad",
+    license: "Public domain",
+    limitation: "Real public reference image only. It is not DRIFT capture, project evidence, a mapped site, an active ticket, or a repair claim.",
+  },
+  {
+    id: "spalling-reference",
+    title: "Bridge spalling · public reference photograph",
+    imageUrl: "/manus-storage/public-domain-bridge-spalling-reference_af728377.jpg",
+    sourceUrl: "https://commons.wikimedia.org/wiki/File:Lewis_River_Bridge_-_Spalling_concrete_(42223630094).jpg",
+    source: "Wikimedia Commons · Yellowstone National Park / Doug Madsen",
+    license: "U.S. federal government public domain",
+    limitation: "Real public reference image only. It is not DRIFT capture, project evidence, a mapped site, an active ticket, or a repair claim.",
+  },
+] as const;
+
+const uspCards: Array<{ id: string; title: string; detail: string; readiness: string; action: string; target: WorkspaceTarget; icon: typeof ClipboardCheck }> = [
+  { id: "provenance", title: "Evidence provenance chain", detail: "Original media, capture time, source, coordinate support, camera/UAV context, and reviewer state stay connected.", readiness: "Needs original approved evidence", action: "OPEN EVIDENCE VAULT", target: "evidence", icon: Camera },
+  { id: "quality", title: "Quality gate before urgency", detail: "Confidence is never enough alone: coverage, visibility, blur, source, and uncertainty are visible to the engineer.", readiness: "Engineer review required", action: "OPEN DEFECT CONTROL", target: "defects", icon: ShieldCheck },
+  { id: "duplicate", title: "Duplicate-safe triage", detail: "Camera candidates require a scoped dedupe key and human review before a work item can be considered.", readiness: "No automatic work order", action: "VIEW ACCOUNTABILITY", target: "accountability", icon: ClipboardCheck },
+  { id: "dsi", title: "Transparent DSI rationale", detail: "Priority shows evidence support, location support, asset criticality, impact approval, and verification state—not a black-box label.", readiness: "Insufficient evidence stays visible", action: "VIEW DSI CONTROLS", target: "accountability", icon: CheckCircle2 },
+  { id: "sla", title: "SLA and escalation watch", detail: "Ownership routes, due dates, and escalation packages stay prepared until an authorized project rule and recipient are configured.", readiness: "No assumed owner or delivery", action: "VIEW HANDOFF CONTROLS", target: "accountability", icon: TimerReset },
+  { id: "closure", title: "Closure is not fixed", detail: "Contractor-reported closure is separated from engineer-verified fixed, needs rework, and cannot verify outcomes.", readiness: "Proof storage required", action: "OPEN CONTRACTOR WORKFLOW", target: "accountability", icon: ClipboardCheck },
+  { id: "audit", title: "Audit and RAG handover", detail: "Role-scoped approved documents, citations, actions, and report packages support accountable contractor handovers.", readiness: "Approved documents only", action: "OPEN REPORTS", target: "reports", icon: BookOpenCheck },
+];
+
+export function ContractorReadinessBoard({ onNavigate }: { onNavigate: (target: WorkspaceTarget) => void }) {
+  return <section className="my-5 border border-slate-300 bg-slate-50 shadow-[7px_7px_0_#cbd5e1]">
+    <header className="flex flex-col justify-between gap-4 border-b border-slate-300 bg-slate-900 px-5 py-5 text-slate-50 md:flex-row md:items-end"><div><span className="text-[10px] font-black tracking-[.18em] text-cyan-200">7 CONTRACTOR-READY USPs</span><h2 className="mt-1 text-2xl font-black uppercase tracking-tight">Proof, priority, and accountable closure</h2><p className="mt-2 max-w-3xl text-sm leading-5 text-slate-300">Every card is an implemented control surface or an explicit readiness boundary. DRIFT does not turn public images, model output, or map context into a local defect, contractor commitment, or verified repair.</p></div><span className="border border-cyan-200/40 bg-cyan-950 px-3 py-2 text-[10px] font-bold tracking-[.14em] text-cyan-100">NO FAKE TICKETS · NO AUTO DISPATCH</span></header>
+    <div className="grid gap-px bg-slate-300 sm:grid-cols-2 xl:grid-cols-4">{uspCards.map(({ id, title, detail, readiness, action, target, icon: Icon }, index) => <article key={id} className={index === 6 ? "bg-white p-5 xl:col-span-2" : "bg-white p-5"}><Icon className="h-5 w-5 text-slate-900" /><span className="mt-4 block text-[10px] font-black tracking-[.16em] text-slate-500">USP {String(index + 1).padStart(2, "0")}</span><h3 className="mt-1 text-base font-black uppercase tracking-tight text-slate-950">{title}</h3><p className="mt-2 min-h-16 text-xs leading-5 text-slate-600">{detail}</p><div className="mt-4 flex items-center justify-between gap-3"><span className="text-[9px] font-bold uppercase tracking-[.12em] text-amber-800">{readiness}</span><button type="button" onClick={() => onNavigate(target)} className="border border-slate-950 bg-slate-950 px-2.5 py-2 text-[9px] font-black tracking-[.1em] text-white transition hover:bg-slate-700 active:scale-[.97]">{action}</button></div></article>)}</div>
+  </section>;
+}
+
+export function AuthenticReferenceVisuals() {
+  const [selectedId, setSelectedId] = useState<(typeof referenceVisuals)[number]["id"] | null>(null);
+  const selected = referenceVisuals.find(item => item.id === selectedId);
+  return <section className="my-6 border border-amber-700/40 bg-amber-50 shadow-[7px_7px_0_#ddc796]" aria-label="Authentic public reference visual library">
+    <header className="flex flex-col justify-between gap-3 border-b border-amber-700/30 px-5 py-5 md:flex-row md:items-end"><div><span className="text-[10px] font-black tracking-[.18em] text-amber-900">AUTHENTIC PUBLIC REFERENCE VISUALS</span><h2 className="mt-1 text-2xl font-black uppercase tracking-tight text-stone-950">Real images, never site evidence</h2><p className="mt-2 max-w-3xl text-sm leading-5 text-stone-700">These photographs demonstrate visible issue classes. They are externally sourced, attributed, licensed, and excluded from DRIFT assets, maps, tickets, reports, model claims, and closure verification.</p></div><span className="border border-amber-800 bg-amber-100 px-3 py-2 text-[10px] font-black tracking-[.12em] text-amber-950">REFERENCE ONLY · NO PROJECT GPS</span></header>
+    <div className="grid gap-4 p-5 md:grid-cols-2">{referenceVisuals.map(item => <article key={item.id} className="overflow-hidden border border-amber-800/40 bg-white"><img src={item.imageUrl} alt={item.title} className="h-56 w-full object-cover" /><div className="p-4"><span className="text-[9px] font-black tracking-[.14em] text-amber-800">{item.license}</span><h3 className="mt-1 text-base font-black uppercase tracking-tight text-stone-950">{item.title}</h3><p className="mt-2 text-xs leading-5 text-stone-700">{item.limitation}</p><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => setSelectedId(item.id)} className="border border-stone-950 bg-stone-950 px-3 py-2 text-[9px] font-black tracking-[.1em] text-white transition hover:bg-stone-700 active:scale-[.97]">VIEW REFERENCE</button><a href={item.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 border border-stone-500 px-3 py-2 text-[9px] font-black tracking-[.1em] text-stone-800">SOURCE <ExternalLink className="h-3 w-3" /></a></div></div></article>)}</div>
+    {selected && <div role="presentation" className="fixed inset-0 z-50 grid place-items-center bg-slate-950/80 p-4" onClick={() => setSelectedId(null)}><div role="dialog" aria-modal="true" aria-label={selected.title} className="max-h-[90vh] w-full max-w-4xl overflow-auto bg-white shadow-2xl" onClick={event => event.stopPropagation()}><header className="flex items-start justify-between gap-5 border-b border-slate-300 p-4"><div><span className="text-[10px] font-black tracking-[.16em] text-amber-800">REFERENCE ONLY · EXCLUDED FROM PROJECT EVIDENCE</span><h3 className="mt-1 text-lg font-black uppercase tracking-tight">{selected.title}</h3></div><button type="button" onClick={() => setSelectedId(null)} aria-label="Close reference visual" className="border border-slate-500 p-2 text-slate-700"><X className="h-4 w-4" /></button></header><img src={selected.imageUrl} alt={selected.title} className="max-h-[62vh] w-full object-contain bg-slate-950" /><div className="p-4"><p className="text-sm text-slate-700">{selected.source} · {selected.license}</p><p className="mt-2 text-sm leading-5 text-slate-700">{selected.limitation}</p><a href={selected.sourceUrl} target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-2 border border-slate-950 bg-slate-950 px-3 py-2 text-[10px] font-black tracking-[.1em] text-white">OPEN ATTRIBUTED SOURCE <ExternalLink className="h-3.5 w-3.5" /></a></div></div></div>}
+  </section>;
+}

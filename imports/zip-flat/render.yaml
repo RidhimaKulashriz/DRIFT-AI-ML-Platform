@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: drift-api
+    runtime: python
+    plan: free
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python run.py
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "5432"
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: GCS_HEADLESS
+        value: "1"
+      - key: DRIFT_RELOAD
+        value: "0"
+      - key: OLLAMA_HOST
+        sync: false
+      - key: OLLAMA_PORT
+        value: "11434"
+      - key: OPENAI_API_KEY
+        sync: false
+
+  - type: web
+    name: drift-dashboard
+    runtime: python
+    plan: free
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: streamlit run dashboard/app.py --server.address 0.0.0.0 --server.port $PORT --server.headless true
+    healthCheckPath: /_stcore/health
+    autoDeploy: true
+    envVars:
+      - key: DRIFT_BACKEND_URL
+        sync: false
