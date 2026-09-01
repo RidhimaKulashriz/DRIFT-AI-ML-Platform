@@ -46,8 +46,8 @@ export async function runDemoDetection(input: {
   const geoContractor = geoMatch ?? getDefaultContractor(input.infrastructureType);
 
   // Map to DB contractor by external reference
-  const dbContractors = await db.execute<{ id: number; legalname: string; externalreference: string }>(
-    sql`SELECT id, legalname, externalreference FROM contractors WHERE status = 'active' LIMIT 10`
+  const dbContractors = await db.execute<{ id: number; legalName: string; externalReference: string }>(
+    sql`SELECT id, "legalName", "externalReference" FROM contractors WHERE status = 'active' LIMIT 10`
   );
   let contractorDbId: number;
   let contractorName: string;
@@ -57,8 +57,8 @@ export async function runDemoDetection(input: {
   let matchedBy: string;
 
   // Find matching DB contractor by region/name
-  const igdtuwDb = dbContractors.rows.find(r => r.externalreference === 'igdtuw-manu');
-  const iiitdDb = dbContractors.rows.find(r => r.externalreference === 'iiitd-ridhima');
+  const igdtuwDb = dbContractors.rows.find(r => r.externalReference === 'igdtuw-manu');
+  const iiitdDb = dbContractors.rows.find(r => r.externalReference === 'iiitd-ridhima');
 
   if (geoContractor.region === 'IGDTUW Campus' && igdtuwDb) {
     contractorDbId = igdtuwDb.id;
