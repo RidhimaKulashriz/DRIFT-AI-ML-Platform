@@ -157,7 +157,7 @@ export async function runDemoDetection(input: {
   // Step 5: Create defect record
   const defectResult = await db.execute<{ id: number }>(
     sql`INSERT INTO defects ("missionId", "assetId", "defectType", "label", "confidencePercent", "zeroErrorScore", severity, status, "reviewState", latitude, longitude, "inspectionDomain", "correlationKey", "coveragePercent", createdat, updatedat)
-        VALUES (${missionId}, ${assetId}, ${input.defectType}::defect_type, ${input.defectType.replace(/_/g, ' ')}, ${Math.round(input.confidence * 100)}, ${finalPriority}, ${priority.priorityLevel}::severity, 'detected', 'pending', ${String(input.latitude)}, ${String(input.longitude)}, ${input.infrastructureType}, ${'demo:' + Date.now()}, 85, NOW(), NOW())
+        VALUES (${missionId}, ${assetId}, ${input.defectType}, ${input.defectType.replace(/_/g, ' ')}, ${Math.round(input.confidence * 100)}, ${finalPriority}, ${priority.priorityLevel}, 'detected', 'pending', ${String(input.latitude)}, ${String(input.longitude)}, ${input.infrastructureType}, ${'demo:' + Date.now()}, 85, NOW(), NOW())
         RETURNING id`
   );
   const defectId = Number(defectResult.rows[0].id);
@@ -171,7 +171,7 @@ export async function runDemoDetection(input: {
   // Step 7: Create severity history
   await db.execute(
     sql`INSERT INTO severityHistory (defectId, nextSeverity, score, reason, createdat)
-        VALUES (${defectId}, ${priority.priorityLevel}::severity, ${finalPriority}, ${priority.recommendedDeadline}, NOW())`
+        VALUES (${defectId}, ${priority.priorityLevel}, ${finalPriority}, ${priority.recommendedDeadline}, NOW())`
   );
 
   // Step 8: Create ticket
@@ -186,7 +186,7 @@ export async function runDemoDetection(input: {
   if (priority.priorityLevel === "critical" || priority.priorityLevel === "high") {
     await db.execute(
       sql`INSERT INTO alerts (missionId, defectId, severity, title, message, status, createdat)
-          VALUES (${missionId}, ${defectId}, ${priority.priorityLevel}::severity, ${`${priority.priorityLevel.toUpperCase()} — ${input.defectType.replace(/_/g, ' ')}`}, ${priority.recommendedDeadline}, 'open', NOW())`
+          VALUES (${missionId}, ${defectId}, ${priority.priorityLevel}, ${`${priority.priorityLevel.toUpperCase()} — ${input.defectType.replace(/_/g, ' ')}`}, ${priority.recommendedDeadline}, 'open', NOW())`
     );
   }
 
