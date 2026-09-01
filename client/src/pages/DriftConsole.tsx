@@ -616,9 +616,9 @@ export default function DriftConsole() {
               <span className="eyebrow">01 · AIRCRAFT / BRIDGE PROFILE</span>
               <h3>Choose a compatible UAV path</h3>
               <p>DRIFT is airframe-agnostic. Select a profile now; an operator-approved PX4/ArduPilot MAVLink bridge or HTTP/RTSP media gateway is connected later. DRIFT does not arm, launch, navigate, or control the aircraft.</p>
-              <label>Aircraft profile<select value={uavProfile} onChange={event => setUavProfile(event.target.value)}><option>PX4 / ArduPilot MAVLink-compatible UAV</option><option>DJI-compatible media export / operator bridge</option><option>Custom UAV / HTTP telemetry gateway</option><option>Bluetooth telemetry adapter via companion gateway</option><option>RTSP camera payload / media gateway</option></select></label>
+              <label>Aircraft profile<select value={uavProfile} onChange={event => { const value = event.target.value; setUavProfile(value); if (value.startsWith("DJI Mini 3 Pro")) setUavAdapter("http-webhook"); }}><option>PX4 / ArduPilot MAVLink-compatible UAV</option><option>DJI Mini 3 Pro · Mobile SDK / operator export</option><option>Custom UAV / HTTP telemetry gateway</option><option>Bluetooth telemetry adapter via companion gateway</option><option>RTSP camera payload / media gateway</option></select></label>
               <label>Bridge contract<select value={uavAdapter} onChange={event => setUavAdapter(event.target.value as typeof uavAdapter)}><option value="mavlink-bridge">MAVLink telemetry bridge</option><option value="http-webhook">HTTP telemetry webhook</option><option value="rtsp-media">RTSP media gateway</option></select></label>
-              <code>MAVLink / UDP or serial → operator bridge → authenticated DRIFT ingest</code>
+              <code>{uavProfile.startsWith("DJI Mini 3 Pro") ? "DJI Fly / approved Android SDK → receive-only gateway → authenticated DRIFT ingest" : uavAdapter === "rtsp-media" ? "RTSP camera gateway → selected originals → authenticated DRIFT ingest" : uavAdapter === "http-webhook" ? "Operator telemetry → HTTPS webhook → authenticated DRIFT ingest" : "MAVLink / UDP or serial → operator bridge → authenticated DRIFT ingest"}</code>
             </article>
             <article className="hardware-card uav-capture-card">
               <Video />

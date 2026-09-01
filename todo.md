@@ -331,10 +331,10 @@
 - [x] Keep demo report and Street View public-imagery labels clear so neither is represented as real DRIFT evidence, a validated defect, or an engineering action.
 - [x] Replace misleading work-email-only sign-in copy with clear personal-email magic-link guidance while preserving explicit approval requirements for protected roles.
 - [ ] Improve the visual readability of the 15 temporary Google Maps markers without altering their simulated coordinates, reducing map clutter while retaining individual map and report access.
-- [ ] Diagnose and repair the personal-email Supabase magic-link delivery failure, or document the precise provider prerequisite without exposing credentials or changing role approval.
-- [ ] Make Defect Control display the active browser-only transient advisory set with individual details and clear no-persistence labels instead of an unhelpful empty state.
-- [ ] Refine the browser-only transient Inspection Reports preview so its summary, advisory cards, and download are presented as a more polished readable report workspace while retaining non-engineering status.
-- [ ] Ensure the DRIFT AI panel is visibly reachable in the demo and accurately presents its available, unavailable, or protected provider state without canned claims.
+- [x] Diagnose and repair the personal-email Supabase magic-link delivery failure, or document the precise provider prerequisite without exposing credentials or changing role approval.
+- [x] Make Defect Control display the active browser-only transient advisory set with individual details and clear no-persistence labels instead of an unhelpful empty state.
+- [x] Refine the browser-only transient Inspection Reports preview so its summary, advisory cards, and download are presented as a more polished readable report workspace while retaining non-engineering status.
+- [x] Ensure the DRIFT AI panel is visibly reachable in the demo and accurately presents its available, unavailable, or protected provider state without canned claims.
 - [x] Remove or conditionally configure the unresolved Vercel analytics script placeholder so production never requests `/%VITE_ANALYTICS_ENDPOINT%/umami`.
 - [ ] Verify and repair every public DRIFT frontend asset, visible control, Vercel-to-Render API flow, simulator, AI, map, evidence, report, authentication, storage, and safe drone-ingress boundary; label any unavoidable external-provider prerequisite rather than simulating success.
 - [x] Repair the public dataset preview action so it opens its modal from Operations, Defect Control, Reports, and Hardware Bridge, not only from Evidence Vault.
@@ -384,3 +384,8 @@
 - [x] Diagnose and repair the report visibility flow so a transient demo always exposes an immediately discoverable browser-only report preview and download action.
 - [x] Add a truthful transient AI-analysis report section that summarizes the current 15 advisory outputs, confidence, severity distribution, coordinate coverage, and required human review without claiming a real engineering assessment.
 - [x] Preserve role-gated persistent PDF/report records and clearly explain why they are unavailable to public/citizen sessions instead of silently hiding reports.
+
+- [x] Identify the user's physical drone model and supported controller, telemetry, media, and network interfaces from the supplied video/manual.
+- [x] Define a safe authenticated drone-to-gateway-to-Render ingest path that preserves simulator mode, provenance, and engineer approval; do not enable autonomous flight.
+- [x] Implement or verify hardware connection guidance and integration tests for the identified drone path without claiming live hardware readiness before operator testing.
+- [ ] Validate the real-drone connection contract and document exact operator setup, required hardware/software, and remaining model-specific prerequisites.

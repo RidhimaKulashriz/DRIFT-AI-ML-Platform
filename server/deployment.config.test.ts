@@ -181,6 +181,25 @@ describe("external deployment artifacts", () => {
     expect(styleSource).toContain(".reports-workspace .report-preview-panel .ai-brief");
   });
 
+  it("documents the DJI Mini 3 Pro operator-export path without adding flight control", () => {
+    const root = resolve(import.meta.dirname, "..");
+    const djiGuide = readFileSync(resolve(root, "docs/dji_mini_3_pro_integration.md"), "utf8");
+    const uploader = readFileSync(resolve(root, "tools/dji-export-to-drift.mjs"), "utf8");
+    const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
+    expect(djiGuide).toContain("DJI Mini 3 Pro");
+    expect(consoleSource).toContain("DJI Mini 3 Pro · Mobile SDK / operator export");
+    expect(consoleSource).toContain("DJI Fly / approved Android SDK → receive-only gateway → authenticated DRIFT ingest");
+    expect(djiGuide).toContain("Mobile SDK compatible");
+    expect(djiGuide).toContain("POST /api/drift/evidence");
+    expect(djiGuide).toContain("DRIFT never arms, launches, navigates");
+    expect(djiGuide).toContain("Run Transient Demo");
+    expect(uploader).toContain("/api/drift/evidence");
+    expect(uploader).toContain("DRIFT_INGEST_TOKEN");
+    expect(uploader).toContain("aircraftProfile: \"DJI Mini 3 Pro\"");
+    expect(uploader).not.toContain("arm");
+    expect(uploader).not.toContain("takeoff");
+  });
+
   it("keeps public walkthroughs transient even when production persistence is available", () => {
     const root = resolve(import.meta.dirname, "..");
     const consoleSource = readFileSync(resolve(root, "client/src/pages/DriftConsole.tsx"), "utf8");
