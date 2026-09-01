@@ -119,13 +119,13 @@ export async function runDemoDetection(input: {
   let assetId: number;
 
   // Try to find existing mission first
-  const existingMissions = await db.execute<{ id: number; assetid: number }>(
-    sql`SELECT id, assetId as assetid FROM missions ORDER BY id DESC LIMIT 1`
+  const existingMissions = await db.execute<{ id: number; assetId: number }>(
+    sql`SELECT id, "assetId" FROM missions ORDER BY id DESC LIMIT 1`
   );
 
   if (existingMissions.rows.length > 0) {
     missionId = Number(existingMissions.rows[0].id);
-    assetId = Number(existingMissions.rows[0].assetid);
+    assetId = Number(existingMissions.rows[0].assetId);
   } else {
     // Create asset first (use raw SQL without enum cast)
     const assetResult = await db.execute<{ id: number }>(
