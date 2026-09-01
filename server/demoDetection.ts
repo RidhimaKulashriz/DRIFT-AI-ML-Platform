@@ -80,6 +80,24 @@ export async function runDemoDetection(input: {
   const missionId = latestMission[0]?.id ?? 1;
   const assetId = latestMission[0]?.assetId ?? 1;
 
+  // 5. Seed contractors if DB table is empty
+  if (allContractors.length === 0) {
+    const { eq } = await import("drizzle-orm");
+    await db.insert(contractorsTable).values([
+      { legalName: "Manu — IGDTUW Campus", externalReference: "igdtuw-manu", status: "active" },
+      { legalName: "Ridhima Kulashriz — IIIT-Delhi", externalReference: "iiitd-ridhima", status: "active" },
+    ]);
+    // Re-query
+    const refreshed = await db.select().from(contractorsTable);
+    const ig = refreshed.find(r => r.externalReference === "igdtuw-manu");
+    const iiit = refreshed.find(r => r.externalReference === "iiitd-ridhima");
+    if (geoContractor.region === "IGDTUW Campus" && ig) {
+      contractorDbId = ig.id; contractorName = "Manu"; contractorEmail = "ridhimakulashri07042025@gmail.com"; contractorOrg = "IGDTUW Infrastructure Maintenance"; contractorRegion = "IGDTUW Campus";
+    } else if (geoContractor.region === "IIIT-Delhi Campus" && iiit) {
+      contractorDbId = iiit.id; contractorName = "Ridhima Kulashriz"; contractorEmail = "ridhimakulashriz@gmail.com"; contractorOrg = "IIIT-Delhi Infrastructure Division"; contractorRegion = "IIIT-Delhi Campus";
+    }
+  }
+
   // 5. Create defect
   const { defects, repairEstimates, severityHistory, contractorTickets, alerts, auditEvents } = await import("../drizzle/schema");
 
@@ -130,6 +148,7 @@ export async function runDemoDetection(input: {
     priority: "p2",
     status: "open",
     verificationCriterion: "Engineer must verify repair completion with follow-up evidence.",
+    createdBy: 1,
   }).returning({ id: contractorTickets.id });
   const ticketId = ticketRow.id;
 
