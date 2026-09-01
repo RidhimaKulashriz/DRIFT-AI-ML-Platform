@@ -479,7 +479,7 @@ export default function DriftConsole() {
     sendReportEmail.mutate({
       ticketId: lastTicketId ?? undefined,
       subject: `DRIFT inspection report · ${selected.label}`,
-      contractor: availableAssets.find(asset => asset.id === selected.assetId)?.locality ?? "Assigned contractor",
+      contractor: "Assigned contractor · server-routed",
       defect: selected.defectType,
       confidencePercent: selected.confidencePercent,
       severity: selected.severity,
