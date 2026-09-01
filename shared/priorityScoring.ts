@@ -22,7 +22,7 @@ export type PriorityInput = {
 export type PriorityResult = {
   /** Overall score 0-100 */
   overallScore: number;
-  priorityLevel: "critical" | "high" | "moderate" | "low";
+  priorityLevel: "critical" | "high" | "medium" | "low";
   repairCostEstimateINR: number;
   recommendedDeadline: string;
   breakdown: {
@@ -77,7 +77,7 @@ export function calculateOverallPriority(
   let priorityLevel: PriorityResult["priorityLevel"];
   if (overallScore >= 80) priorityLevel = "critical";
   else if (overallScore >= 60) priorityLevel = "high";
-  else if (overallScore >= 35) priorityLevel = "moderate";
+  else if (overallScore >= 35) priorityLevel = "medium";
   else priorityLevel = "low";
 
   const baseCost = baseRepairCost[defectType] ?? 50000;
