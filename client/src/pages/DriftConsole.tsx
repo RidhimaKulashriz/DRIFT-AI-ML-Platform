@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { InspectionMap } from "@/components/InspectionMap";
+import { LivePipelinePanel } from "@/components/LivePipelinePanel";
 import { AuthenticReferenceVisuals, ContractorReadinessBoard } from "@/components/ContractorReadinessBoard";
 import { requestedSeverityFilter } from "@/lib/driftInteractions";
 import { AIChatBox, type Message } from "@/components/AIChatBox";
@@ -171,6 +172,7 @@ export default function DriftConsole() {
   const [driftAiProviderStatus, setDriftAiProviderStatus] = useState<string>("not-requested");
   const [pendingAiFilter, setPendingAiFilter] = useState<Severity | null>(null);
   const [reportResult, setReportResult] = useState<{ title: string; storageUrl?: string; evidenceCount: number; defectCount: number; format?: string; severityCounts?: Record<string, number> } | null>(null);
+  const [lastTicketId, setLastTicketId] = useState<number | null>(null);
   const [evidencePreview, setEvidencePreview] = useState<EvidenceItem | null>(null);
   const [transientSimulatorRun, setTransientSimulatorRun] = useState<TransientSimulatorRun | null>(null);
   const [transientBriefing, setTransientBriefing] = useState<string | null>(null);
@@ -265,9 +267,14 @@ export default function DriftConsole() {
   });
   const createAccountabilityTicket = trpc.drift.accountability.tickets.create.useMutation({
     onSuccess: result => {
+      setLastTicketId(result.ticketId);
       toast.success(`Accountability ticket ${result.ticketId} created · DSI ${result.priority.toUpperCase()} · engineer route review required`);
       utils.drift.accountability.overview.invalidate();
     },
+    onError: error => toast.error(error.message),
+  });
+  const sendReportEmail = trpc.drift.accountability.tickets.sendReportEmail.useMutation({
+    onSuccess: () => toast.success("Contractor report accepted by the configured relay."),
     onError: error => toast.error(error.message),
   });
   const acceptContractorTicket = trpc.drift.accountability.tickets.accept.useMutation({
@@ -467,6 +474,24 @@ export default function DriftConsole() {
     });
   };
 
+  const sendSelectedReportToContractor = () => {
+    if (!selected.id || !selected.assetId) { toast.error("Select a persisted finding linked to an asset before sending a report."); return; }
+    sendReportEmail.mutate({
+      ticketId: lastTicketId ?? undefined,
+      subject: `DRIFT inspection report · ${selected.label}`,
+      contractor: availableAssets.find(asset => asset.id === selected.assetId)?.locality ?? "Assigned contractor",
+      defect: selected.defectType,
+      confidencePercent: selected.confidencePercent,
+      severity: selected.severity,
+      latitude: String(selected.latitude),
+      longitude: String(selected.longitude),
+      estimatedRepairCost: formatCurrency(repairTotal),
+      recommendedDeadline: selected.severity === "critical" ? "Engineer review within 4 hours" : selected.severity === "high" ? "Engineer review within 24 hours" : "Next maintenance cycle",
+      reportUrl: reportResult?.storageUrl ? resolveBackendAssetUrl(reportResult.storageUrl) : undefined,
+      evidenceUrl: selectedEvidence?.storageUrl ? resolveBackendAssetUrl(selectedEvidence.storageUrl) : undefined,
+    });
+  };
+
   const aiCriticalCount = defects.filter(defect => defect.severity === "critical").length;
   const aiHealthScore = Math.max(0, Math.min(100, 100 - aiCriticalCount * 16 - defects.filter(defect => defect.severity === "high").length * 9 - defects.filter(defect => defect.severity === "medium").length * 4));
   const aiRiskBand = aiHealthScore < 45 ? "HIGH" : aiHealthScore < 70 ? "MEDIUM–HIGH" : aiHealthScore < 85 ? "MEDIUM" : "LOW";
@@ -586,6 +611,7 @@ export default function DriftConsole() {
         {workspace === "reports" && <section className="workspace-page reports-workspace">
           <PublicDatasetVisualCard onPreview={() => setEvidencePreview(publicDatasetSamples[0]!)} onOpenEvidence={() => setWorkspace("evidence")} />
           <div className="workspace-header"><div><span className="eyebrow">AUDIT-READY OUTPUTS</span><h2>Inspection reports</h2><p className="workspace-lede">Generate a structured PDF that keeps severity, evidence, coordinates, uncertainty, recommendations, and sign-off in one reviewable record.</p></div><div className="report-actions-header"><button type="button" className="secondary-action" onClick={createAiBrief} disabled={!canOperate || !persistenceAvailable || decisionSupport.isPending} title={!canOperate ? "Sign in as an engineer or administrator to create a decision narrative." : !persistenceAvailable ? persistenceMessage : undefined}><Sparkles /> {decisionSupport.isPending ? "ANALYSING" : !canOperate ? "SIGN IN FOR NARRATIVE" : !persistenceAvailable ? "PERSISTENCE REQUIRED" : "AI NARRATIVE"}</button><button type="button" className="primary-action" onClick={createPdfReport} disabled={!canGeneratePublicReport || generateReport.isPending} title={!canOperate ? "Sign in as an engineer or administrator to generate a report." : !persistenceAvailable || !portableEvidenceStorageAvailable ? persistenceMessage : undefined}><FileText /> {generateReport.isPending ? "BUILDING PDF" : !canOperate ? "SIGN IN FOR PDF" : !persistenceAvailable || !portableEvidenceStorageAvailable ? "PORTABLE STORAGE REQUIRED" : "GENERATE PDF REPORT"}</button></div></div>
+          <LivePipelinePanel connectedStatus={connectedStatus} telemetryCount={telemetry.length} defectCount={defects.length} hasSelectedFinding={Boolean(selected.id)} hasReport={Boolean(reportResult)} canOperate={canOperate} sending={sendReportEmail.isPending} deliveryConfirmed={sendReportEmail.isSuccess} onSend={sendSelectedReportToContractor} />
           {reportResult && <article className="report-preview-panel"><div><span className="eyebrow">LATEST GENERATED REPORT · {reportResult.format === "application/pdf" ? "PDF" : "REPORT"}</span><h3>{reportResult.title}</h3><p>{reportResult.evidenceCount} evidence records · {reportResult.defectCount} candidate findings · engineer sign-off pending</p></div><div className="report-preview-stats">{(["critical", "high", "medium", "low"] as const).map(severity => <span key={severity} className={severityClass(severity)}><b>{reportResult.severityCounts?.[severity] ?? 0}</b> {severity}</span>)}</div>{reportResult.storageUrl ? <a className="primary-action" href={resolveBackendAssetUrl(reportResult.storageUrl)} target="_blank" rel="noreferrer"><FileText /> OPEN PDF</a> : <span className="report-missing">PDF storage URL unavailable</span>} {reportResult.storageUrl && <div className="report-preview-embed"><iframe title="Latest DRIFT inspection report" src={resolveBackendAssetUrl(reportResult.storageUrl)} /></div>}</article>}
           {transientSimulatorRun && <article className="report-preview-panel"><div><span className="eyebrow">BROWSER-ONLY AI-ANALYSIS · NO PERSISTENCE</span><h3>Transient simulator briefing is ready</h3><p>The active report includes the current temporary advisory register, model confidence, severity distribution, coordinate envelope, and required engineer-review controls. Select any of the 15 temporary advisories below to center its map marker and request available public Street View for that exact coordinate. It is not an engineering report, evidence file, inspection record, or contractor instruction.</p></div><section className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-3" aria-label="Temporary advisory inspection register">{transientSimulatorRun.findings.map((finding, index) => <button key={`${finding.latitude}-${finding.longitude}`} type="button" onClick={() => inspectTransientAdvisory(index)} className="rounded border border-slate-700 bg-slate-950 p-3 text-left text-slate-100 transition hover:border-sky-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300"><span className="block text-[10px] font-bold uppercase tracking-[.14em] text-sky-300">Temporary advisory {String(index + 1).padStart(2, "0")}</span><strong className="mt-1 block text-sm">{finding.title.replace("SIMULATED DEMO · ", "")}</strong><span className="mt-1 block text-xs text-slate-300">{finding.score.severity.toUpperCase()} · {Math.round(finding.confidence * 100)}% confidence</span><span className="mt-1 block text-xs text-slate-400">{finding.latitude.toFixed(6)}, {finding.longitude.toFixed(6)}</span><span className="mt-2 block text-[10px] font-bold uppercase tracking-[.12em] text-sky-200">View marker + Street View</span></button>)}</section>{transientBriefing && <><pre className="ai-brief">{transientBriefing}</pre><button type="button" className="primary-action" onClick={downloadTransientBriefing}>DOWNLOAD TRANSIENT AI-ANALYSIS</button></>}<button type="button" className="secondary-action" onClick={buildTransientBriefing}>REFRESH TRANSIENT ANALYSIS</button></article>}
           {aiBrief && <article className="ai-brief"><span className="eyebrow">AI DECISION-SUPPORT DRAFT · ENGINEER REVIEW REQUIRED</span><p>{aiBrief}</p></article>}

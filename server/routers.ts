@@ -14,6 +14,7 @@ import { renderInspectionPdf } from "./services/reportPdf";
 import { askDriftAi } from "./services/driftAi";
 import { storagePut } from "./storage";
 import { supabasePortableStorageConfigured } from "./services/supabaseStorage";
+import { deliverContractorReport } from "./services/contractorDelivery";
 import { CAPTURE_ZONES, INSPECTION_DOMAINS, QUALITY_STATUSES } from "@shared/types";
 
 export const appRouter = router({
@@ -177,6 +178,7 @@ export const appRouter = router({
         approveRouting: protectedProcedure.input(z.object({ routingDecisionId: z.number().int().positive() })).mutation(({ ctx, input }) => { requireDriftRole(ctx.user, ["admin", "engineer"]); return approveRoutingDecisionRecord({ routingDecisionId: input.routingDecisionId, reviewerId: ctx.user.id }); }),
         prepareHandoff: protectedProcedure.input(z.object({ ticketId: z.number().int().positive(), routingDecisionId: z.number().int().positive(), recipientSystem: z.string().trim().max(160).optional(), expiresAt: z.number().int().positive().optional() })).mutation(({ ctx, input }) => { requireDriftRole(ctx.user, ["admin", "engineer"]); return prepareHandoffPackageRecord({ ...input, expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined, preparedBy: ctx.user.id }); }),
         publishStatus: protectedProcedure.input(z.object({ ticketId: z.number().int().positive(), publicSummary: z.string().trim().min(8).max(2000), expectedCompletionAt: z.number().int().positive().optional(), privacyReviewNote: z.string().trim().min(8).max(2000) })).mutation(({ ctx, input }) => { requireDriftRole(ctx.user, ["admin"]); return publishPublicStatusRecord({ ...input, expectedCompletionAt: input.expectedCompletionAt ? new Date(input.expectedCompletionAt) : undefined, approvedBy: ctx.user.id }); }),
+        sendReportEmail: protectedProcedure.input(z.object({ ticketId: z.number().int().positive().optional(), subject: z.string().trim().min(4).max(240), contractor: z.string().trim().min(2).max(220), defect: z.string().trim().min(2).max(160), confidencePercent: z.number().int().min(0).max(100), severity: z.string().trim().min(2).max(40), latitude: z.string().trim().max(32), longitude: z.string().trim().max(32), estimatedRepairCost: z.string().trim().max(80), recommendedDeadline: z.string().trim().max(160), reportUrl: z.string().url().optional(), evidenceUrl: z.string().url().optional() })).mutation(async ({ ctx, input }) => { requireDriftRole(ctx.user, ["admin", "engineer"]); return deliverContractorReport(input); }),
       }),
     }),
     workspace: protectedProcedure.query(({ ctx }) => { const role = ctx.user.role; return { role, permissions: role === "admin" ? ["asset:create", "asset:update", "asset:delete", "review", "audit", "alert:acknowledge"] : role === "engineer" || role === "user" ? ["review", "audit", "alert:acknowledge"] : ["public:read"] }; }),

@@ -13,3 +13,5 @@ Do not commit an `.env` file. Configure sensitive values through the deployment 
 | `ML_INFERENCE_TOKEN` | Optional | Long random bearer token | Bearer credential for the external vision inference endpoint. |
 
 The hardware bridge must be set only after bench validation and documented operator approval. DRIFT does not send any aircraft control commands. The map provider’s attribution and controls must remain visible; consult `docs/map_provider.md` before public deployment. A missing external CV service does not silently become a live claim: DRIFT labels the deterministic path as fallback or simulator inference and requires human review.
+
+| `DRIFT_EMAIL_WEBHOOK_URL` | Optional | `https://relay.example.org/drift/report` | Server-only contractor report relay; the browser never receives or submits a contractor email address. Delivery is confirmed only after a successful relay response. |
