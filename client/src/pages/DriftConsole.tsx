@@ -37,14 +37,19 @@ import {
   Video,
   Waypoints,
   Wrench,
+  Train,
 } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { CAPTURE_ZONES, INSPECTION_DOMAINS } from "@shared/types";
+import TrainMonitoring from "@/components/TrainMonitoring";
+import { contractors as contractorData } from "../../shared/contractors";
+import { calculateOverallPriority, formatRepairCost } from "../../shared/priorityScoring";
+import { trafficSegments as trafficData } from "../../shared/trafficData";
 import "./accountability.css";
 
 type Severity = "low" | "medium" | "high" | "critical";
 type DefectType = "pothole" | "crack" | "structural" | "corrosion" | "spalling" | "exposed_rebar" | "water_intrusion" | "settlement" | "rail_alignment" | "obstruction" | "lighting_failure";
-type Workspace = "operations" | "defects" | "evidence" | "reports" | "hardware" | "accountability";
+type Workspace = "operations" | "defects" | "evidence" | "reports" | "hardware" | "accountability" | "trains" | "contractors" | "traffic";
 type Role = "administrator" | "engineer" | "contractor" | "citizen";
 type EvidenceItem = { id: number; fileName: string; storageUrl: string; mediaKind: "photo" | "video" | "annotation" | "report"; source?: "hardware" | "upload" | "simulator" | "cctv" | "reference"; latitude: string | null; longitude: string | null; capturedAt?: Date | null; cameraId?: string | null; provenance?: unknown; captureZone?: string | null; qualityStatus?: string | null; imageQuality?: unknown };
 type TransientSimulatorRun = { name: string; startedAt: number; telemetry: Array<{ latitude: number; longitude: number; altitude: number; batteryPercent: number; speedMps: number; timestamp: number }>; findings: Array<{ title: string; label: string; confidence: number; latitude: number; longitude: number; score: { score: number; severity: Severity; explanation: string[] } }> };
@@ -54,6 +59,9 @@ const navItems: Array<{ key: Workspace; label: string; icon: typeof Radar }> = [
   { key: "defects", label: "Defect control", icon: TriangleAlert },
   { key: "evidence", label: "Evidence vault", icon: Video },
   { key: "reports", label: "Reports", icon: FileText },
+  { key: "contractors", label: "Contractors", icon: Wrench },
+  { key: "trains", label: "Train monitoring", icon: Train },
+  { key: "traffic", label: "Traffic overlay", icon: Gauge },
   { key: "accountability", label: "Accountability", icon: Network },
   { key: "hardware", label: "Hardware bridge", icon: RadioTower },
 ];
@@ -589,6 +597,45 @@ export default function DriftConsole() {
             </article>
           </section>
           <section ref={driftAiPanelRef} className="drift-ai-panel"><div className="drift-ai-heading"><div><span className="eyebrow">DRIFT AI · INSPECTION COPILOT</span><h2>Ask the evidence, not the guess</h2><p>DRIFT AI reads the selected finding, exact coordinates, severity, confidence, quality gate, mission telemetry, evidence count, and review state. It never issues flight commands or replaces engineer sign-off.</p></div><div className="drift-ai-badge"><Sparkles /> {driftAiSource === "gemini" ? "GEMINI CONNECTED" : driftAiSource === "openai" ? "OPENAI CONNECTED" : driftAiProviderStatus.endsWith("-429") ? "AI QUOTA REQUIRED" : driftAiProviderStatus.endsWith("-401") || driftAiProviderStatus.endsWith("-403") ? "AI KEY REJECTED" : driftAiSource === "deterministic-fallback" ? "FALLBACK · PROVIDER UNAVAILABLE" : driftAiSource === "deterministic-intent" ? "RULES · PROVIDER NOT CONFIGURED" : "READY FOR QUESTION"}</div></div><div className="drift-ai-metrics"><div><span>ANALYZED RECORDS</span><strong>{evidenceItems.length || defects.length}</strong><small>{evidenceItems.length ? "evidence items" : "finding records"}</small></div><div><span>CRITICAL DEFECTS</span><strong>{aiCriticalCount}</strong><small>engineer review</small></div><div><span>BRIDGE HEALTH</span><strong>{aiHealthScore}<em>/100</em></strong><small>derived triage score</small></div><div><span>RISK BAND</span><strong>{aiRiskBand}</strong><small>not a failure prediction</small></div><div><span>REPAIR EXPOSURE</span><strong>{formatCurrency(repairTotal)}</strong><small>stored estimates</small></div></div>{pendingAiFilter && <div className="drift-ai-filter-suggestion"><span>DRIFT AI suggests showing only <strong>{pendingAiFilter}</strong> findings on the map.</span><button type="button" onClick={() => { setSeverityFilter(pendingAiFilter); setWorkspace("defects"); setPendingAiFilter(null); }}>APPLY FILTER</button><button type="button" onClick={() => setPendingAiFilter(null)}>DISMISS</button></div>}<AIChatBox messages={driftAiMessages} onSendMessage={askDriftAi} isLoading={driftAi.isPending} height="430px" className="drift-ai-chat" placeholder="Ask: Why is this critical? What should the engineer verify next?" emptyStateMessage="DRIFT AI is ready for an inspection question." suggestedPrompts={["What are the most critical defects?", "Which defects need immediate repair?", "Why was this finding marked severe?", "Summarize this inspection and risk", "Compare with the previous inspection", "What should the engineer inspect manually?"]} /></section>
+
+          <section className="contractor-assignment-panel">
+            <div className="panel-heading"><div><span className="eyebrow">AUTO-ASSIGNED CONTRACTOR · GEO-LOOKUP</span><h2>Contractor for this defect</h2></div><Wrench /></div>
+            {(() => {
+              const lat = typeof selected.latitude === 'number' ? selected.latitude : parseFloat(String(selected.latitude));
+              const lng = typeof selected.longitude === 'number' ? selected.longitude : parseFloat(String(selected.longitude));
+              if (!lat || !lng || isNaN(lat) || isNaN(lng)) return <p className="access-note">Select a defect with valid GPS coordinates to see the assigned contractor.</p>;
+              const matched = contractorData.find(c => Math.sqrt((lat - c.centerLat) ** 2 + (lng - c.centerLng) ** 2) <= c.radiusDegrees);
+              const contractor = matched ?? contractorData[0]!;
+              const severityMap: Record<string, number> = { pothole: 45, crack: 55, structural: 85, corrosion: 70, spalling: 75, exposed_rebar: 88, water_intrusion: 60, settlement: 90, rail_alignment: 82, obstruction: 40, lighting_failure: 50 };
+              const priority = calculateOverallPriority({ defectSeverity: severityMap[selected.defectType] ?? 50, mlConfidence: (selected.confidencePercent ?? 0) / 100, trafficImpact: 0, sensorAnomaly: 0, infrastructureCriticality: 3 }, selected.defectType);
+              return (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="space-y-3">
+                    <div className="rounded-lg bg-gray-50 p-3"><span className="eyebrow">CONTRACTOR</span><p className="mt-1 text-lg font-bold text-gray-800">{contractor.name}</p><p className="text-sm text-gray-500">{contractor.organization}</p><p className="text-xs text-gray-400">{contractor.region} · Match: {matched ? 'Geo-boundary' : 'Default fallback'}</p></div>
+                    <div className="rounded-lg bg-gray-50 p-3"><span className="eyebrow">EMAIL</span><p className="mt-1 font-mono text-sm">{contractor.email}</p></div>
+                    <div className="rounded-lg bg-gray-50 p-3"><span className="eyebrow">REPORT SUMMARY</span><p className="mt-1 text-sm text-gray-600">{selected.defectType.replace(/_/g, ' ')} detected with {(selected.confidencePercent ?? 0)}% confidence at ({selected.latitude}, {selected.longitude}). Priority: {priority.priorityLevel}. Estimated cost: {formatRepairCost(priority.repairCostEstimateINR)}. Deadline: {priority.recommendedDeadline}</p></div>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="rounded-lg border-2 border-blue-200 bg-blue-50 p-4">
+                      <span className="eyebrow">PRIORITY BREAKDOWN</span>
+                      <div className="mt-2 space-y-1">
+                        <div className="flex justify-between text-sm"><span>Defect Severity</span><span className="font-bold">{priority.breakdown.defectSeverity}/30</span></div>
+                        <div className="flex justify-between text-sm"><span>ML Confidence</span><span className="font-bold">{priority.breakdown.mlConfidence}/20</span></div>
+                        <div className="flex justify-between text-sm"><span>Traffic Impact</span><span className="font-bold">{priority.breakdown.trafficImpact}/25</span></div>
+                        <div className="flex justify-between text-sm"><span>Infrastructure</span><span className="font-bold">{priority.breakdown.infrastructureImportance}/10</span></div>
+                        <div className="border-t pt-1 flex justify-between text-sm font-bold"><span>OVERALL</span><span>{priority.overallScore}/100</span></div>
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-green-50 p-3"><span className="eyebrow">ESTIMATED REPAIR COST</span><p className="mt-1 text-xl font-bold text-green-700">{formatRepairCost(priority.repairCostEstimateINR)}</p></div>
+                    <div className="rounded-lg bg-amber-50 p-3"><span className="eyebrow">RECOMMENDED DEADLINE</span><p className="mt-1 text-sm font-medium text-amber-800">{priority.recommendedDeadline}</p></div>
+                    <button type="button" className="primary-action w-full" onClick={() => setWorkspace("reports")}>VIEW FULL REPORT & SEND EMAIL <ChevronRight /></button>
+                    <button type="button" className="secondary-action w-full" onClick={() => setWorkspace("contractors")}>VIEW CONTRACTOR DETAILS <ChevronRight /></button>
+                  </div>
+                </div>
+              );
+            })()}
+          </section>
+
           {role === "administrator" && <section className="admin-grid"><article className="panel admin-panel"><div className="panel-heading"><div><span className="eyebrow">ADMINISTRATOR WORKSPACE</span><h2>Asset governance</h2></div><Layers3 /></div><div className="governance-list">{availableAssets.slice(0, 4).map(asset => <div key={asset.id}><strong>{asset.name}</strong><span>{asset.assetType} · criticality {asset.criticality}/5 · {asset.status}</span></div>) || <p>No managed assets are available yet.</p>}</div><p className="access-note">Asset create, update, and delete actions are server-authorized for authenticated administrator roles. This unauthenticated display is clearly marked as a preview.</p></article><article className="panel admin-panel"><div className="panel-heading"><div><span className="eyebrow">AUDIT TRAIL</span><h2>Accountability log</h2></div><ClipboardCheck /></div><div className="governance-list">{(live?.audit ?? []).slice(0, 4).map(event => <div key={event.id}><strong>{event.action}</strong><span>{new Date(event.createdAt).toLocaleString()}</span></div>) || <p>No audit entries yet.</p>}</div><p className="access-note">Every simulator run, evidence upload, telemetry event, and review decision is written to the audit record.</p></article></section>}
         </>}
 
@@ -675,6 +722,51 @@ export default function DriftConsole() {
             </article>
           </div>
           <PublicDatasetVisualCard onPreview={() => setEvidencePreview(publicDatasetSamples[0]!)} onOpenEvidence={() => setWorkspace("evidence")} />
+        </section>}
+
+        {workspace === "trains" && <section className="workspace-page">
+          <TrainMonitoring />
+        </section>}
+
+        {workspace === "contractors" && <section className="workspace-page">
+          <div className="workspace-header"><div><span className="eyebrow">GEO-ASSIGNED CONTRACTORS</span><h2>Contractor Management</h2><p className="workspace-lede">Contractors are automatically assigned based on GPS coordinates of detected defects. Each campus has a designated responsible contractor.</p></div></div>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+            {contractorData.map(contractor => <article key={contractor.id} className="panel priority-panel">
+              <div className="panel-heading"><div><span className="eyebrow">CONTRACTOR #{String(contractor.id).padStart(3, "0")}</span><h3>{contractor.name}</h3><p className="text-sm text-gray-500">{contractor.organization}</p></div><span className="severity-chip severity-medium">{contractor.region}</span></div>
+              <div className="p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div><span className="eyebrow">EMAIL</span><p className="font-medium">{contractor.email}</p></div>
+                  <div><span className="eyebrow">SPECIALIZATION</span><p className="font-medium">{contractor.specialization.join(", ")}</p></div>
+                  <div><span className="eyebrow">CENTER GPS</span><p className="font-medium">{contractor.centerLat}, {contractor.centerLng}</p></div>
+                  <div><span className="eyebrow">RATING</span><p className="font-medium">⭐ {contractor.rating}/5</p></div>
+                </div>
+                <div className="rounded-lg bg-gray-50 p-3">
+                  <span className="eyebrow">GEO-BOUNDARY REGION</span>
+                  <p className="mt-1 text-sm text-gray-600">Covers all infrastructure within approximately {Math.round(contractor.radiusDegrees * 111)} km of {contractor.centerLat}, {contractor.centerLng}</p>
+                </div>
+                <button type="button" className="primary-action w-full" onClick={() => setWorkspace("reports")}>VIEW ASSIGNED REPORTS <ChevronRight /></button>
+              </div>
+            </article>)}
+          </div>
+        </section>}
+
+        {workspace === "traffic" && <section className="workspace-page">
+          <div className="workspace-header"><div><span className="eyebrow">TRAFFIC DENSITY INTEGRATION</span><h2>Traffic Overlay</h2><p className="workspace-lede">Traffic density combined with infrastructure defects determines priority. High traffic + serious defect = very high priority dispatch.</p></div></div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3 mb-6">
+            <div className="rounded-xl border-2 border-red-300 bg-red-50 p-4 text-center"><div className="text-xs font-bold uppercase text-red-400">🔴 Heavy Traffic</div><div className="mt-1 text-lg font-bold text-red-600">{trafficData.filter(t => t.density === "heavy").length} segments</div><div className="text-xs text-red-500">High impact on priority</div></div>
+            <div className="rounded-xl border-2 border-orange-300 bg-orange-50 p-4 text-center"><div className="text-xs font-bold uppercase text-orange-400">🟠 Moderate Traffic</div><div className="mt-1 text-lg font-bold text-orange-600">{trafficData.filter(t => t.density === "moderate").length} segments</div><div className="text-xs text-orange-500">Medium impact on priority</div></div>
+            <div className="rounded-xl border-2 border-green-300 bg-green-50 p-4 text-center"><div className="text-xs font-bold uppercase text-green-400">🟢 Light / Free</div><div className="mt-1 text-lg font-bold text-green-600">{trafficData.filter(t => t.density === "light" || t.density === "free").length} segments</div><div className="text-xs text-green-500">Minimal priority impact</div></div>
+          </div>
+          <div className="space-y-3">
+            {trafficData.map(segment => <div key={segment.id} className="rounded-lg border border-gray-200 bg-white p-4">
+              <div className="flex items-center justify-between">
+                <div><h4 className="font-bold text-gray-800">{segment.name}</h4><p className="text-xs text-gray-500">{segment.infrastructureTypes.join(", ")}</p></div>
+                <span className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${segment.density === "heavy" ? "bg-red-100 text-red-700" : segment.density === "moderate" ? "bg-orange-100 text-orange-700" : "bg-green-100 text-green-700"}`}>{segment.density}</span>
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-4 text-sm text-gray-600"><div>🚗 {segment.vehiclesPerHour.toLocaleString()} veh/hr</div><div>🏎 {segment.averageSpeedKmh} km/h avg</div><div>📍 {segment.polyline.length} points</div></div>
+              <div className="mt-2 rounded bg-gray-50 p-2 text-xs text-gray-500">Priority Impact: +{segment.density === "heavy" ? 30 : segment.density === "moderate" ? 18 : 8} points when defect detected in this area</div>
+            </div>)}
+          </div>
         </section>}
 
         {workspace !== "evidence" && evidencePreview && <div className="evidence-modal-backdrop" role="presentation" onClick={() => setEvidencePreview(null)}><div className="evidence-modal" role="dialog" aria-modal="true" aria-label={`Evidence preview ${evidencePreview.fileName}`} onClick={event => event.stopPropagation()}><div className="modal-header"><div><span className="eyebrow">EVIDENCE PREVIEW · {evidencePreview.source ?? "stored"}</span><h3>{evidencePreview.fileName}</h3></div><button type="button" onClick={() => setEvidencePreview(null)} aria-label="Close evidence preview">CLOSE</button></div>{evidencePreview.mediaKind === "video" ? <video src={resolveBackendAssetUrl(evidencePreview.storageUrl)} controls autoPlay /> : <img src={resolveBackendAssetUrl(evidencePreview.storageUrl)} alt={evidencePreview.fileName} />}{Boolean(evidencePreview.provenance) && <p className="provenance-line">{evidenceProvenance(evidencePreview.provenance)}</p>}<div className="modal-actions"><a href={resolveBackendAssetUrl(evidencePreview.storageUrl)} target="_blank" rel="noreferrer">OPEN ORIGINAL</a><a href={resolveBackendAssetUrl(evidencePreview.storageUrl)} download={evidencePreview.fileName}>DOWNLOAD</a></div></div></div>}

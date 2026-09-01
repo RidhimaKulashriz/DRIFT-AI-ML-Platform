@@ -15,11 +15,13 @@ import { askDriftAi } from "./services/driftAi";
 import { storagePut } from "./storage";
 import { supabasePortableStorageConfigured } from "./services/supabaseStorage";
 import { deliverContractorReport } from "./services/contractorDelivery";
+import { featureRouter } from "./featureRouter";
 import { CAPTURE_ZONES, INSPECTION_DOMAINS, QUALITY_STATUSES } from "@shared/types";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
+  features: featureRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
