@@ -25,21 +25,21 @@ const priorityMeta: Record<
     color: "#ef4444",
     bg: "bg-red-50",
     border: "border-red-400",
-    icon: "🔴",
+    icon: "●",
     label: "HIGH PRIORITY",
   },
   moderate: {
     color: "#f97316",
     bg: "bg-orange-50",
     border: "border-orange-400",
-    icon: "🟠",
+    icon: "●",
     label: "MODERATE",
   },
   safe: {
     color: "#22c55e",
     bg: "bg-green-50",
     border: "border-green-400",
-    icon: "🟢",
+    icon: "●",
     label: "SAFE",
   },
 };
@@ -191,7 +191,7 @@ function SensorCard({
 
       {sensor.anomalyDetected && (
         <div className="mt-2 rounded bg-red-100 px-2 py-1 text-xs text-red-700">
-          ⚠ Anomaly detected — contributes +{sensor.priorityContribution} to
+          Anomaly detected — contributes +{sensor.priorityContribution} to
           track priority
         </div>
       )}
@@ -243,7 +243,7 @@ function TrackMapCard({
   return (
     <div className="relative min-h-[400px] rounded-xl border border-gray-200 bg-gradient-to-br from-slate-50 to-blue-50 p-4">
       <div className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-500">
-        🇮🇳 India Railway Network — Monitored Tracks
+        India Railway Network — Monitored Tracks
       </div>
 
       <svg
@@ -432,7 +432,7 @@ export default function TrainMonitoring() {
       <div className="flex items-start justify-between">
         <div>
           <span className="text-xs font-bold uppercase tracking-wider text-orange-600">
-            🚂 SEPARATE MODULE
+            SEPARATE MODULE
           </span>
           <h2 className="mt-1 text-2xl font-bold text-gray-900">
             Train Monitoring &amp; Track Anomaly Detection
@@ -457,7 +457,7 @@ export default function TrainMonitoring() {
         </div>
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-center">
           <div className="text-xs font-bold uppercase tracking-wider text-red-400">
-            🔴 High Priority
+            HIGH PRIORITY
           </div>
           <div className="mt-1 text-2xl font-bold text-red-600">
             {highPriorityTracks}
@@ -581,7 +581,7 @@ export default function TrainMonitoring() {
           {/* Sensor Points on this track */}
           <div>
             <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-gray-500">
-              📍 Vibration Sensor Points ({trackSensors.length})
+              Vibration Sensor Points ({trackSensors.length})
             </h4>
             <div className="grid grid-cols-3 gap-4">
               {trackSensors.map((sensor) => (
@@ -616,7 +616,7 @@ export default function TrainMonitoring() {
           {selectedSensor && (
             <div className="mt-6 rounded-xl border border-gray-200 bg-white p-6">
               <h4 className="mb-4 text-sm font-bold uppercase tracking-wider text-gray-600">
-                📊 Detailed Sensor Analysis — {selectedSensor.id}
+                Detailed Sensor Analysis — {selectedSensor.id}
               </h4>
               <VibrationGraph
                 data={selectedSensor.graphData}
@@ -658,7 +658,7 @@ export default function TrainMonitoring() {
         <div className="grid grid-cols-3 gap-6">
           <div className="rounded-lg border-2 border-red-300 bg-red-50 p-4">
             <div className="flex items-center gap-2">
-              <span className="text-2xl">🔴</span>
+              <span className="text-2xl font-bold text-red-500">●</span>
               <div>
                 <div className="font-bold text-red-700">HIGH PRIORITY</div>
                 <div className="text-xs text-red-600">
@@ -675,7 +675,7 @@ export default function TrainMonitoring() {
           </div>
           <div className="rounded-lg border-2 border-orange-300 bg-orange-50 p-4">
             <div className="flex items-center gap-2">
-              <span className="text-2xl">🟠</span>
+              <span className="text-2xl font-bold text-orange-500">●</span>
               <div>
                 <div className="font-bold text-orange-700">MODERATE</div>
                 <div className="text-xs text-orange-600">
@@ -692,7 +692,7 @@ export default function TrainMonitoring() {
           </div>
           <div className="rounded-lg border-2 border-green-300 bg-green-50 p-4">
             <div className="flex items-center gap-2">
-              <span className="text-2xl">🟢</span>
+              <span className="text-2xl font-bold text-green-500">●</span>
               <div>
                 <div className="font-bold text-green-700">SAFE</div>
                 <div className="text-xs text-green-600">

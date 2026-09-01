@@ -5,35 +5,83 @@ export type SimulatedFinding = Awaited<ReturnType<typeof runVisionInference>> & 
   latitude: number;
   longitude: number;
   captureOffsetSeconds: number;
+  infrastructureType: string;
 };
 
-export async function buildSimulatorMission(name = "Demo corridor patrol") {
-  // These coordinates form a reproducible, temporary demonstration grid. They are not
-  // observations of real defects, assets, or work orders at the displayed map location.
-  const anchor = { latitude: 28.6139, longitude: 77.209 };
-  const demoAdvisories = [
-    ["sim_demo_structural_frame_01.jpg", -0.0072, -0.0094, 5], ["sim_demo_crack_panel_02.jpg", -0.0072, -0.0047, 4], ["sim_demo_pothole_surface_03.jpg", -0.0072, 0, 3], ["sim_demo_corrosion_bearing_04.jpg", -0.0072, 0.0047, 4], ["sim_demo_spalling_edge_05.jpg", -0.0072, 0.0094, 3],
-    ["sim_demo_rebar_zone_06.jpg", 0, -0.0094, 5], ["sim_demo_water_drainage_07.jpg", 0, -0.0047, 3], ["sim_demo_settlement_shoulder_08.jpg", 0, 0, 4], ["sim_demo_rail_alignment_09.jpg", 0, 0.0047, 4], ["sim_demo_obstruction_10.jpg", 0, 0.0094, 2],
-    ["sim_demo_lighting_node_11.jpg", 0.0072, -0.0094, 2], ["sim_demo_crack_expansion_12.jpg", 0.0072, -0.0047, 4], ["sim_demo_pothole_lane_13.jpg", 0.0072, 0, 3], ["sim_demo_structural_parapet_14.jpg", 0.0072, 0.0047, 5], ["sim_demo_water_joint_15.jpg", 0.0072, 0.0094, 3],
-  ] as const;
+export async function buildSimulatorMission(name = "Campus infrastructure inspection") {
+  // Real campus coordinates — IGDTUW and IIIT-Delhi
+  const igdtuw = { latitude: 28.6876, longitude: 77.2100 };
+  const iiitDelhi = { latitude: 28.5449, longitude: 77.2750 };
+
+  const detections: Array<{
+    fileName: string;
+    latOffset: number;
+    lngOffset: number;
+    assetCriticality: number;
+    infrastructureType: string;
+    label: string;
+    campus: string;
+  }> = [
+    // IGDTUW Campus — Road & Building Defects
+    { fileName: "igdtuw_road_crack_01.jpg", latOffset: 0.0008, lngOffset: 0.0012, assetCriticality: 4, infrastructureType: "roads", label: "crack", campus: "IGDTUW" },
+    { fileName: "igdtuw_pothole_gate_02.jpg", latOffset: -0.0005, lngOffset: 0.0008, assetCriticality: 3, infrastructureType: "roads", label: "pothole", campus: "IGDTUW" },
+    { fileName: "igdtuw_building_spalling_03.jpg", latOffset: 0.0003, lngOffset: -0.0006, assetCriticality: 5, infrastructureType: "buildings", label: "spalling", campus: "IGDTUW" },
+    { fileName: "igdtuw_drainage_04.jpg", latOffset: -0.0009, lngOffset: -0.0003, assetCriticality: 3, infrastructureType: "drainage", label: "water_intrusion", campus: "IGDTUW" },
+    { fileName: "igdtuw_corrosion_rail_05.jpg", latOffset: 0.0006, lngOffset: 0.0004, assetCriticality: 4, infrastructureType: "roads", label: "corrosion", campus: "IGDTUW" },
+
+    // IIIT-Delhi Campus — Road & Bridge Defects
+    { fileName: "iiitd_road_pothole_01.jpg", latOffset: 0.0006, lngOffset: -0.0008, assetCriticality: 3, infrastructureType: "roads", label: "pothole", campus: "IIIT-Delhi" },
+    { fileName: "iiitd_bridge_crack_02.jpg", latOffset: -0.0004, lngOffset: 0.001, assetCriticality: 5, infrastructureType: "bridges", label: "structural", campus: "IIIT-Delhi" },
+    { fileName: "iiitd_road_settlement_03.jpg", latOffset: 0.0002, lngOffset: -0.0005, assetCriticality: 4, infrastructureType: "roads", label: "settlement", campus: "IIIT-Delhi" },
+    { fileName: "iiitd_road_crack_04.jpg", latOffset: -0.0007, lngOffset: 0.0003, assetCriticality: 4, infrastructureType: "roads", label: "crack", campus: "IIIT-Delhi" },
+    { fileName: "iiitd_exposed_rebar_05.jpg", latOffset: 0.0005, lngOffset: 0.0007, assetCriticality: 5, infrastructureType: "bridges", label: "exposed_rebar", campus: "IIIT-Delhi" },
+
+    // Shared corridor (Delhi connecting road)
+    { fileName: "delhi_ringroad_pothole_01.jpg", latOffset: 0.003, lngOffset: 0.004, assetCriticality: 3, infrastructureType: "roads", label: "pothole", campus: "Corridor" },
+    { fileName: "delhi_overpass_structural_02.jpg", latOffset: 0.002, lngOffset: 0.003, assetCriticality: 5, infrastructureType: "bridges", label: "structural", campus: "Corridor" },
+  ];
+
   const findings: SimulatedFinding[] = await Promise.all(
-    demoAdvisories.map(async ([fileName, latitudeOffset, longitudeOffset, assetCriticality], index) => {
-      const latitude = anchor.latitude + latitudeOffset;
-      const longitude = anchor.longitude + longitudeOffset;
-      const inference = await runVisionInference({ fileName, latitude, longitude, assetCriticality, priorOpenDefects: index % 6, demo: true });
-      return { ...inference, title: `SIMULATED DEMO · ${fileName.replace(/[_-]/g, " ").replace(/\.jpg$/, "")}`, latitude, longitude, captureOffsetSeconds: 42 + index * 38 };
+    detections.map(async (det, index) => {
+      const anchor = det.campus === "IIIT-Delhi" ? iiitDelhi : det.campus === "IGDTUW" ? igdtuw : { latitude: (igdtuw.latitude + iiitDelhi.latitude) / 2, longitude: (igdtuw.longitude + iiitDelhi.longitude) / 2 };
+      const latitude = anchor.latitude + det.latOffset;
+      const longitude = anchor.longitude + det.lngOffset;
+      const inference = await runVisionInference({
+        fileName: det.fileName,
+        latitude,
+        longitude,
+        assetCriticality: det.assetCriticality,
+        priorOpenDefects: index % 4,
+        demo: true,
+      });
+      return {
+        ...inference,
+        title: `${det.campus} — ${det.label.replace(/_/g, " ").toUpperCase()}`,
+        latitude,
+        longitude,
+        captureOffsetSeconds: 42 + index * 38,
+        infrastructureType: det.infrastructureType,
+      };
     }),
   );
+
+  // Telemetry — drone flight path between the two campuses
+  const waypoints = 40;
+  const latStart = igdtuw.latitude;
+  const latEnd = iiitDelhi.latitude;
+  const lngStart = igdtuw.longitude;
+  const lngEnd = iiitDelhi.longitude;
+
   return {
     name,
-    startedAt: Date.now() - 1000 * 60 * 18,
-    telemetry: Array.from({ length: 30 }, (_, index) => ({
-      latitude: anchor.latitude - 0.009 + index * 0.00062 + (index % 4) * 0.00018,
-      longitude: anchor.longitude - 0.012 + index * 0.0008 + (index % 5) * 0.00014,
-      altitude: 34 + (index % 4) * 2,
-      batteryPercent: 94 - index,
-      speedMps: 7 + (index % 3),
-      timestamp: Date.now() - (30 - index) * 15000,
+    startedAt: Date.now() - 1000 * 60 * 25,
+    telemetry: Array.from({ length: waypoints }, (_, index) => ({
+      latitude: latStart + (latEnd - latStart) * (index / waypoints) + (Math.sin(index * 0.5) * 0.0003),
+      longitude: lngStart + (lngEnd - lngStart) * (index / waypoints) + (Math.cos(index * 0.7) * 0.0003),
+      altitude: 45 + (index % 5) * 3,
+      batteryPercent: 98 - Math.floor(index * 98 / waypoints),
+      speedMps: 6 + (index % 3),
+      timestamp: Date.now() - (waypoints - index) * 15000,
     })),
     findings,
   };
