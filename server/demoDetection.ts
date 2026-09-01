@@ -43,7 +43,47 @@ export async function runDemoDetection(input: {
 
   // Step 1: Find contractor by GPS
   const geoMatch = findContractorByLocation(input.latitude, input.longitude, input.infrastructureType);
-  const contractor = geoMatch ?? getDefaultContractor(input.infrastructureType);
+  const geoContractor = geoMatch ?? getDefaultContractor(input.infrastructureType);
+
+  // Map to DB contractor by external reference
+  const dbContractors = await db.execute<{ id: number; legalname: string; externalreference: string }>(
+    sql`SELECT id, legalname, externalreference FROM contractors WHERE status = 'active' LIMIT 10`
+  );
+  let contractorDbId: number;
+  let contractorName: string;
+  let contractorEmail: string;
+  let contractorOrg: string;
+  let contractorRegion: string;
+  let matchedBy: string;
+
+  // Find matching DB contractor by region/name
+  const igdtuwDb = dbContractors.rows.find(r => r.externalreference === 'igdtuw-manu');
+  const iiitdDb = dbContractors.rows.find(r => r.externalreference === 'iiitd-ridhima');
+
+  if (geoContractor.region === 'IGDTUW Campus' && igdtuwDb) {
+    contractorDbId = igdtuwDb.id;
+    contractorName = 'Manu';
+    contractorEmail = 'ridhimakulashri07042025@gmail.com';
+    contractorOrg = 'IGDTUW Infrastructure Maintenance';
+    contractorRegion = 'IGDTUW Campus';
+    matchedBy = 'geo-boundary';
+  } else if (geoContractor.region === 'IIIT-Delhi Campus' && iiitdDb) {
+    contractorDbId = iiitdDb.id;
+    contractorName = 'Ridhima Kulashriz';
+    contractorEmail = 'ridhimakulashriz@gmail.com';
+    contractorOrg = 'IIIT-Delhi Infrastructure Division';
+    contractorRegion = 'IIIT-Delhi Campus';
+    matchedBy = 'geo-boundary';
+  } else {
+    // Fallback to first DB contractor
+    const fallback = dbContractors.rows[0];
+    contractorDbId = fallback?.id ?? 1;
+    contractorName = fallback?.legalname ?? 'Unassigned';
+    contractorEmail = '';
+    contractorOrg = '';
+    contractorRegion = '';
+    matchedBy = 'default-fallback';
+  }
 
   // Step 2: Calculate priority
   const severityMap: Record<string, number> = {
@@ -74,22 +114,26 @@ export async function runDemoDetection(input: {
 
   const finalPriority = trafficEnhanced.enhancedPriority;
 
-  // Step 3: Ensure a demo mission exists (create if needed)
+  // Step 3: Get or create mission and asset
   let missionId: number;
-  const existingMissions = await db.execute<{ id: number }>(
-    sql`SELECT id FROM missions WHERE name = 'Demo inspection scan' LIMIT 1`
+  let assetId: number;
+
+  // Try to find existing mission first
+  const existingMissions = await db.execute<{ id: number; assetid: number }>(
+    sql`SELECT id, assetId as assetid FROM missions ORDER BY id DESC LIMIT 1`
   );
 
   if (existingMissions.rows.length > 0) {
     missionId = Number(existingMissions.rows[0].id);
+    assetId = Number(existingMissions.rows[0].assetid);
   } else {
-    // Create asset first
+    // Create asset first (use raw SQL without enum cast)
     const assetResult = await db.execute<{ id: number }>(
       sql`INSERT INTO assets (name, assetType, locality, latitude, longitude, criticality, status, createdat, updatedat)
           VALUES ('Campus Infrastructure', 'road', 'IGDTUW + IIIT-Delhi', '28.6163', '77.2425', 3, 'operational', NOW(), NOW())
           RETURNING id`
     );
-    const assetId = Number(assetResult.rows[0].id);
+    assetId = Number(assetResult.rows[0].id);
 
     const missionResult = await db.execute<{ id: number }>(
       sql`INSERT INTO missions (assetId, name, mode, status, startedat, createdat, updatedat)
@@ -98,12 +142,6 @@ export async function runDemoDetection(input: {
     );
     missionId = Number(missionResult.rows[0].id);
   }
-
-  // Get the assetId from the mission
-  const missionAsset = await db.execute<{ assetid: number }>(
-    sql`SELECT assetId as assetid FROM missions WHERE id = ${missionId} LIMIT 1`
-  );
-  const assetId = Number(missionAsset.rows[0]?.assetid ?? 1);
 
   // Step 4: Create evidence record if image provided
   let evidenceId: number | null = null;
@@ -139,7 +177,7 @@ export async function runDemoDetection(input: {
   // Step 8: Create ticket
   const ticketResult = await db.execute<{ id: number }>(
     sql`INSERT INTO contractorTickets (assetId, defectId, contractorId, title, scopeNote, latitude, longitude, priority, status, verificationcriterion, createdat, updatedat)
-        VALUES (${assetId}, ${defectId}, ${contractor.id}, ${`${input.defectType.replace(/_/g, ' ').toUpperCase()} — ${contractor.region}`}, ${`Auto-generated ticket for ${input.defectType} detected at (${input.latitude.toFixed(6)}, ${input.longitude.toFixed(6)}). Assigned to ${contractor.name} (${contractor.organization}).`}, ${String(input.latitude)}, ${String(input.longitude)}, 'p2', 'open', 'Engineer must verify repair completion with follow-up evidence.', NOW(), NOW())
+        VALUES (${assetId}, ${defectId}, ${contractorDbId}, ${`${input.defectType.replace(/_/g, ' ').toUpperCase()} — ${contractorRegion}`}, ${`Auto-generated ticket for ${input.defectType} detected at (${input.latitude.toFixed(6)}, ${input.longitude.toFixed(6)}). Assigned to ${contractorName} (${contractorOrg}).`}, ${String(input.latitude)}, ${String(input.longitude)}, 'p2', 'open', 'Engineer must verify repair completion with follow-up evidence.', NOW(), NOW())
         RETURNING id`
   );
   const ticketId = Number(ticketResult.rows[0].id);
@@ -161,8 +199,8 @@ export async function runDemoDetection(input: {
       latitude: input.latitude,
       longitude: input.longitude,
       infrastructureType: input.infrastructureType,
-      contractorId: contractor.id,
-      contractorName: contractor.name,
+      contractorId: contractorDbId,
+      contractorName: contractorName,
       priorityScore: finalPriority,
       priorityLevel: priority.priorityLevel,
     })}::jsonb, NOW())`
@@ -185,11 +223,11 @@ export async function runDemoDetection(input: {
       imageUrl: input.imageUrl,
     },
     contractor: {
-      id: contractor.id,
-      name: contractor.name,
-      email: contractor.email,
-      organization: contractor.organization,
-      region: contractor.region,
+      id: contractorDbId,
+      name: contractorName,
+      email: contractorEmail,
+      organization: contractorOrg,
+      region: contractorRegion,
       matchedBy: geoMatch ? "geo-boundary" : "default-fallback",
     },
     priority: {
@@ -204,17 +242,17 @@ export async function runDemoDetection(input: {
     report: {
       ticketId: `DRIFT-${ticketId}`,
       title: `${input.defectType.replace(/_/g, ' ').toUpperCase()} Detection Report`,
-      summary: `A ${input.defectType.replace(/_/g, ' ')} was detected with ${Math.round(input.confidence * 100)}% confidence at (${input.latitude.toFixed(6)}, ${input.longitude.toFixed(6)}). Assigned to ${contractor.name} (${contractor.organization}) for ${contractor.region}. Priority: ${priority.priorityLevel} (${finalPriority}/100). Estimated cost: ${formatRepairCost(priority.repairCostEstimateINR)}. Deadline: ${priority.recommendedDeadline}.`,
+      summary: `A ${input.defectType.replace(/_/g, ' ')} was detected with ${Math.round(input.confidence * 100)}% confidence at (${input.latitude.toFixed(6)}, ${input.longitude.toFixed(6)}). Assigned to ${contractorName} (${contractorOrg}) for ${contractorRegion}. Priority: ${priority.priorityLevel} (${finalPriority}/100). Estimated cost: ${formatRepairCost(priority.repairCostEstimateINR)}. Deadline: ${priority.recommendedDeadline}.`,
     },
     ticket: {
       id: ticketId,
       ticketDisplayId: `DRIFT-${ticketId}`,
       status: "open",
       defectId,
-      contractorId: contractor.id,
-      contractorName: contractor.name,
+      contractorId: contractorDbId,
+      contractorName: contractorName,
     },
-    message: `Detection ${defectId} created. Ticket DRIFT-${ticketId} assigned to ${contractor.name}. Priority: ${priority.priorityLevel}. Cost: ${formatRepairCost(priority.repairCostEstimateINR)}.`,
+    message: `Detection ${defectId} created. Ticket DRIFT-${ticketId} assigned to ${contractorName}. Priority: ${priority.priorityLevel}. Cost: ${formatRepairCost(priority.repairCostEstimateINR)}.`,
   };
 }
 
