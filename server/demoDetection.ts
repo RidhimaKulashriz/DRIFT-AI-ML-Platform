@@ -156,8 +156,8 @@ export async function runDemoDetection(input: {
 
   // Step 5: Create defect record
   const defectResult = await db.execute<{ id: number }>(
-    sql`INSERT INTO defects (missionId, assetId, evidenceId, defectType, label, confidencePercent, zeroErrorScore, severity, status, reviewState, latitude, longitude, inspectionDomain, correlationKey, coveragePercent, createdat, updatedat)
-        VALUES (${missionId}, ${assetId}, ${evidenceId}, ${input.defectType}::defect_type, ${input.defectType.replace(/_/g, ' ')}, ${Math.round(input.confidence * 100)}, ${finalPriority}, ${priority.priorityLevel}::severity, 'detected', 'pending', ${String(input.latitude)}, ${String(input.longitude)}, ${input.infrastructureType}, ${'demo:' + Date.now()}, 85, NOW(), NOW())
+    sql`INSERT INTO defects ("missionId", "assetId", "defectType", "label", "confidencePercent", "zeroErrorScore", severity, status, "reviewState", latitude, longitude, "inspectionDomain", "correlationKey", "coveragePercent", createdat, updatedat)
+        VALUES (${missionId}, ${assetId}, ${input.defectType}::defect_type, ${input.defectType.replace(/_/g, ' ')}, ${Math.round(input.confidence * 100)}, ${finalPriority}, ${priority.priorityLevel}::severity, 'detected', 'pending', ${String(input.latitude)}, ${String(input.longitude)}, ${input.infrastructureType}, ${'demo:' + Date.now()}, 85, NOW(), NOW())
         RETURNING id`
   );
   const defectId = Number(defectResult.rows[0].id);
