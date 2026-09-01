@@ -42,9 +42,9 @@ import {
 import { useMemo, useRef, useState } from "react";
 import { CAPTURE_ZONES, INSPECTION_DOMAINS } from "@shared/types";
 import TrainMonitoring from "@/components/TrainMonitoring";
-import { contractors as contractorData } from "../../shared/contractors";
-import { calculateOverallPriority, formatRepairCost } from "../../shared/priorityScoring";
-import { trafficSegments as trafficData } from "../../shared/trafficData";
+import { contractors as contractorData } from "@shared/contractors";
+import { calculateOverallPriority, formatRepairCost } from "@shared/priorityScoring";
+import { trafficSegments as trafficData } from "@shared/trafficData";
 import "./accountability.css";
 
 type Severity = "low" | "medium" | "high" | "critical";
