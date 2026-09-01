@@ -85,6 +85,175 @@ The frontend is deployed on Vercel and the Node API is deployed on Render. GitHu
 
 See [`docs/hardware_adapter_contract.md`](docs/hardware_adapter_contract.md) for the authenticated telemetry payload contract, media-ingestion boundary, and safe operator integration-test sequence.
 
+## System Architecture
+                                             ┌──────────────────────────────┐
+                         │            USERS             │
+                         │  Engineer / Operator / Admin  │
+                         └──────────────┬───────────────┘
+                                        │
+                                        ▼
+                 ┌─────────────────────────────────────────┐
+                 │           DRIFT WEB DASHBOARD            │
+                 │              React + TypeScript          │
+                 │                                         │
+                 │ Operations │ Defects │ Evidence │ Maps  │
+                 │ Reports    │ Alerts  │ Hardware Bridge  │
+                 └────────────────────┬────────────────────┘
+                                      │
+                                 tRPC / HTTP
+                                      │
+                                      ▼
+        ┌──────────────────────────────────────────────────────────┐
+        │                  NODE.JS + tRPC BACKEND                   │
+        │                                                          │
+        │  ┌────────────┐ ┌────────────┐ ┌──────────────────────┐ │
+        │  │   Mission  │ │  Finding   │ │     Telemetry        │ │
+        │  │   Router   │ │   Router   │ │      Router          │ │
+        │  └────────────┘ └────────────┘ └──────────────────────┘ │
+        │                                                          │
+        │  ┌────────────┐ ┌────────────┐ ┌──────────────────────┐ │
+        │  │  Evidence  │ │   Report   │ │      Hardware        │ │
+        │  │   Router   │ │   Router   │ │       Router          │ │
+        │  └────────────┘ └────────────┘ └──────────────────────┘ │
+        │                                                          │
+        │         BUSINESS LOGIC / ORCHESTRATION                  │
+        │  Mission Management │ Finding Processing                │
+        │  Telemetry Validation │ Engineer Review                 │
+        │  Alert Generation │ Report Generation                   │
+        └───────────────┬──────────────┬───────────────┬───────────┘
+                        │              │               │
+                        ▼              ▼               ▼
+              ┌────────────────┐ ┌──────────────┐ ┌─────────────────┐
+              │    AI / ML     │ │   DRIZZLE    │ │  GEO-SPATIAL    │
+              │    ENGINE      │ │     ORM      │ │     ENGINE      │
+              │                │ │              │ │                 │
+              │ Computer       │ │ Data Access  │ │ GPS Correlation │
+              │ Vision         │ │ Queries      │ │ Coordinates     │
+              │                │ │ Persistence  │ │ Map Markers     │
+              │ Defect         │ │              │ │ Mission Routes  │
+              │ Detection      │ │              │ │                 │
+              │ Classification │ │              │ │ Google Maps /   │
+              │ Severity       │ │              │ │ OSM Fallback    │
+              └───────┬────────┘ └──────┬───────┘ └────────┬────────┘
+                      │                  │                  │
+                      ▼                  ▼                  │
+              ┌────────────────┐ ┌──────────────────┐      │
+              │    DECISION    │ │   POSTGRESQL     │      │
+              │     ENGINE     │ │     DATABASE     │      │
+              │                │ │                  │      │
+              │ Severity       │ │ Missions         │      │
+              │ Priority       │ │ Findings         │      │
+              │ Repair Estimate│ │ Telemetry        │      │
+              │ Maintenance    │ │ Evidence         │      │
+              │ Alerts         │ │ Reports          │      │
+              └───────┬────────┘ │ Alerts           │      │
+                      │          └──────────────────┘      │
+                      │                                    │
+                      └────────────────┬───────────────────┘
+                                       │
+                                       ▼
+                         ┌────────────────────────┐
+                         │     EVIDENCE VAULT     │
+                         │                        │
+                         │ Images / Video         │
+                         │ GPS + Timestamp        │
+                         │ Finding Association    │
+                         │ Mission Association    │
+                         └────────────┬───────────┘
+                                      │
+                                      ▼
+                         ┌────────────────────────┐
+                         │    ENGINEER REVIEW     │
+                         │                        │
+                         │ Evidence Verification  │
+                         │ Finding Validation     │
+                         │ Severity Review        │
+                         │ Approval / Review      │
+                         └────────────┬───────────┘
+                                      │
+                                      ▼
+                         ┌────────────────────────┐
+                         │    REPORTING ENGINE     │
+                         │                        │
+                         │ AI Narrative            │
+                         │ Inspection Summary      │
+                         │ Evidence References     │
+                         │ PDF Generation          │
+                         └────────────┬───────────┘
+                                      │
+                                      ▼
+                         ┌────────────────────────┐
+                         │   AUDIT-READY PDF      │
+                         │   INSPECTION REPORT    │
+                         └────────────┬───────────┘
+                                      │
+                                      ▼
+                         ┌────────────────────────┐
+                         │ MAINTENANCE DECISION   │
+                         │                        │
+                         │ Repair Recommendation  │
+                         │ Priority Action        │
+                         │ Maintenance Workflow   │
+                         └────────────────────────┘
+
+
+══════════════════════ EXTERNAL DATA ACQUISITION ══════════════════════
+
+        ┌─────────────────────────────────────────────────┐
+        │              DRONE / HARDWARE                   │
+        │                                                 │
+        │ Camera │ Images │ Video │ GPS │ Telemetry      │
+        │ HTTP │ RTSP │ MAVLink                          │
+        └───────────────────────┬─────────────────────────┘
+                                │
+                                ▼
+                 ┌──────────────────────────────┐
+                 │ AUTHENTICATED HARDWARE       │
+                 │      INGESTION ADAPTER       │
+                 │                              │
+                 │ Authentication              │
+                 │ Input Validation             │
+                 │ Telemetry Parsing            │
+                 │ Media Ingestion              │
+                 └──────────────┬───────────────┘
+                                │
+                                ▼
+                       NODE.JS + tRPC BACKEND
+
+
+════════════════════════════ AI INTEGRATION ═══════════════════════════
+
+                 ┌──────────────────────────────┐
+                 │ OPTIONAL EXTERNAL ML SERVICE │
+                 │                              │
+                 │   ML_INFERENCE_URL           │
+                 └──────────────┬───────────────┘
+                                │
+                                ▼
+                         AI / ML ENGINE
+
+
+════════════════════════════ DEPLOYMENT ══════════════════════════════
+
+       ┌──────────────┐          ┌──────────────┐
+       │   GITHUB     │─────────▶│   VERCEL     │
+       │ Source Code  │          │   Frontend   │
+       └──────┬───────┘          └──────┬───────┘
+              │                         │
+              │                         │ HTTPS
+              │                         ▼
+              │                  ┌──────────────┐
+              └─────────────────▶│    RENDER    │
+                                 │ Node.js API  │
+                                 └──────┬───────┘
+                                        │
+                          ┌─────────────┴─────────────┐
+                          ▼                           ▼
+                   ┌──────────────┐          ┌────────────────┐
+                   │ PostgreSQL   │          │ External ML    │
+                   │ + Drizzle    │          │ Service        │
+                   └──────────────┘          └────────────────┘
+
 ## References
 
 [1]: https://drift-ai-ml-platform.vercel.app/ "DRIFT public interactive demo"

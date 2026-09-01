@@ -246,7 +246,6 @@ export async function persistInferenceDefect(input: { missionId: number; assetId
 export async function generateMissionReport(input: { missionId: number; generatedBy?: number | null }) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable.");
-  if (!supabasePortableStorageConfigured()) throw new Error("Portable evidence storage is required before generating a report artifact.");
   const mission = (await db.select().from(missions).where(eq(missions.id, input.missionId)).limit(1))[0];
   if (!mission) throw new Error("Mission does not exist.");
   const [evidenceRows, defectRows] = await Promise.all([

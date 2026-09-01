@@ -1,7 +1,14 @@
 import { OAUTH_STATE_COOKIE, encodeOAuthState } from "@shared/const";
 import { isSupabaseAuthConfigured, magicLinkErrorMessage, requestSupabaseMagicLink } from "@/lib/supabase";
 
-export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+export { COOKIE_NAME, ONE_YEAR_MS } from '@shared/const';
+
+// External hosting builds the frontend on Vercel and the API on Render. Keep local
+// development same-origin, while making a production build usable even when the
+// Vercel environment variable was omitted during deployment.
+export const DEFAULT_BACKEND_ORIGIN = "https://drift-node-api.onrender.com";
+export const getBackendOrigin = () =>
+  (import.meta.env.VITE_BACKEND_URL || (import.meta.env.PROD ? DEFAULT_BACKEND_ORIGIN : "")).replace(/\/$/, "");
 
 // Start the configured OAuth login. Call this from an event handler or effect at the
 // moment you want to navigate, e.g. `onClick={() => startLogin()}`.
@@ -14,7 +21,7 @@ export const startLogin = () => {
       .catch(error => window.alert(magicLinkErrorMessage(error)));
     return;
   }
-  const backendOrigin = (import.meta.env.VITE_BACKEND_URL ?? "").replace(/\/$/, "");
+  const backendOrigin = getBackendOrigin();
   if (backendOrigin) {
     window.location.href = `${backendOrigin}/api/oauth/start?returnTo=${encodeURIComponent(window.location.origin)}`;
     return;

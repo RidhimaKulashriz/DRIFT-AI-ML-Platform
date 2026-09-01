@@ -1,5 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { COOKIE_NAME } from '@shared/const';
+import { getBackendOrigin } from "@/const";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { httpBatchLink } from "@trpc/client";
 import { createRoot } from "react-dom/client";
@@ -31,7 +32,7 @@ queryClient.getMutationCache().subscribe(event => {
   }
 });
 
-const backendOrigin = (import.meta.env.VITE_BACKEND_URL ?? "").replace(/\/$/, "");
+const backendOrigin = getBackendOrigin();
 const trpcClient = trpc.createClient({
   links: [
     httpBatchLink({

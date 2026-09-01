@@ -1,0 +1,3 @@
+Production browser check after the real-map commit: the GEO-SPATIAL WORKBENCH and KartaView panel are present. The page currently shows 0 findings and 0 telemetry before running the transient demo. The map area is visually dark/blank with the circular point index; real OSM tile imagery is not yet visibly confirmed in the current deployment snapshot, so the Leaflet tile-map integration must be checked after the latest Vercel deployment is available. GitHub latest commit at this point is 0175f99 Add real geographic map to workbench.
+
+The deployed public mode correctly shows the three infrastructure videos and the KartaView control. Google Demo Key is not required for the fallback map path.
