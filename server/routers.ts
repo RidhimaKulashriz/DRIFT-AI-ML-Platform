@@ -10,6 +10,7 @@ import { generateDecisionNarrative } from "./services/aiDecision";
 import { probeHardwareConnection, validateTelemetryPayload } from "./services/hardwareAdapter";
 import { runVisionInference } from "./services/mlInference";
 import { buildSimulatorMission } from "./services/simulator";
+import { renderInspectionPdf } from "./services/reportPdf";
 import { askDriftAi } from "./services/driftAi";
 import { storagePut } from "./storage";
 import { supabasePortableStorageConfigured } from "./services/supabaseStorage";
@@ -95,6 +96,42 @@ export const appRouter = router({
       generate: protectedProcedure.input(z.object({ missionId: z.number().int().positive() })).mutation(({ ctx, input }) => {
         requireDriftRole(ctx.user, ["admin", "engineer", "user"]);
         return generateMissionReport({ missionId: input.missionId });
+      }),
+      demoPdf: publicProcedure.input(z.object({ name: z.string().trim().min(3).max(180).default("Demo corridor patrol"), findingId: z.number().int().min(1).max(15).optional() })).mutation(async ({ input }) => {
+        const simulator = await buildSimulatorMission(input.name);
+        const selectedFindings = input.findingId ? simulator.findings.filter((_, index) => index + 1 === input.findingId) : simulator.findings;
+        const contractorRoute = (() => {
+          const label = selectedFindings[0]?.label ?? "pothole";
+          if (label === "rail_alignment") return { contractorName: "IRCON International Limited", ragStatus: "amber" as const, workProfile: "railway engineering and infrastructure works", sourceLabel: "Public company profile candidate", sourceUrl: "https://ircon.org/", disclaimer: "Candidate only; not assigned, vetted, or endorsed by DRIFT." };
+          if (label === "structural" || label === "spalling" || label === "exposed_rebar") return { contractorName: "Afcons Infrastructure Limited", ragStatus: "amber" as const, workProfile: "transport and bridge infrastructure works", sourceLabel: "Public company profile candidate", sourceUrl: "https://www.afcons.com/", disclaimer: "Candidate only; not assigned, vetted, or endorsed by DRIFT." };
+          return { contractorName: "Larsen & Toubro Limited", ragStatus: "amber" as const, workProfile: "transport, civil, and infrastructure works", sourceLabel: "Public company profile candidate", sourceUrl: "https://www.larsentoubro.com/", disclaimer: "Candidate only; not assigned, vetted, or endorsed by DRIFT." };
+        })();
+        const pdf = await renderInspectionPdf({
+          mission: { id: 0, name: simulator.name, startedAt: new Date(simulator.startedAt), completedAt: new Date(), mode: "stateless_demo", status: "completed" },
+          evidence: [],
+          defects: selectedFindings.map((finding, index) => ({
+            id: index + 1,
+            label: finding.title,
+            defectType: finding.label,
+            severity: finding.score.severity,
+            zeroErrorScore: finding.score.score,
+            confidencePercent: Math.round(finding.confidence * 100),
+            coveragePercent: null,
+            status: "simulated",
+            reviewState: "pending",
+            inspectionDomain: "transient browser demo",
+            latitude: String(finding.latitude),
+            longitude: String(finding.longitude),
+            evidenceId: null,
+            explanation: finding.score.explanation,
+            uncertainty: ["Temporary simulator output; original authorised evidence and engineer review are required."],
+            correlationKey: `transient-demo-${index + 1}`,
+          })),
+          repairTotalCents: selectedFindings.reduce((sum, finding) => sum + finding.score.repairEstimateCents, 0),
+          contractorRoute,
+        });
+        const suffix = input.findingId ? `-finding-${input.findingId}` : "";
+        return { title: `${simulator.name} · ${input.findingId ? `Finding ${input.findingId}` : "Transient demo"} PDF`, filename: `drift-transient-demo-report${suffix}.pdf`, contentType: "application/pdf", base64: pdf.toString("base64"), transient: true, contractorRoute };
       }),
     }),
     accountability: router({
