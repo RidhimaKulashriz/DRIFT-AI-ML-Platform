@@ -13,6 +13,7 @@ import { storagePutWithFallback } from "../storage";
 import { authorizeBridgeToken, validateTelemetryPayload } from "../services/hardwareAdapter";
 import { runVisionInference } from "../services/mlInference";
 import { createCorsMiddleware } from "../services/cors";
+import { runDemoDetection } from "../demoDetection";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -66,6 +67,30 @@ async function startServer() {
     } catch (error) {
       console.error("[DRIFT] Telemetry ingestion failed", error);
       return res.status(503).json({ error: "Telemetry could not be persisted." });
+    }
+  });
+
+  // Public demo detection endpoint — no auth required
+  app.post("/api/drift/demo-detect", async (req, res) => {
+    const body = req.body as Record<string, unknown>;
+    const { defectType, confidence, latitude, longitude, infrastructureType, imageUrl, sensorContribution } = body as {
+      defectType?: string; confidence?: number; latitude?: number; longitude?: number;
+      infrastructureType?: string; imageUrl?: string; sensorContribution?: number;
+    };
+    if (!defectType || typeof confidence !== "number" || typeof latitude !== "number" || typeof longitude !== "number") {
+      return res.status(400).json({ error: "Missing required fields: defectType, confidence, latitude, longitude" });
+    }
+    try {
+      const result = await runDemoDetection({
+        defectType, confidence, latitude, longitude,
+        infrastructureType: infrastructureType ?? "roads",
+        imageUrl,
+        sensorContribution: sensorContribution ?? 0,
+      });
+      return res.status(201).json(result);
+    } catch (error) {
+      console.error("[DRIFT] Demo detection failed:", error);
+      return res.status(500).json({ error: String(error) });
     }
   });
 

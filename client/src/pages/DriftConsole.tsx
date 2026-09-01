@@ -214,6 +214,18 @@ export default function DriftConsole() {
     },
     onError: error => toast.error(error.message),
   });
+  const runDemoScan = trpc.drift.runDemoScan.useMutation({
+    onSuccess: data => {
+      setTransientSimulatorRun(data);
+      setTransientBriefing(createTransientAnalysisBriefing(data));
+      setSelectedId(-1);
+      setWorkspace("operations");
+      utils.drift.overview.invalidate();
+      window.setTimeout(() => mapPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 120);
+      toast.success(`${data.detections.length} defects detected and saved to database. ${data.detections.filter((d: { success: boolean }) => d.success).length} tickets created.`);
+    },
+    onError: error => toast.error(`Scan failed: ${error.message}`),
+  });
   const createHardwareCaptureMission = trpc.drift.createHardwareCaptureMission.useMutation({
     onSuccess: data => {
       toast.success(`UAV capture mission ${data.missionId} is in preflight. Upload original camera media next.`);
@@ -343,8 +355,7 @@ export default function DriftConsole() {
   const transientMapDefects = useMemo(() => (transientSimulatorRun?.findings ?? []).map((finding, index) => ({ id: -(index + 1), label: finding.title, defectType: finding.label, severity: finding.score.severity, zeroErrorScore: finding.score.score, confidencePercent: Math.round(finding.confidence * 100), latitude: finding.latitude, longitude: finding.longitude, isTransient: true })), [transientSimulatorRun]);
   const transientMapTelemetry = transientSimulatorRun?.telemetry ?? [];
   const startAvailableSimulator = () => {
-    if (canPersistSimulation) runSimulator.mutate({ name: missionName });
-    else runStatelessSimulator.mutate({ name: missionName });
+    runDemoScan.mutate({ name: missionName });
   };
   const focusLiveMap = () => {
     setWorkspace("operations");
@@ -531,7 +542,7 @@ export default function DriftConsole() {
             <button type="button" className="secondary-action" onClick={focusDriftAi} title="Scroll to the DRIFT AI inspection copilot."><Sparkles /> OPEN DRIFT AI</button>
             {!isAuthenticated && <button type="button" className="secondary-action" onClick={() => startLogin()} title="Sign in with any email. Protected DRIFT roles require separate approval.">SIGN IN</button>}
             {transientSimulatorRun && <button type="button" className="secondary-action" onClick={openTransientReport} title="Open the inspection report."><FileText /> OPEN REPORT</button>}
-            {canRunDemo && <button type="button" className="primary-action" onClick={startAvailableSimulator} disabled={runSimulator.isPending || runStatelessSimulator.isPending} title="Run infrastructure inspection scan across IGDTUW and IIIT-Delhi campuses."><Play /> {runSimulator.isPending || runStatelessSimulator.isPending ? "SCANNING" : "RUN INSPECTION SCAN"}</button>}
+            {canRunDemo && <button type="button" className="primary-action" onClick={startAvailableSimulator} disabled={runDemoScan.isPending} title="Run infrastructure inspection scan across IGDTUW and IIIT-Delhi campuses."><Play /> {runDemoScan.isPending ? "SCANNING & PERSISTING..." : "RUN INSPECTION SCAN"}</button>}
           </div>
         </header>
 

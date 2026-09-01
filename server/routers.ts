@@ -16,6 +16,7 @@ import { storagePut } from "./storage";
 import { supabasePortableStorageConfigured } from "./services/supabaseStorage";
 import { deliverContractorReport } from "./services/contractorDelivery";
 import { featureRouter } from "./featureRouter";
+import { runDemoDetection } from "./demoDetection";
 import { CAPTURE_ZONES, INSPECTION_DOMAINS, QUALITY_STATUSES } from "@shared/types";
 
 export const appRouter = router({
@@ -53,6 +54,42 @@ export const appRouter = router({
     runStatelessSimulator: publicProcedure.input(z.object({ name: z.string().min(3).max(180).default("Demo corridor patrol") })).mutation(async ({ input }) => {
       const simulator = await buildSimulatorMission(input.name);
       return { mode: "stateless_demo" as const, transient: true, storage: "none" as const, message: "Transient simulated walkthrough only. No mission, finding, telemetry, evidence, ticket, report, CCTV candidate, security observation, or UAV action was stored or created.", ...simulator };
+    }),
+    demoDetect: publicProcedure.input(z.object({
+      defectType: z.string().min(1).max(120),
+      confidence: z.number().min(0).max(1),
+      latitude: z.number().min(-90).max(90),
+      longitude: z.number().min(-180).max(180),
+      infrastructureType: z.string().default("roads"),
+      imageUrl: z.string().optional(),
+      sensorContribution: z.number().default(0),
+    })).mutation(async ({ input }) => {
+      return runDemoDetection(input);
+    }),
+    runDemoScan: publicProcedure.input(z.object({ name: z.string().default("Campus inspection scan") })).mutation(async ({ input }) => {
+      const simulator = await buildSimulatorMission(input.name);
+      const results = [];
+      for (const finding of simulator.findings) {
+        try {
+          const result = await runDemoDetection({
+            defectType: finding.label,
+            confidence: finding.confidence,
+            latitude: finding.latitude,
+            longitude: finding.longitude,
+            infrastructureType: (finding as typeof finding & { infrastructureType?: string }).infrastructureType ?? "roads",
+          });
+          results.push(result);
+        } catch (error) {
+          console.error("[DRIFT] Demo detection failed for", finding.label, error);
+        }
+      }
+      return {
+        mode: "demo_scan" as const,
+        message: `${results.length} detections persisted to database.`,
+        findings: simulator.findings,
+        telemetry: simulator.telemetry,
+        detections: results,
+      };
     }),
     createHardwareCaptureMission: protectedProcedure.input(z.object({ name: z.string().trim().min(3).max(180), aircraftProfile: z.string().trim().min(2).max(120), adapter: z.enum(["mavlink-bridge", "http-webhook", "rtsp-media"]), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180), operatorNote: z.string().trim().max(500).optional() })).mutation(({ ctx, input }) => {
       requireDriftRole(ctx.user, ["admin", "engineer"]);

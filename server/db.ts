@@ -157,10 +157,27 @@ export async function getMissionOverview() {
   return { assets: assetRows, missions: missionRows, defects: defectRows, telemetry: telemetryRows, reports: reportRows, estimates: estimateRows, reviews: reviewRows, audit: auditRows, alerts: alertRows, persistence };
 }
 
-export function getPublicMissionOverview() {
-  return {
+export async function getPublicMissionOverview() {
+  const db = await getDb();
+  if (!db) return {
     assets: [], missions: [], defects: [], telemetry: [], reports: [], estimates: [], reviews: [], audit: [], alerts: [],
-    persistence: { available: false, configured: true, driver: "postgresql", portableEvidenceStorage: false, message: "Sign in with an approved DRIFT role to access persistent project records. The public walkthrough is browser-session-only." },
+    persistence: { available: false, configured: Boolean(postgresDatabaseUrl()), driver: "postgresql", portableEvidenceStorage: false, message: "PostgreSQL is not configured." },
+  };
+  const [assetRows, missionRows, defectRows, telemetryRows, reportRows, estimateRows, reviewRows, auditRows, alertRows] = await Promise.all([
+    db.select().from(assets).orderBy(desc(assets.updatedAt)).limit(40),
+    db.select().from(missions).orderBy(desc(missions.createdAt)).limit(30),
+    db.select().from(defects).orderBy(desc(defects.zeroErrorScore)).limit(120),
+    db.select().from(telemetry).orderBy(desc(telemetry.capturedAt)).limit(240),
+    db.select(reportListColumns).from(reports).orderBy(desc(reports.createdAt)).limit(30),
+    db.select().from(repairEstimates).orderBy(desc(repairEstimates.createdAt)).limit(120),
+    db.select().from(reviews).orderBy(desc(reviews.createdAt)).limit(120),
+    db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(120),
+    db.select().from(alerts).orderBy(desc(alerts.createdAt)).limit(120),
+  ]);
+  return {
+    assets: assetRows, missions: missionRows, defects: defectRows, telemetry: telemetryRows,
+    reports: reportRows, estimates: estimateRows, reviews: reviewRows, audit: auditRows, alerts: alertRows,
+    persistence: { available: true, configured: true, driver: "postgresql", portableEvidenceStorage: supabasePortableStorageConfigured(), message: "Database connected. Demo detections are visible on the map." },
   };
 }
 
