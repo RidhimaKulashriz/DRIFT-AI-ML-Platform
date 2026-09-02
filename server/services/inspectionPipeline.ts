@@ -323,7 +323,7 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({ imageBase64: buffer.toString("base64"), fileName: input.fileName, confidence: 0.25, imgsz: 640 }),
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.timeout(15_000),
       });
       if (mlResponse.ok) {
         const mlData = await mlResponse.json() as any;
