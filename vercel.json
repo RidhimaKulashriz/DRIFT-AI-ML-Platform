@@ -1,7 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm build",
+  "build": {
+    "env": {
+      "VITE_GOOGLE_MAPS_API_KEY": "AIzaSyAxpj6rrmEzhO8lobQWZe0khpBOkj-6HCI"
+    }
+  },
+  "installCommand": "npm install",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist/public",
   "framework": null,
   "cleanUrls": true
