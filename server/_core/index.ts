@@ -139,29 +139,34 @@ async function startServer() {
     }
   });
 
-  // PHASE 10/14/15: Apply campus schema + seed IGDTUW + IIIT-Delhi on startup
-  await ensureCampusSchema();
-
   // PHASE 51: Real inspection endpoint — full pipeline (image upload → EXIF → ML → PDF → email)
   app.post("/api/inspections", async (req, res) => {
-    const { runFullInspection } = await import("./services/inspectionPipeline");
-    const body = req.body as Record<string, unknown>;
-    const result = await runFullInspection({
-      fileName: typeof body.fileName === "string" ? body.fileName : null,
-      mimeType: typeof body.mimeType === "string" ? body.mimeType : null,
-      base64: typeof body.base64 === "string" ? body.base64 : null,
-      campusId: typeof body.campusId === "number" ? body.campusId : null,
-      inspectionName: typeof body.inspectionName === "string" ? body.inspectionName : "Field inspection",
-      explicitLatitude: typeof body.latitude === "number" ? body.latitude : null,
-      explicitLongitude: typeof body.longitude === "number" ? body.longitude : null,
-      locationSource: typeof body.locationSource === "string" ? body.locationSource : null,
-      assetCriticality: typeof body.assetCriticality === "number" ? body.assetCriticality : 3,
-      inspectionDomain: typeof body.inspectionDomain === "string" ? body.inspectionDomain : null,
-      sendEmail: body.sendEmail === true,
-      recipientEmail: typeof body.recipientEmail === "string" ? body.recipientEmail : null,
-    });
-    res.status(result.success ? 201 : 400).json(result);
+    try {
+      const pipelineModule = await import("../services/inspectionPipeline");
+      const body = req.body as Record<string, unknown>;
+      const result = await pipelineModule.runFullInspection({
+        fileName: typeof body.fileName === "string" ? body.fileName : null,
+        mimeType: typeof body.mimeType === "string" ? body.mimeType : null,
+        base64: typeof body.base64 === "string" ? body.base64 : null,
+        campusId: typeof body.campusId === "number" ? body.campusId : null,
+        inspectionName: typeof body.inspectionName === "string" ? body.inspectionName : "Field inspection",
+        explicitLatitude: typeof body.latitude === "number" ? body.latitude : null,
+        explicitLongitude: typeof body.longitude === "number" ? body.longitude : null,
+        locationSource: typeof body.locationSource === "string" ? body.locationSource : null,
+        assetCriticality: typeof body.assetCriticality === "number" ? body.assetCriticality : 3,
+        inspectionDomain: typeof body.inspectionDomain === "string" ? body.inspectionDomain : null,
+        sendEmail: body.sendEmail === true,
+        recipientEmail: typeof body.recipientEmail === "string" ? body.recipientEmail : null,
+      });
+      res.status(result.success ? 201 : 400).json(result);
+    } catch (err) {
+      console.error("[Inspection] Pipeline error:", err);
+      res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
+    }
   });
+
+  // PHASE 10/14/15: Apply campus schema + seed IGDTUW + IIIT-Delhi on startup
+  await ensureCampusSchema();
 
   // tRPC API
   app.use(
