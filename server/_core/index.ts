@@ -8,7 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { addTelemetryRecord, createEvidenceRecord, getDatabaseAttachment, persistInferenceDefect } from "../db";
+import { addTelemetryRecord, createEvidenceRecord, getDatabaseAttachment, persistInferenceDefect, ensureCampusSchema } from "../db";
 import { storagePutWithFallback } from "../storage";
 import { authorizeBridgeToken, validateTelemetryPayload } from "../services/hardwareAdapter";
 import { runVisionInference } from "../services/mlInference";
@@ -138,6 +138,9 @@ async function startServer() {
       return res.status(503).send("Attachment unavailable");
     }
   });
+
+  // PHASE 10/14/15: Apply campus schema + seed IGDTUW + IIIT-Delhi on startup
+  await ensureCampusSchema();
 
   // tRPC API
   app.use(

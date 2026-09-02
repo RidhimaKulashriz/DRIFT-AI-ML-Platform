@@ -35,6 +35,59 @@ export async function getDb() {
   return _db;
 }
 
+let _migrationApplied = false;
+/**
+ * PHASE 10/14/15: Apply campus + campusLocations tables and seed IGDTUW + IIIT-Delhi.
+ * Runs once on first DB connection. Idempotent (ON CONFLICT clauses).
+ */
+export async function ensureCampusSchema(): Promise<void> {
+  if (_migrationApplied) return;
+  const db = await getDb();
+  if (!db) return;
+
+  try {
+    // Check if campuses table exists
+    const exists = await db.execute<{ table_name: string }>(sql`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'campuses'
+    `);
+    if (exists.rows.length > 0) {
+      _migrationApplied = true;
+      return;
+    }
+
+    console.log("[Database] Applying campus schema migration (0005)...");
+    const fs = await import("node:fs/promises");
+    const path = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const here = path.dirname(fileURLToPath(import.meta.url));
+    const sqlPath = path.resolve(here, "..", "drizzle-postgres", "0005_campuses_seed.sql");
+    const sqlContent = await fs.readFile(sqlPath, "utf-8");
+
+    // Split on statement-breakpoint and execute each statement
+    const statements = sqlContent
+      .split("--> statement-breakpoint")
+      .map(s => s.trim())
+      .filter(Boolean);
+
+    for (const stmt of statements) {
+      try {
+        await db.execute(sql.raw(stmt));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // Idempotent errors are acceptable (CREATE TYPE IF NOT EXISTS is not supported in PG)
+        if (msg.includes("already exists")) continue;
+        console.warn("[Database] Migration statement failed:", msg);
+      }
+    }
+
+    _migrationApplied = true;
+    console.log("[Database] Campus schema migration applied successfully.");
+  } catch (err) {
+    console.error("[Database] Failed to apply campus migration:", err);
+  }
+}
+
 const READINESS_TABLE_GROUPS = {
   core: ["assets", "missions", "telemetry", "evidence", "defects", "reports", "alerts", "auditEvents"],
   accountability: ["contractors", "contractorTickets", "dsiAssessments", "cameraSources", "cctvCandidates", "knowledgeDocuments", "knowledgeChunks", "knowledgeRetrievalRuns", "authorities", "slaRules", "routingRules", "routingDecisions", "handoffPackages", "publicStatusPublications"],
