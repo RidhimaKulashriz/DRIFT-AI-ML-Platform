@@ -43,7 +43,6 @@ let _reportsMigrationApplied = false;
  * Idempotent — safe to run on every startup.
  */
 async function ensureReportsColumns(db: any): Promise<void> {
-  if (_reportsMigrationApplied) return;
   try {
     // Check which columns exist
     const colCheck = await db.execute<{ column_name: string }>(sql`
@@ -51,10 +50,17 @@ async function ensureReportsColumns(db: any): Promise<void> {
       WHERE table_name='reports' AND table_schema='public'
     `);
     const existing = new Set(colCheck.rows.map((r: any) => r.column_name));
+
+    // Already complete
+    if (existing.has("pdfBase64") && existing.has("emailStatus") && existing.has("updatedAt")) {
+      _reportsMigrationApplied = true;
+      return;
+    }
+
     const addIfMissing = async (col: string, ddl: string) => {
       if (existing.has(col)) return;
-      try { await db.execute(sql.raw(`ALTER TABLE "reports" ADD COLUMN ${ddl}`)); }
-      catch (e) { console.warn(`[Database] Add column ${col} failed:`, e instanceof Error ? e.message : e); }
+      try { await db.execute(sql.raw(`ALTER TABLE "reports" ADD COLUMN ${ddl}`)); console.log(`[Database] Added reports.${col}`); }
+      catch (e) { console.warn(`[Database] Add column ${col} failed:`, e instanceof Error ? e.message?.substring(0, 200) : e); }
     };
     await addIfMissing("pdfBase64", `"pdfBase64" text`);
     await addIfMissing("pdfSizeBytes", `"pdfSizeBytes" integer`);
