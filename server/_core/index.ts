@@ -181,7 +181,12 @@ async function startServer() {
 
     // ML inference
     const mlUrl = process.env.ML_INFERENCE_URL?.trim();
-    checks.ml_inference = { ok: Boolean(mlUrl), detail: mlUrl ? "external configured" : "fallback deterministic" };
+    const geminiKey = process.env.GEMINI_API_KEY?.trim();
+    checks.ml_inference = mlUrl
+      ? { ok: true, detail: `external inference URL configured: ${new URL(mlUrl).host}` }
+      : geminiKey
+        ? { ok: true, detail: "Gemini vision configured (server-side only)" }
+        : { ok: false, detail: "Not configured. Set ML_INFERENCE_URL or GEMINI_API_KEY. Fallback uses deterministic mock." };
 
     // Hardware bridge
     const ingestToken = process.env.DRIFT_INGEST_TOKEN?.trim();
