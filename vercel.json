@@ -5,7 +5,7 @@
       "VITE_GOOGLE_MAPS_API_KEY": "AIzaSyAxpj6rrmEzhO8lobQWZe0khpBOkj-6HCI"
     }
   },
-  "installCommand": "pnpm install --frozen-lockfile",
+  "installCommand": "pnpm install",
   "buildCommand": "vite build",
   "outputDirectory": "dist/public",
   "framework": null,
