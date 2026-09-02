@@ -35,6 +35,64 @@ export async function getDb() {
   return _db;
 }
 
+let _dbColumnsAdded = false;
+let _dbColumnsMigrationInProgress = false;
+
+/**
+ * One-time, raw SQL migration that adds missing columns to the reports table.
+ * Uses a direct pg client (not Drizzle) to ensure columns are actually added.
+ */
+export async function ensureReportsColumns(db: any): Promise<void> {
+  if (_dbColumnsAdded) return;
+  if (_dbColumnsMigrationInProgress) return;
+  _dbColumnsMigrationInProgress = true;
+  try {
+    const databaseUrl = postgresDatabaseUrl();
+    if (!databaseUrl) return;
+
+    // Use a fresh direct connection to run the migration
+    const { Client } = await import("pg");
+    const client = new Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const colCheck = await client.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns WHERE table_name='reports' AND table_schema='public'`
+      );
+      const existing = new Set(colCheck.rows.map((r) => r.column_name));
+
+      const alters: string[] = [];
+      if (!existing.has("pdfBase64")) alters.push(`ALTER TABLE "reports" ADD COLUMN "pdfBase64" text`);
+      if (!existing.has("pdfSizeBytes")) alters.push(`ALTER TABLE "reports" ADD COLUMN "pdfSizeBytes" integer`);
+      if (!existing.has("pdfPages")) alters.push(`ALTER TABLE "reports" ADD COLUMN "pdfPages" integer`);
+      if (!existing.has("findingCount")) alters.push(`ALTER TABLE "reports" ADD COLUMN "findingCount" integer DEFAULT 0`);
+      if (!existing.has("emailStatus")) alters.push(`ALTER TABLE "reports" ADD COLUMN "emailStatus" varchar(20)`);
+      if (!existing.has("emailMessageId")) alters.push(`ALTER TABLE "reports" ADD COLUMN "emailMessageId" text`);
+      if (!existing.has("emailedAt")) alters.push(`ALTER TABLE "reports" ADD COLUMN "emailedAt" timestamp with time zone`);
+      if (!existing.has("emailError")) alters.push(`ALTER TABLE "reports" ADD COLUMN "emailError" text`);
+      if (!existing.has("updatedAt")) alters.push(`ALTER TABLE "reports" ADD COLUMN "updatedAt" timestamp with time zone DEFAULT now()`);
+
+      if (alters.length > 0) {
+        console.log(`[Database] Running ${alters.length} ALTER TABLE statements...`);
+        for (const stmt of alters) {
+          try {
+            await client.query(stmt);
+            console.log(`[Database] OK: ${stmt}`);
+          } catch (e) {
+            console.warn(`[Database] FAILED: ${stmt} -`, e instanceof Error ? e.message?.substring(0, 200) : e);
+          }
+        }
+      }
+      _dbColumnsAdded = true;
+    } finally {
+      await client.end();
+    }
+  } catch (e) {
+    console.warn("[Database] ensureReportsColumns failed:", e instanceof Error ? e.message : e);
+  } finally {
+    _dbColumnsMigrationInProgress = false;
+  }
+}
+
 let _campusMigrationApplied = false;
 let _reportsMigrationApplied = false;
 
