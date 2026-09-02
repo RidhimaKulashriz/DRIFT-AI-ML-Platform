@@ -147,6 +147,46 @@ async function startServer() {
       createContext,
     })
   );
+
+  // PHASE 77: Health endpoint with dependency checks
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString(), service: "drift-api" });
+  });
+
+  app.get("/health/dependencies", async (_req, res) => {
+    const checks: Record<string, { ok: boolean; detail: string }> = {};
+
+    // Database
+    try {
+      const { getDb } = await import("../db");
+      const db = await getDb();
+      checks.database = { ok: Boolean(db), detail: db ? "connected" : "DATABASE_URL is not configured" };
+    } catch (e) {
+      checks.database = { ok: false, detail: String(e instanceof Error ? e.message : e) };
+    }
+
+    // Supabase
+    const supabaseUrl = process.env.SUPABASE_URL?.trim();
+    checks.supabase = { ok: Boolean(supabaseUrl), detail: supabaseUrl ? "configured" : "SUPABASE_URL is not configured" };
+
+    // Email
+    const webhook = process.env.DRIFT_EMAIL_WEBHOOK_URL?.trim();
+    const smtp = process.env.EMAIL_USER && process.env.EMAIL_PASS;
+    checks.email = webhook || smtp
+      ? { ok: true, detail: webhook ? "webhook configured" : "Gmail SMTP configured" }
+      : { ok: false, detail: "No email provider configured (set DRIFT_EMAIL_WEBHOOK_URL or EMAIL_USER+EMAIL_PASS)" };
+
+    // ML inference
+    const mlUrl = process.env.ML_INFERENCE_URL?.trim();
+    checks.ml_inference = { ok: Boolean(mlUrl), detail: mlUrl ? "external configured" : "fallback deterministic" };
+
+    // Hardware bridge
+    const ingestToken = process.env.DRIFT_INGEST_TOKEN?.trim();
+    checks.drone_bridge = { ok: Boolean(ingestToken), detail: ingestToken ? "token configured" : "DRIFT_INGEST_TOKEN is not configured" };
+
+    const allOk = Object.values(checks).every(c => c.ok);
+    res.status(allOk ? 200 : 503).json({ status: allOk ? "healthy" : "degraded", timestamp: new Date().toISOString(), checks });
+  });
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);

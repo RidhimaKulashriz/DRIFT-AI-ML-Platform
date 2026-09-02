@@ -208,6 +208,28 @@ export const featureRouter = router({
        .query(({ input }) => getDefectsForCampus(input.campus)),
    }),
 
+   /** Verified campus data — IGDTUW and IIIT-Delhi */
+   campus: router({
+     list: publicProcedure.query(async () => {
+       const { getDb } = await import("./db");
+       const db = await getDb();
+       if (!db) return [];
+       const { campuses } = await import("../drizzle/schema");
+       return db.select().from(campuses);
+     }),
+     locations: publicProcedure
+       .input(z.object({ campusId: z.number().int().positive().optional() }))
+       .query(async ({ input }) => {
+         const { getDb } = await import("./db");
+         const db = await getDb();
+         if (!db) return [];
+         const { campusLocations } = await import("../drizzle/schema");
+         const { eq } = await import("drizzle-orm");
+         if (input.campusId) return db.select().from(campusLocations).where(eq(campusLocations.campusId, input.campusId));
+         return db.select().from(campusLocations);
+       }),
+   }),
+
    /** Ticket & report system */
    reports: router({
      /** Generate a defect report and create a ticket — PUBLIC for demo */
