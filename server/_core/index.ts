@@ -196,6 +196,22 @@ async function startServer() {
       const { getDb } = await import("../db");
       const db = await getDb();
       checks.database = { ok: Boolean(db), detail: db ? "connected" : "DATABASE_URL is not configured" };
+
+      // Test if reports columns exist
+      if (db) {
+        try {
+          const { sql } = await import("drizzle-orm");
+          const colCheck = await db.execute<{ column_name: string }>(sql`
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name='reports' AND table_schema='public'
+          `);
+          const cols = colCheck.rows.map((r: any) => r.column_name);
+          const hasNew = cols.includes("pdfBase64") && cols.includes("emailStatus");
+          checks.reports_schema = { ok: hasNew, detail: hasNew ? "columns present" : `missing: ${cols.includes("pdfBase64") ? "" : "pdfBase64 "}${cols.includes("emailStatus") ? "" : "emailStatus"} (have: ${cols.length} cols)` };
+        } catch (e) {
+          checks.reports_schema = { ok: false, detail: "column check failed: " + (e instanceof Error ? e.message?.substring(0, 200) : String(e)) };
+        }
+      }
     } catch (e) {
       checks.database = { ok: false, detail: String(e instanceof Error ? e.message : e) };
     }
