@@ -1,21 +1,21 @@
 """
-DRIFT ML Server — Lightweight, free-tier compatible
-Uses ONLY HTTP API calls (no PyTorch/ultralytics needed)
-- Roboflow: railway + rust (Hitakshi's models)
-- Gemini Vision: crack + road (real Google AI vision)
-Total RAM: <100MB — works on Render free tier
+DRIFT ML Server — Hitakshi's real models, free-tier compatible
+Runtime: onnxruntime ONLY (no PyTorch at runtime = ~200MB RAM)
+Build-time: ultralytics converts .pt → .onnx during Render build
+Models: CRACK (YOLO ONNX), ROAD (YOLO ONNX), RAILWAY (Roboflow), RUST (Roboflow)
 """
-import os, json, base64, time
+import os, json, base64, time, gc
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="DRIFT ML", version="4.0.0")
+app = FastAPI(title="DRIFT ML", version="5.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 ROBOFLOW_API_KEY = os.environ.get("ROBOFLOW_API_KEY", "")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
+# Label mapping
 LABEL_MAP = {
     "crack": "crack", "cracks": "crack", "Crack": "crack",
     "Longitudinal Crack": "crack", "Transverse Crack": "crack", "Alligator Crack": "crack",
@@ -38,6 +38,92 @@ def estimate_severity(conf, label):
     if label in high:
         return "high" if conf >= 0.90 else "medium" if conf >= 0.70 else "low"
     return "high" if conf >= 0.85 else "medium" if conf >= 0.60 else "low"
+
+
+# ---- ONNX YOLO inference (load → run → unload) ----
+
+def onnx_yolo_detect(image_bytes, onnx_path, model_name, conf=0.25):
+    """Load ONNX model, run inference, unload. Peak ~200MB per model."""
+    if not os.path.exists(onnx_path):
+        print(f"[ML] {model_name}: ONNX not found at {onnx_path}")
+        return []
+    try:
+        import onnxruntime as ort
+        import numpy as np
+        from PIL import Image
+        import io
+
+        # Preprocess image
+        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        orig_w, orig_h = img.size
+        img_resized = img.resize((640, 640))
+        arr = np.array(img_resized, dtype=np.float32) / 255.0
+        arr = arr.transpose(2, 0, 1)  # HWC -> CHW
+        arr = np.expand_dims(arr, 0)  # add batch dim
+
+        # Run ONNX inference
+        sess = ort.InferenceSession(onnx_path, providers=["CPUExecutionProvider"])
+        input_name = sess.get_inputs()[0].name
+        outputs = sess.run(None, {input_name: arr})
+        del sess
+        gc.collect()
+
+        # Parse YOLO output: shape [1, num_detections, 5+num_classes] or [1, 5+num_classes, num_detections]
+        raw = outputs[0]
+        if raw.ndim == 3:
+            # [1, N, 5+C] format
+            raw = raw[0]  # remove batch
+        elif raw.ndim == 2:
+            # [5+C, N] format -> transpose
+            raw = raw.T
+        else:
+            print(f"[ML] {model_name}: unexpected output shape {raw.shape}")
+            return []
+
+        detections = []
+        for det in raw:
+            # YOLO output: [cx, cy, w, h, obj_conf, class_scores...]
+            if len(det) < 6:
+                continue
+            cx, cy, w, h = det[0], det[1], det[2], det[3]
+            obj_conf = det[4]
+            class_scores = det[5:]
+            if obj_conf < conf:
+                continue
+            class_idx = int(np.argmax(class_scores))
+            class_conf = float(class_scores[class_idx])
+            final_conf = float(obj_conf) * class_conf
+            if final_conf < conf:
+                continue
+
+            # Convert to percentage of original image
+            x_pct = max(0, min(100, ((cx - w/2) / 640) * 100))
+            y_pct = max(0, min(100, ((cy - h/2) / 640) * 100))
+            w_pct = max(1, min(100, (w / 640) * 100))
+            h_pct = max(1, min(100, (h / 640) * 100))
+
+            detections.append({
+                "model": model_name,
+                "label": model_name.lower().replace(" ", "_"),
+                "confidence": round(final_conf, 4),
+                "x": round(x_pct, 1),
+                "y": round(y_pct, 1),
+                "width": round(w_pct, 1),
+                "height": round(h_pct, 1),
+            })
+
+        print(f"[ML] {model_name}: {len(detections)} detections")
+        return detections
+
+    except ImportError:
+        print(f"[ML] {model_name}: onnxruntime not installed")
+        return []
+    except Exception as e:
+        print(f"[ML] {model_name} error: {e}")
+        return []
+
+
+# ---- Roboflow API (Hitakshi's railway + rust) ----
 
 def roboflow_detect(image_bytes, model_id, model_name, conf=0.25):
     if not ROBOFLOW_API_KEY:
@@ -67,8 +153,10 @@ def roboflow_detect(image_bytes, model_id, model_name, conf=0.25):
         print(f"[ML] {model_name} error: {e}")
         return []
 
+
+# ---- Gemini Vision (backup for crack/road if ONNX not available) ----
+
 def gemini_vision_detect(image_b64, mime="image/jpeg"):
-    """Use Gemini 2.5 Flash for infrastructure defect detection — real Google AI vision."""
     if not GEMINI_API_KEY:
         print("[ML] Gemini: no GEMINI_API_KEY")
         return []
@@ -78,9 +166,9 @@ def gemini_vision_detect(image_b64, mime="image/jpeg"):
             "You are an infrastructure defect detector for roads, bridges, railways, and buildings. "
             "Analyze this image for: cracks, potholes, structural damage, corrosion, spalling, "
             "exposed rebar, water intrusion, settlement, rail faults, obstructions. "
-            'Return JSON array of defects found: [{"label":"<defect_type>","confidence":<0.0-1.0>,"x":<0-100>,"y":<0-100>,"width":<0-100>,"height":<0-100>}] '
+            'Return JSON array: [{"label":"<defect_type>","confidence":<0.0-1.0>,"x":<0-100>,"y":<0-100>,"width":<0-100>,"height":<0-100>}] '
             "Valid labels: crack, pothole, structural, corrosion, spalling, exposed_rebar, settlement, obstruction, rail_alignment. "
-            "If NO defect found, return empty array []. Return ONLY valid JSON, no explanation."
+            "If NO defect found, return empty array []. Return ONLY valid JSON."
         )
         body = {
             "contents": [{"parts": [
@@ -128,14 +216,36 @@ def gemini_vision_detect(image_b64, mime="image/jpeg"):
         print(f"[ML] Gemini error: {e}")
         return []
 
+
+# ---- Endpoints ----
+
 @app.get("/health")
 async def health():
+    crack_onnx = os.path.exists("cracks/main_crack.onnx")
+    road_onnx = os.path.exists("road-ml/main_road.onnx")
+    crack_pt = os.path.exists("cracks/main_crack.pt")
+    road_pt = os.path.exists("road-ml/main_road.pt")
     return {
         "status": "healthy",
-        "mode": "api-only",
+        "mode": "hitakshi-real-ml",
+        "models": {
+            "crack": {"onnx": crack_onnx, "pt": crack_pt},
+            "road": {"onnx": road_onnx, "pt": road_pt},
+            "railway": {"roboflow": bool(ROBOFLOW_API_KEY)},
+            "rust": {"roboflow": bool(ROBOFLOW_API_KEY)},
+        },
+        "onnxruntime": _check_onnxruntime(),
         "roboflow": "configured" if ROBOFLOW_API_KEY else "missing",
         "gemini": "configured" if GEMINI_API_KEY else "missing",
     }
+
+def _check_onnxruntime():
+    try:
+        import onnxruntime
+        return "available"
+    except ImportError:
+        return "not_installed"
+
 
 @app.post("/detect-base64")
 async def detect_base64(body: dict):
@@ -156,7 +266,22 @@ async def detect_base64(body: dict):
     models_used = []
     t0 = time.time()
 
-    # 1. Roboflow models (Hitakshi's railway + rust) — HTTP only, instant
+    # 1. Hitakshi's ONNX YOLO models (CRACK + ROAD) — loaded one at a time, unloaded after
+    onnx_models = [
+        ("cracks/main_crack.onnx", "CRACK"),
+        ("road-ml/main_road.onnx", "ROAD"),
+    ]
+    for onnx_path, name in onnx_models:
+        try:
+            dets = onnx_yolo_detect(image_bytes, onnx_path, name, confidence)
+            all_detections.extend(dets)
+            if dets:
+                models_used.append(name)
+            gc.collect()
+        except Exception as e:
+            print(f"[ML] {name} failed: {e}")
+
+    # 2. Hitakshi's Roboflow models (RAILWAY + RUST) — HTTP API only
     for model_id, name in [
         ("railway-track-fault-detection-hrem8/3", "RAILWAY"),
         ("corrosion-yolov8/4", "RUST"),
@@ -169,8 +294,8 @@ async def detect_base64(body: dict):
         except Exception as e:
             print(f"[ML] {name} failed: {e}")
 
-    # 2. Gemini Vision for crack/road/structural — real AI vision analysis
-    if not all_detections or len(models_used) < 2:
+    # 3. Gemini backup (only if no detections from Hitakshi's models)
+    if not all_detections and GEMINI_API_KEY:
         try:
             dets = gemini_vision_detect(image_b64)
             all_detections.extend(dets)
@@ -205,9 +330,11 @@ async def detect_base64(body: dict):
         "count": len(mapped),
     }
 
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("ML_PORT", 8000))
-    print(f"[DRIFT ML] API-only mode — Port: {port}")
-    print(f"[DRIFT ML] Roboflow: {'OK' if ROBOFLOW_API_KEY else 'NO KEY'} | Gemini: {'OK' if GEMINI_API_KEY else 'NO KEY'}")
+    print(f"[DRIFT ML v5] Hitakshi Real ML — Port: {port}")
+    print(f"[DRIFT ML v5] ONNX Runtime: {_check_onnxruntime()}")
+    print(f"[DRIFT ML v5] Roboflow: {'OK' if ROBOFLOW_API_KEY else 'NO KEY'} | Gemini: {'OK' if GEMINI_API_KEY else 'BACKUP'}")
     uvicorn.run(app, host="0.0.0.0", port=port)
