@@ -35,12 +35,86 @@ export async function getDb() {
   return _db;
 }
 
-let _migrationApplied = false;
+let _campusMigrationApplied = false;
+let _reportsMigrationApplied = false;
 
 /**
- * Inline SQL for campus + campusLocations migration.
- * Embedded directly so esbuild bundles it with the server.
+ * Add report table columns if they don't exist.
+ * Idempotent — safe to run on every startup.
  */
+async function ensureReportsColumns(db: any): Promise<void> {
+  if (_reportsMigrationApplied) return;
+  try {
+    // The campus migration already added these columns, but if a fresh database
+    // is hit before campuses migration runs, we still need them.
+    await db.execute(sql`
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='pdfBase64') THEN
+          ALTER TABLE "reports" ADD COLUMN "pdfBase64" text;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='pdfSizeBytes') THEN
+          ALTER TABLE "reports" ADD COLUMN "pdfSizeBytes" integer;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='pdfPages') THEN
+          ALTER TABLE "reports" ADD COLUMN "pdfPages" integer;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='findingCount') THEN
+          ALTER TABLE "reports" ADD COLUMN "findingCount" integer DEFAULT 0;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='emailStatus') THEN
+          ALTER TABLE "reports" ADD COLUMN "emailStatus" varchar(20);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='emailMessageId') THEN
+          ALTER TABLE "reports" ADD COLUMN "emailMessageId" text;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='emailedAt') THEN
+          ALTER TABLE "reports" ADD COLUMN "emailedAt" timestamp with time zone;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='emailError') THEN
+          ALTER TABLE "reports" ADD COLUMN "emailError" text;
+        END IF;
+      END $$;
+    `);
+    _reportsMigrationApplied = true;
+  } catch (e) {
+    console.warn("[Database] Reports column migration failed:", e instanceof Error ? e.message : e);
+  }
+}
+
+/**
+ * PHASE 10/14/15: Apply campus + campusLocations tables and seed IGDTUW + IIIT-Delhi.
+ * Runs once on first DB connection. Idempotent (ON CONFLICT clauses).
+ */
+export async function ensureCampusSchema(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  // Always run reports column migration (separate from campus check)
+  await ensureReportsColumns(db);
+
+  if (_campusMigrationApplied) return;
+
+  try {
+    // Check if campuses table exists
+    const exists = await db.execute<{ table_name: string }>(sql`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'campuses'
+    `);
+
+    if (exists.rows.length > 0) {
+      _campusMigrationApplied = true;
+      return;
+    }
+
+    console.log("[Database] Applying campus schema migration...");
+    // Run the entire migration in a single statement to keep DDL atomic
+    await db.execute(sql.raw(CAMPUS_MIGRATION_SQL));
+    _campusMigrationApplied = true;
+    console.log("[Database] Campus schema migration applied. IGDTUW and IIIT-Delhi seeded.");
+  } catch (err) {
+    console.error("[Database] Failed to apply campus migration:", err);
+  }
+}
 const CAMPUS_MIGRATION_SQL = `
 DO $$ BEGIN
   CREATE TYPE "public"."location_source" AS ENUM('image_exif', 'device_gps', 'verified_campus', 'user_selected', 'geocoded', 'unknown');
@@ -139,9 +213,13 @@ ON CONFLICT ("id") DO UPDATE SET
  * Runs once on first DB connection. Idempotent (ON CONFLICT clauses).
  */
 export async function ensureCampusSchema(): Promise<void> {
-  if (_migrationApplied) return;
   const db = await getDb();
   if (!db) return;
+
+  // Always run reports column migration (separate from campus check)
+  await ensureReportsColumns(db);
+
+  if (_campusMigrationApplied) return;
 
   try {
     // Check if campuses table exists
@@ -151,14 +229,14 @@ export async function ensureCampusSchema(): Promise<void> {
     `);
 
     if (exists.rows.length > 0) {
-      _migrationApplied = true;
+      _campusMigrationApplied = true;
       return;
     }
 
     console.log("[Database] Applying campus schema migration...");
     // Run the entire migration in a single statement to keep DDL atomic
     await db.execute(sql.raw(CAMPUS_MIGRATION_SQL));
-    _migrationApplied = true;
+    _campusMigrationApplied = true;
     console.log("[Database] Campus schema migration applied. IGDTUW and IIIT-Delhi seeded.");
   } catch (err) {
     console.error("[Database] Failed to apply campus migration:", err);
