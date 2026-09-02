@@ -235,7 +235,16 @@ export const reports = pgTable("reports", {
   inspectionScope: jsonb("inspectionScope"),
   signoff: jsonb("signoff"),
   attachmentData: bytea("attachmentData"),
+  pdfBase64: text("pdfBase64"),
+  pdfSizeBytes: integer("pdfSizeBytes"),
+  pdfPages: integer("pdfPages"),
+  findingCount: integer("findingCount").default(0),
+  emailStatus: varchar("emailStatus", { length: 20 }),
+  emailMessageId: text("emailMessageId"),
+  emailedAt: timestamp("emailedAt", { withTimezone: true }),
+  emailError: text("emailError"),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 });
 
 export const auditEvents = pgTable("auditEvents", {

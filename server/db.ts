@@ -81,6 +81,17 @@ CREATE TABLE IF NOT EXISTS "campusLocations" (
 ALTER TABLE "assets" ADD COLUMN IF NOT EXISTS "campusId" integer;
 ALTER TABLE "evidence" ADD COLUMN IF NOT EXISTS "locationSource" "location_source" DEFAULT 'unknown';
 
+-- Reports table columns for production PDF/email pipeline
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "pdfBase64" text;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "pdfSizeBytes" integer;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "pdfPages" integer;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "findingCount" integer DEFAULT 0;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailStatus" varchar(20);
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailMessageId" text;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailedAt" timestamp with time zone;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailError" text;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "updatedAt" timestamp with time zone DEFAULT now();
+
 INSERT INTO "campuses" ("id", "name", "shortName", "description", "address", "city", "state", "country", "latitude", "longitude", "website", "defaultImageUrl", "sourceUrl", "createdAt", "updatedAt")
 VALUES (
   1, 'Indira Gandhi Delhi Technical University for Women', 'IGDTUW',
