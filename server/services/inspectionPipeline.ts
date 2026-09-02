@@ -138,7 +138,7 @@ async function callGeminiVision(buffer: Buffer, mimeType: string): Promise<{ def
     });
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20_000);
+    const timeout = setTimeout(() => controller.abort(), 60_000);
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -146,10 +146,17 @@ async function callGeminiVision(buffer: Buffer, mimeType: string): Promise<{ def
       signal: controller.signal,
     });
     clearTimeout(timeout);
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.error("[InspectionPipeline] Gemini API HTTP error:", response.status, await response.text().catch(() => "(no body)"));
+      return null;
+    }
     const result = await response.json() as any;
+    console.log("[InspectionPipeline] Gemini response candidates:", result?.candidates?.length ?? 0, "blocked:", result?.promptFeedback?.blockReason ?? "none");
     const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (typeof text !== "string") return null;
+    if (typeof text !== "string") {
+      console.error("[InspectionPipeline] Gemini returned no text. Full response:", JSON.stringify(result).substring(0, 500));
+      return null;
+    }
     const parsed = JSON.parse(text);
     if (parsed.defect === "none" || parsed.defect === null) return null;
     if (typeof parsed.confidence !== "number") return null;
@@ -168,7 +175,7 @@ async function callGeminiVision(buffer: Buffer, mimeType: string): Promise<{ def
       model: "gemini-2.5-flash",
     };
   } catch (err) {
-    console.warn("[InspectionPipeline] Gemini vision failed:", err instanceof Error ? err.message : err);
+    console.error("[InspectionPipeline] Gemini vision error:", err instanceof Error ? err.message : String(err));
     return null;
   }
 }
