@@ -44,13 +44,12 @@ let _reportsMigrationApplied = false;
  */
 async function ensureReportsColumns(db: any): Promise<void> {
   try {
-    // Check which columns exist (using raw SQL via the Drizzle session)
+    // Check which columns exist
     const colCheck = await db.execute<{ column_name: string }>(sql`
       SELECT column_name FROM information_schema.columns
       WHERE table_name='reports' AND table_schema='public'
     `);
     const existing = new Set(colCheck.rows.map((r: any) => r.column_name));
-    console.log("[Database] existing reports columns:", Array.from(existing).join(", "));
 
     // Already complete
     if (existing.has("pdfBase64") && existing.has("emailStatus") && existing.has("updatedAt")) {
@@ -58,27 +57,37 @@ async function ensureReportsColumns(db: any): Promise<void> {
       return;
     }
 
-    // Use individual ALTER TABLE statements via raw query
-    const statements: string[] = [];
-    if (!existing.has("pdfBase64")) statements.push(`ALTER TABLE "reports" ADD COLUMN "pdfBase64" text`);
-    if (!existing.has("pdfSizeBytes")) statements.push(`ALTER TABLE "reports" ADD COLUMN "pdfSizeBytes" integer`);
-    if (!existing.has("pdfPages")) statements.push(`ALTER TABLE "reports" ADD COLUMN "pdfPages" integer`);
-    if (!existing.has("findingCount")) statements.push(`ALTER TABLE "reports" ADD COLUMN "findingCount" integer DEFAULT 0`);
-    if (!existing.has("emailStatus")) statements.push(`ALTER TABLE "reports" ADD COLUMN "emailStatus" varchar(20)`);
-    if (!existing.has("emailMessageId")) statements.push(`ALTER TABLE "reports" ADD COLUMN "emailMessageId" text`);
-    if (!existing.has("emailedAt")) statements.push(`ALTER TABLE "reports" ADD COLUMN "emailedAt" timestamp with time zone`);
-    if (!existing.has("emailError")) statements.push(`ALTER TABLE "reports" ADD COLUMN "emailError" text`);
-    if (!existing.has("updatedAt")) statements.push(`ALTER TABLE "reports" ADD COLUMN "updatedAt" timestamp with time zone DEFAULT now()`);
+    console.log("[Database] Reports migration needed. Existing cols:", Array.from(existing).join(", "));
 
-    // Execute as a single multi-statement query
-    if (statements.length > 0) {
-      console.log("[Database] Executing reports migration:", statements.length, "statements");
-      await db.execute(sql.raw(statements.join("; ")));
-      console.log("[Database] Reports columns added successfully");
-    }
+    // Execute individual ALTER TABLE statements (multi-statement raw query may not work on Drizzle ORM)
+    const addIfMissing = async (col: string, ddl: string) => {
+      if (existing.has(col)) return;
+      try {
+        await db.execute(sql.raw(`ALTER TABLE "reports" ADD COLUMN ${ddl}`));
+        console.log(`[Database] Added reports.${col}`);
+      } catch (e) {
+        console.warn(`[Database] Add column ${col} failed:`, e instanceof Error ? e.message?.substring(0, 500) : e);
+      }
+    };
+    await addIfMissing("pdfBase64", `"pdfBase64" text`);
+    await addIfMissing("pdfSizeBytes", `"pdfSizeBytes" integer`);
+    await addIfMissing("pdfPages", `"pdfPages" integer`);
+    await addIfMissing("findingCount", `"findingCount" integer DEFAULT 0`);
+    await addIfMissing("emailStatus", `"emailStatus" varchar(20)`);
+    await addIfMissing("emailMessageId", `"emailMessageId" text`);
+    await addIfMissing("emailedAt", `"emailedAt" timestamp with time zone`);
+    await addIfMissing("emailError", `"emailError" text`);
+    await addIfMissing("updatedAt", `"updatedAt" timestamp with time zone DEFAULT now()`);
+
+    // Verify
+    const verify = await db.execute<{ column_name: string }>(sql`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name='reports' AND table_schema='public'
+    `);
+    console.log("[Database] After migration, reports columns:", verify.rows.map((r: any) => r.column_name).join(", "));
     _reportsMigrationApplied = true;
   } catch (e) {
-    console.warn("[Database] Reports column migration failed:", e instanceof Error ? e.message?.substring(0, 500) : e);
+    console.warn("[Database] Reports column migration failed:", e instanceof Error ? e.message : e);
   }
 }
 
