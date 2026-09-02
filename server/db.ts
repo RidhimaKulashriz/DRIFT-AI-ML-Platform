@@ -66,6 +66,7 @@ async function ensureReportsColumns(db: any): Promise<void> {
         console.log(`[Database] Added reports.${col}`);
       } catch (e) {
         console.warn(`[Database] Add column ${col} failed:`, e instanceof Error ? e.message?.substring(0, 500) : e);
+        console.warn(`[Database] Stack:`, e instanceof Error ? e.stack?.substring(0, 500) : "");
       }
     };
     await addIfMissing("pdfBase64", `"pdfBase64" text`);
@@ -77,6 +78,13 @@ async function ensureReportsColumns(db: any): Promise<void> {
     await addIfMissing("emailedAt", `"emailedAt" timestamp with time zone`);
     await addIfMissing("emailError", `"emailError" text`);
     await addIfMissing("updatedAt", `"updatedAt" timestamp with time zone DEFAULT now()`);
+
+    // Verify what we have now
+    const verify = await db.execute<{ column_name: string }>(sql`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name='reports' AND table_schema='public'
+    `);
+    console.log("[Database] Post-migration reports columns:", verify.rows.map((r: any) => r.column_name).join(", "));
   } catch (e) {
     console.warn("[Database] Reports column migration failed:", e instanceof Error ? e.message : e);
   }
