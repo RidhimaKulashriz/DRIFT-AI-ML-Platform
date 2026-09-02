@@ -32,38 +32,21 @@ ROBOFLOW_API_KEY = os.environ.get("ROBOFLOW_API_KEY", "")
 CRACK_MODEL_PATH = os.environ.get("CRACK_MODEL_PATH", "cracks/main_crack.pt")
 ROAD_MODEL_PATH = os.environ.get("ROAD_MODEL_PATH", "road-ml/main_road.pt")
 
-# ── Lazy-load models ──────────────────────────────────────────────────────────
-_crack_model = None
-_road_model = None
+# ── Lazy-load models (one at a time to save RAM on free tier) ──────────────────
+import gc
 
-def get_crack_model():
-    global _crack_model
-    if _crack_model is None:
-        from ultralytics import YOLO
-        path = Path(CRACK_MODEL_PATH)
-        if not path.exists():
-            # Try relative to script
-            path = Path(__file__).parent / CRACK_MODEL_PATH
-        if not path.exists():
-            raise FileNotFoundError(f"Crack model not found: {CRACK_MODEL_PATH}")
-        print(f"[ML] Loading CRACK model from {path}")
-        _crack_model = YOLO(str(path))
-        print(f"[ML] CRACK model loaded. Classes: {_crack_model.names}")
-    return _crack_model
-
-def get_road_model():
-    global _road_model
-    if _road_model is None:
-        from ultralytics import YOLO
-        path = Path(ROAD_MODEL_PATH)
-        if not path.exists():
-            path = Path(__file__).parent / ROAD_MODEL_PATH
-        if not path.exists():
-            raise FileNotFoundError(f"Road model not found: {ROAD_MODEL_PATH}")
-        print(f"[ML] Loading ROAD model from {path}")
-        _road_model = YOLO(str(path))
-        print(f"[ML] ROAD model loaded. Classes: {_road_model.names}")
-    return _road_model
+def load_yolo_model(model_path: str):
+    """Load a YOLO model, return it. Caller should del after use."""
+    from ultralytics import YOLO
+    path = Path(model_path)
+    if not path.exists():
+        path = Path(__file__).parent / model_path
+    if not path.exists():
+        raise FileNotFoundError(f"Model not found: {model_path}")
+    print(f"[ML] Loading model from {path}")
+    model = YOLO(str(path))
+    print(f"[ML] Model loaded. Classes: {model.names}")
+    return model
 
 def get_railway_detections(image_bytes: bytes, conf: float = 0.25):
     """Run Railway model via Roboflow API."""
@@ -251,23 +234,27 @@ def _run_all_models(image_bytes: bytes, confidence: float, imgsz: int):
     all_detections = []
     models_used = []
     
-    # 1. CRACK model (local YOLO)
+    # 1. CRACK model (local YOLO) — load, run, unload to save RAM
     try:
-        model = get_crack_model()
+        model = load_yolo_model(CRACK_MODEL_PATH)
         dets = run_local_yolo(model, image_bytes, "CRACK", confidence, imgsz)
         all_detections.extend(dets)
         if dets:
             models_used.append("CRACK")
+        del model
+        gc.collect()
     except Exception as e:
         print(f"[ML] CRACK skipped: {e}")
     
-    # 2. ROAD model (local YOLO)
+    # 2. ROAD model (local YOLO) — load, run, unload to save RAM
     try:
-        model = get_road_model()
+        model = load_yolo_model(ROAD_MODEL_PATH)
         dets = run_local_yolo(model, image_bytes, "ROAD", confidence, imgsz)
         all_detections.extend(dets)
         if dets:
             models_used.append("ROAD")
+        del model
+        gc.collect()
     except Exception as e:
         print(f"[ML] ROAD skipped: {e}")
     
