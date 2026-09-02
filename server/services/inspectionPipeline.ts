@@ -439,7 +439,7 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
       }).returning({ id: reports.id });
       reportId = newReport?.id ?? null;
     } catch (e) {
-      console.warn("[InspectionPipeline] Report persist failed:", e);
+      console.warn("[InspectionPipeline] Report persist failed:", e instanceof Error ? `${e.message}\n${e.stack?.substring(0, 1000)}` : String(e));
     }
   }
 

@@ -50,6 +50,7 @@ async function ensureReportsColumns(db: any): Promise<void> {
       WHERE table_name='reports' AND table_schema='public'
     `);
     const existing = new Set(colCheck.rows.map((r: any) => r.column_name));
+    console.log("[Database] existing reports columns:", Array.from(existing).join(", "));
 
     // Already complete
     if (existing.has("pdfBase64") && existing.has("emailStatus") && existing.has("updatedAt")) {
@@ -59,8 +60,12 @@ async function ensureReportsColumns(db: any): Promise<void> {
 
     const addIfMissing = async (col: string, ddl: string) => {
       if (existing.has(col)) return;
-      try { await db.execute(sql.raw(`ALTER TABLE "reports" ADD COLUMN ${ddl}`)); console.log(`[Database] Added reports.${col}`); }
-      catch (e) { console.warn(`[Database] Add column ${col} failed:`, e instanceof Error ? e.message?.substring(0, 200) : e); }
+      try {
+        await db.execute(sql.raw(`ALTER TABLE "reports" ADD COLUMN ${ddl}`));
+        console.log(`[Database] Added reports.${col}`);
+      } catch (e) {
+        console.warn(`[Database] Add column ${col} failed:`, e instanceof Error ? e.message?.substring(0, 300) : e);
+      }
     };
     await addIfMissing("pdfBase64", `"pdfBase64" text`);
     await addIfMissing("pdfSizeBytes", `"pdfSizeBytes" integer`);
