@@ -94,60 +94,6 @@ export async function ensureReportsColumns(db: any): Promise<void> {
 }
 
 let _campusMigrationApplied = false;
-let _reportsMigrationApplied = false;
-
-/**
- * Add report table columns if they don't exist.
- * Idempotent — safe to run on every startup.
- */
-async function ensureReportsColumns(db: any): Promise<void> {
-  try {
-    // Check which columns exist
-    const colCheck = await db.execute<{ column_name: string }>(sql`
-      SELECT column_name FROM information_schema.columns
-      WHERE table_name='reports' AND table_schema='public'
-    `);
-    const existing = new Set(colCheck.rows.map((r: any) => r.column_name));
-
-    // Already complete
-    if (existing.has("pdfBase64") && existing.has("emailStatus") && existing.has("updatedAt")) {
-      return; // No migration needed
-    }
-
-    console.log("[Database] Reports migration needed. Existing cols:", Array.from(existing).join(", "));
-
-    // Execute individual ALTER TABLE statements
-    const addIfMissing = async (col: string, ddl: string) => {
-      if (existing.has(col)) return;
-      try {
-        await db.execute(sql.raw(`ALTER TABLE "reports" ADD COLUMN ${ddl}`));
-        console.log(`[Database] Added reports.${col}`);
-      } catch (e) {
-        console.warn(`[Database] Add column ${col} failed:`, e instanceof Error ? e.message?.substring(0, 500) : e);
-        console.warn(`[Database] Stack:`, e instanceof Error ? e.stack?.substring(0, 500) : "");
-      }
-    };
-    await addIfMissing("pdfBase64", `"pdfBase64" text`);
-    await addIfMissing("pdfSizeBytes", `"pdfSizeBytes" integer`);
-    await addIfMissing("pdfPages", `"pdfPages" integer`);
-    await addIfMissing("findingCount", `"findingCount" integer DEFAULT 0`);
-    await addIfMissing("emailStatus", `"emailStatus" varchar(20)`);
-    await addIfMissing("emailMessageId", `"emailMessageId" text`);
-    await addIfMissing("emailedAt", `"emailedAt" timestamp with time zone`);
-    await addIfMissing("emailError", `"emailError" text`);
-    await addIfMissing("updatedAt", `"updatedAt" timestamp with time zone DEFAULT now()`);
-
-    // Verify what we have now
-    const verify = await db.execute<{ column_name: string }>(sql`
-      SELECT column_name FROM information_schema.columns
-      WHERE table_name='reports' AND table_schema='public'
-    `);
-    console.log("[Database] Post-migration reports columns:", verify.rows.map((r: any) => r.column_name).join(", "));
-  } catch (e) {
-    console.warn("[Database] Reports column migration failed:", e instanceof Error ? e.message : e);
-  }
-}
-
 /**
  * PHASE 10/14/15: Apply campus + campusLocations tables and seed IGDTUW + IIIT-Delhi.
  * Runs once on first DB connection. Idempotent (ON CONFLICT clauses).
@@ -276,29 +222,6 @@ ON CONFLICT ("id") DO UPDATE SET
 `;
 
 /**
- * PHASE 10/14/15: Apply campus + campusLocations tables and seed IGDTUW + IIIT-Delhi.
- * Runs once on first DB connection. Idempotent (ON CONFLICT clauses).
- */
-export async function ensureCampusSchema(): Promise<void> {
-  const db = await getDb();
-  if (!db) return;
-
-  // Always run reports column migration (separate from campus check)
-  await ensureReportsColumns(db);
-
-  if (_campusMigrationApplied) return;
-
-  try {
-    // Check if campuses table exists
-    const exists = await db.execute<{ table_name: string }>(sql`
-      SELECT table_name FROM information_schema.tables
-      WHERE table_schema = 'public' AND table_name = 'campuses'
-    `);
-
-    if (exists.rows.length > 0) {
-      _campusMigrationApplied = true;
-      return;
-    }
 
     console.log("[Database] Applying campus schema migration...");
     // Run the entire migration in a single statement to keep DDL atomic
