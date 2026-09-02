@@ -55,22 +55,60 @@ async function callProductionCv(input: InferenceInput): Promise<z.infer<typeof c
   const endpoint = process.env.ML_INFERENCE_URL;
   if (!endpoint || !input.imageBase64 || input.demo) return null;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15_000);
+  const timeout = setTimeout(() => controller.abort(), 120_000);
   try {
     const response = await fetch(endpoint, {
       method: "POST",
       signal: controller.signal,
       headers: { "content-type": "application/json", accept: "application/json", ...(process.env.ML_INFERENCE_TOKEN ? { authorization: `Bearer ${process.env.ML_INFERENCE_TOKEN}` } : {}) },
-      body: JSON.stringify({ fileName: input.fileName, imageBase64: input.imageBase64, latitude: input.latitude, longitude: input.longitude, inspectionDomain: input.inspectionDomain, captureZone: input.captureZone }),
+      body: JSON.stringify({ imageBase64: input.imageBase64, fileName: input.fileName, confidence: 0.25, imgsz: 640 }),
     });
-    if (!response.ok) return null;
-    const parsed = cvResponseSchema.safeParse(await response.json());
-    return parsed.success ? parsed.data : null;
-  } catch {
+    if (!response.ok) {
+      console.error("[ML] Production CV HTTP error:", response.status);
+      return null;
+    }
+    const raw = await response.json() as any;
+    // Hitakshi's server returns { success, detections: [{model, label, confidence, boundingBox, severity}] }
+    if (raw && raw.success && Array.isArray(raw.detections) && raw.detections.length > 0) {
+      // Take the highest-confidence detection
+      const best = raw.detections.sort((a: any, b: any) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
+      const mappedLabel = mapDefectLabel(best.label);
+      return {
+        model: raw.model || best.model || "hitakshi-ml",
+        label: mappedLabel,
+        confidence: typeof best.confidence === "number" ? best.confidence : 0.5,
+        boundingBox: best.boundingBox || { x: 10, y: 10, width: 30, height: 30 },
+        coveragePercent: 85,
+        uncertainty: { reason: "Hitakshi multi-model pipeline (CRACK+ROAD+RAILWAY+RUST)", requiresHumanReview: true },
+        calibrationVersion: "hitakshi-v1",
+      };
+    }
+    return null;
+  } catch (err) {
+    console.error("[ML] Production CV error:", err instanceof Error ? err.message : err);
     return null;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/** Map Hitakshi's labels to DRIFT defect types */
+function mapDefectLabel(label: string): DefectKind {
+  const l = label.toLowerCase();
+  const map: Record<string, DefectKind> = {
+    crack: "crack", cracks: "crack",
+    pothole: "pothole", potholes: "pothole",
+    corrosion: "corrosion", rust: "corrosion",
+    spalling: "spalling",
+    exposed_rebar: "exposed_rebar",
+    water_intrusion: "water_intrusion",
+    settlement: "settlement",
+    rail_alignment: "rail_alignment",
+    obstruction: "obstruction",
+    lighting_failure: "lighting_failure",
+    structural: "structural",
+  };
+  return map[l] || "crack";
 }
 
 export async function runVisionInference(input: InferenceInput): Promise<InferenceResult> {

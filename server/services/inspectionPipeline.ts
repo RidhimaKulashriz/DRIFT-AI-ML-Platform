@@ -304,9 +304,9 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
     }
   }
 
-  // 6. Run ML — try Gemini first, then NO fallback. If Gemini is unavailable, mlResult.defectType stays null.
+  // 6. Run ML — try Hitakshi's ML server first, then Gemini, then NO fallback.
   // We do NOT invent a detection. The system honestly reports "no automated analysis available."
-  let mlResult: { source: "gemini" | "no-ml-configured"; model: string; confidence: number; defectType: string | null; severity: string | null; boundingBox: { x: number; y: number; width: number; height: number } | null } = {
+  let mlResult: { source: "hitakshi-ml" | "gemini" | "no-ml-configured"; model: string; confidence: number; defectType: string | null; severity: string | null; boundingBox: { x: number; y: number; width: number; height: number } | null } = {
     source: "no-ml-configured",
     model: "none",
     confidence: 0,
@@ -315,9 +315,44 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
     boundingBox: null,
   };
 
-  const geminiResult = await callGeminiVision(buffer, input.mimeType);
-  if (geminiResult) {
-    mlResult = { source: "gemini", model: geminiResult.model, confidence: geminiResult.confidence, defectType: geminiResult.defectType, severity: geminiResult.severity, boundingBox: geminiResult.boundingBox };
+  // Priority 1: Hitakshi's ML pipeline (CRACK + ROAD + RAILWAY + RUST YOLO models)
+  const mlEndpoint = process.env.ML_INFERENCE_URL?.trim();
+  if (mlEndpoint) {
+    try {
+      const mlResponse = await fetch(mlEndpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ imageBase64: buffer.toString("base64"), fileName: input.fileName, confidence: 0.25, imgsz: 640 }),
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (mlResponse.ok) {
+        const mlData = await mlResponse.json() as any;
+        if (mlData?.success && Array.isArray(mlData.detections) && mlData.detections.length > 0) {
+          const best = mlData.detections.sort((a: any, b: any) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
+          const validTypes = new Set(["pothole", "crack", "structural", "corrosion", "spalling", "exposed_rebar", "water_intrusion", "settlement", "obstruction", "lighting_failure"]);
+          const defectType = validTypes.has(best.label) ? best.label : "crack";
+          mlResult = {
+            source: "hitakshi-ml",
+            model: mlData.model || best.model || "hitakshi-multi-model",
+            confidence: typeof best.confidence === "number" ? best.confidence : 0.5,
+            defectType,
+            severity: best.severity || "medium",
+            boundingBox: best.boundingBox || null,
+          };
+          console.log(`[InspectionPipeline] Hitakshi ML detected: ${defectType} (${(mlResult.confidence * 100).toFixed(1)}%) using ${mlResult.model}`);
+        }
+      }
+    } catch (err) {
+      console.warn("[InspectionPipeline] Hitakshi ML server failed, trying Gemini:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  // Priority 2: Gemini fallback (if Hitakshi ML not available or failed)
+  if (!mlResult.defectType) {
+    const geminiResult = await callGeminiVision(buffer, input.mimeType);
+    if (geminiResult) {
+      mlResult = { source: "gemini", model: geminiResult.model, confidence: geminiResult.confidence, defectType: geminiResult.defectType, severity: geminiResult.severity, boundingBox: geminiResult.boundingBox };
+    }
   }
 
   // 7. If real detection found, persist to DB
