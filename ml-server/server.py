@@ -48,67 +48,40 @@ def load_yolo_model(model_path: str):
     print(f"[ML] Model loaded. Classes: {model.names}")
     return model
 
-def get_railway_detections(image_bytes: bytes, conf: float = 0.25):
-    """Run Railway model via Roboflow API."""
+def roboflow_detect(image_bytes: bytes, model_id: str, model_name: str, conf: float = 0.25):
+    """Call Roboflow inference API directly via HTTP."""
     if not ROBOFLOW_API_KEY:
         return []
     try:
-        from inference_sdk import InferenceHTTPClient
-        client = InferenceHTTPClient(api_url="https://serverless.roboflow.com", api_key=ROBOFLOW_API_KEY)
-        temp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
-        temp.write(image_bytes)
-        temp.close()
-        try:
-            result = client.infer(temp.name, model_id="railway-track-fault-detection-hrem8/3")
-            detections = []
-            for pred in result.get("predictions", []):
-                if pred.get("confidence", 0) >= conf:
-                    detections.append({
-                        "model": "RAILWAY",
-                        "label": pred.get("class", "railway_fault"),
-                        "confidence": pred.get("confidence", 0),
-                        "x": pred.get("x", 0),
-                        "y": pred.get("y", 0),
-                        "width": pred.get("width", 0),
-                        "height": pred.get("height", 0),
-                    })
-            return detections
-        finally:
-            os.unlink(temp.name)
+        import requests
+        url = f"https://serverless.roboflow.com/{model_id}?api_key={ROBOFLOW_API_KEY}"
+        response = requests.post(url, data=image_bytes, headers={"Content-Type": "image/jpeg"}, timeout=30)
+        if response.status_code != 200:
+            print(f"[ML] {model_name} Roboflow HTTP {response.status_code}")
+            return []
+        result = response.json()
+        detections = []
+        for pred in result.get("predictions", []):
+            if pred.get("confidence", 0) >= conf:
+                detections.append({
+                    "model": model_name,
+                    "label": pred.get("class", model_name.lower()),
+                    "confidence": pred.get("confidence", 0),
+                    "x": pred.get("x", 0),
+                    "y": pred.get("y", 0),
+                    "width": pred.get("width", 0),
+                    "height": pred.get("height", 0),
+                })
+        return detections
     except Exception as e:
-        print(f"[ML] Railway model error: {e}")
+        print(f"[ML] {model_name} error: {e}")
         return []
 
+def get_railway_detections(image_bytes: bytes, conf: float = 0.25):
+    return roboflow_detect(image_bytes, "railway-track-fault-detection-hrem8/3", "RAILWAY", conf)
+
 def get_rust_detections(image_bytes: bytes, conf: float = 0.25):
-    """Run Rust/Corrosion model via Roboflow API."""
-    if not ROBOFLOW_API_KEY:
-        return []
-    try:
-        from inference_sdk import InferenceHTTPClient
-        client = InferenceHTTPClient(api_url="https://serverless.roboflow.com", api_key=ROBOFLOW_API_KEY)
-        temp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
-        temp.write(image_bytes)
-        temp.close()
-        try:
-            result = client.infer(temp.name, model_id="corrosion-yolov8/4")
-            detections = []
-            for pred in result.get("predictions", []):
-                if pred.get("confidence", 0) >= conf:
-                    detections.append({
-                        "model": "RUST",
-                        "label": pred.get("class", "corrosion"),
-                        "confidence": pred.get("confidence", 0),
-                        "x": pred.get("x", 0),
-                        "y": pred.get("y", 0),
-                        "width": pred.get("width", 0),
-                        "height": pred.get("height", 0),
-                    })
-            return detections
-        finally:
-            os.unlink(temp.name)
-    except Exception as e:
-        print(f"[ML] Rust model error: {e}")
-        return []
+    return roboflow_detect(image_bytes, "corrosion-yolov8/4", "RUST", conf)
 
 def run_local_yolo(model, image_bytes: bytes, model_name: str, conf: float = 0.25, imgsz: int = 640):
     """Run a local YOLO model on image bytes."""
