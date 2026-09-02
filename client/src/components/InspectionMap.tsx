@@ -8,6 +8,14 @@ type InspectionMapProps = { defects: MapDefect[]; telemetry: Array<{ latitude: s
 
 const colors: Record<Severity, string> = { critical: "#c81e1e", high: "#e26d16", medium: "#b98600", low: "#177a47" };
 
+// Global Google Maps auth/billing failure handler. Set by the map component
+// so that any auth failure (including BillingNotEnabledMapError) falls back to Leaflet.
+declare global {
+  interface Window {
+    gm_authFailure?: () => void;
+  }
+}
+
 let googleMapsPromise: Promise<typeof google> | null = null;
 
 function loadGoogleMaps(apiKey: string) {
