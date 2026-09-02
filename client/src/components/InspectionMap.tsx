@@ -22,10 +22,13 @@ function loadGoogleMaps(apiKey: string) {
     }
     const script = document.createElement("script");
     script.id = "drift-google-maps-sdk";
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly`;
+    // Use `loading=async` and `libraries=marker` for best-practice performance
+    // and the modern AdvancedMarkerElement API (replaces deprecated google.maps.Marker).
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async&libraries=marker`;
     script.async = true;
+    script.defer = true;
     script.onload = () => resolve(window.google);
-    script.onerror = () => reject(new Error("Google Maps could not be loaded."));
+    script.onerror = () => reject(new Error("Google Maps could not be loaded. Verify the API key and that billing is enabled for the project."));
     document.head.appendChild(script);
   });
   return googleMapsPromise;
@@ -176,21 +179,36 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
   const selectedDefect = useMemo(() => validDefects.find(item => item.defect.id === selectedId) ?? null, [selectedId, validDefects]);
   const transientDefects = useMemo(() => validDefects.filter(item => item.defect.isTransient === true || item.defect.id < 0), [validDefects]);
 
-  const useLeaflet = !apiKey;
+  const [useLeaflet, setUseLeaflet] = useState(!apiKey);
 
   // Google Maps path
   useEffect(() => {
-    if (useLeaflet) { setMapState("missing-key"); return; }
+    if (!apiKey) { setUseLeaflet(true); setMapState("missing-key"); return; }
     let cancelled = false;
     setMapState("loading");
-    loadGoogleMaps(apiKey!).then(() => {
+    setUseLeaflet(false);
+    loadGoogleMaps(apiKey).then(() => {
       if (cancelled || !mapElement.current) return;
       const center = validDefects[0]?.point ?? { lat: 28.6139, lng: 77.209 };
-      mapRef.current = new window.google.maps.Map(mapElement.current, { center, zoom: validDefects.length ? 13 : 11, mapTypeControl: true, streetViewControl: true, fullscreenControl: true, clickableIcons: false, gestureHandling: "cooperative" });
-      setMapState("ready");
-    }).catch(() => { if (!cancelled) setMapState("error"); });
+      // Detect billing-not-enabled or any other Maps runtime error and fall back to Leaflet.
+      try {
+        mapRef.current = new window.google.maps.Map(mapElement.current, { center, zoom: validDefects.length ? 13 : 11, mapTypeControl: true, streetViewControl: true, fullscreenControl: true, clickableIcons: false, gestureHandling: "cooperative" });
+        setMapState("ready");
+      } catch (err) {
+        console.warn("[InspectionMap] Google Maps failed to initialize, falling back to Leaflet:", err);
+        if (!cancelled) { setUseLeaflet(true); setMapState("error"); }
+      }
+      window.gm_authFailure = () => {
+        if (cancelled) return;
+        console.warn("[InspectionMap] Google Maps auth/billing failure — falling back to Leaflet.");
+        setUseLeaflet(true);
+        setMapState("error");
+      };
+    }).catch((err) => {
+      if (!cancelled) { console.warn("[InspectionMap] Google Maps load failed, using Leaflet:", err?.message); setUseLeaflet(true); setMapState("error"); }
+    });
     return () => { cancelled = true; };
-  }, [apiKey, useLeaflet]);
+  }, [apiKey]);
 
   useEffect(() => {
     const map = mapRef.current;
