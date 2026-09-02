@@ -221,18 +221,6 @@ ON CONFLICT ("id") DO UPDATE SET
   "latitude" = EXCLUDED.latitude, "longitude" = EXCLUDED.longitude, "updatedAt" = NOW();
 `;
 
-/**
-
-    console.log("[Database] Applying campus schema migration...");
-    // Run the entire migration in a single statement to keep DDL atomic
-    await db.execute(sql.raw(CAMPUS_MIGRATION_SQL));
-    _campusMigrationApplied = true;
-    console.log("[Database] Campus schema migration applied. IGDTUW and IIIT-Delhi seeded.");
-  } catch (err) {
-    console.error("[Database] Failed to apply campus migration:", err);
-  }
-}
-
 const READINESS_TABLE_GROUPS = {
   core: ["assets", "missions", "telemetry", "evidence", "defects", "reports", "alerts", "auditEvents"],
   accountability: ["contractors", "contractorTickets", "dsiAssessments", "cameraSources", "cctvCandidates", "knowledgeDocuments", "knowledgeChunks", "knowledgeRetrievalRuns", "authorities", "slaRules", "routingRules", "routingDecisions", "handoffPackages", "publicStatusPublications"],
