@@ -6,7 +6,7 @@
     }
   },
   "installCommand": "pnpm install",
-  "buildCommand": "vite build",
+  "buildCommand": "pnpm exec vite build",
   "outputDirectory": "dist/public",
   "framework": null,
   "cleanUrls": true
