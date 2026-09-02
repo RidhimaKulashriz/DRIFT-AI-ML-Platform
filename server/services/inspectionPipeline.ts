@@ -297,9 +297,10 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
     }
   }
 
-  // 6. Run ML — try Gemini first, then deterministic fallback (which is HONEST about being a mock)
-  let mlResult: { source: "gemini" | "fallback-deterministic"; model: string; confidence: number; defectType: string | null; severity: string | null; boundingBox: { x: number; y: number; width: number; height: number } | null } = {
-    source: "fallback-deterministic",
+  // 6. Run ML — try Gemini first, then NO fallback. If Gemini is unavailable, mlResult.defectType stays null.
+  // We do NOT invent a detection. The system honestly reports "no automated analysis available."
+  let mlResult: { source: "gemini" | "no-ml-configured"; model: string; confidence: number; defectType: string | null; severity: string | null; boundingBox: { x: number; y: number; width: number; height: number } | null } = {
+    source: "no-ml-configured",
     model: "none",
     confidence: 0,
     defectType: null,
@@ -311,8 +312,6 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
   if (geminiResult) {
     mlResult = { source: "gemini", model: geminiResult.model, confidence: geminiResult.confidence, defectType: geminiResult.defectType, severity: geminiResult.severity, boundingBox: geminiResult.boundingBox };
   }
-  // If neither Gemini nor any other model returned a defect, mlResult.defectType stays null.
-  // We do NOT run the deterministic fallback inference — that would be fake AI.
 
   // 7. If real detection found, persist to DB
   let detectionId: number | null = null;
