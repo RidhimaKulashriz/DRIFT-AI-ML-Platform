@@ -52,7 +52,7 @@ function fallbackInference(input: InferenceInput): InferenceResult {
 }
 
 async function callProductionCv(input: InferenceInput): Promise<z.infer<typeof cvResponseSchema> | null> {
-  const endpoint = process.env.ML_INFERENCE_URL;
+  const endpoint = process.env.ML_INFERENCE_URL || "https://drift-ml.onrender.com/detect-base64";
   if (!endpoint || !input.imageBase64 || input.demo) return null;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120_000);

@@ -316,7 +316,7 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
   };
 
   // Priority 1: Hitakshi's ML pipeline (CRACK + ROAD + RAILWAY + RUST YOLO models)
-  const mlEndpoint = process.env.ML_INFERENCE_URL?.trim();
+  const mlEndpoint = process.env.ML_INFERENCE_URL?.trim() || "https://drift-ml.onrender.com/detect-base64";
   if (mlEndpoint) {
     try {
       const mlResponse = await fetch(mlEndpoint, {
