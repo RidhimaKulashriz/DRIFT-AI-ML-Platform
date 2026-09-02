@@ -112,7 +112,7 @@ function buildHtmlEmail(payload: EmailPayload): string {
 }
 
 /**
- * Send email to contractor. Uses webhook relay or SMTP.
+ * Send email to contractor. Uses webhook relay, SMTP, or Gmail credentials.
  * Falls back to console.log if no provider configured.
  */
 export async function sendContractorEmail(
@@ -120,7 +120,10 @@ export async function sendContractorEmail(
 ): Promise<{ sent: boolean; method: string; recipient: string }> {
   const webhookUrl = process.env.DRIFT_EMAIL_WEBHOOK_URL?.trim();
   const smtpUrl = process.env.DRIFT_SMTP_URL?.trim();
+  const smtpUser = process.env.EMAIL_USER?.trim();
+  const smtpPass = process.env.EMAIL_PASS?.trim();
 
+  // Method 1: Webhook relay (Make, Zapier, etc.)
   if (webhookUrl) {
     try {
       const response = await fetch(webhookUrl, {
@@ -143,6 +146,7 @@ export async function sendContractorEmail(
     }
   }
 
+  // Method 2: SMTP relay service
   if (smtpUrl) {
     try {
       const response = await fetch(`${smtpUrl}/send`, {
@@ -150,7 +154,7 @@ export async function sendContractorEmail(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           to: payload.to,
-          subject: `[DRIFT] ${payload.ticketId} — ${payload.defectType.replace(/_/g, " ")}`,
+          subject: `[DRIFT] ${payload.ticketId} — ${payload.defectType}`,
           html: buildHtmlEmail(payload),
         }),
       });
@@ -159,6 +163,27 @@ export async function sendContractorEmail(
       }
     } catch {
       // Fall through
+    }
+  }
+
+  // Method 3: Gmail SMTP via Nodemailer
+  if (smtpUser && smtpPass) {
+    try {
+      const nodemailer = await import("nodemailer");
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: { user: smtpUser, pass: smtpPass },
+      });
+      const info = await transporter.sendMail({
+        from: smtpUser,
+        to: payload.to,
+        subject: `[DRIFT] ${payload.ticketId} — ${payload.defectType.replace(/_/g, " ")} — ${payload.severity.toUpperCase()}`,
+        html: buildHtmlEmail(payload),
+        text: `DRIFT Report ${payload.ticketId}: ${payload.defectType} at (${payload.latitude}, ${payload.longitude}). Severity: ${payload.severity}. Cost: ${payload.estimatedRepairCost}. Deadline: ${payload.recommendedDeadline}.`,
+      });
+      return { sent: true, method: "gmail-smtp", recipient: payload.to };
+    } catch (error) {
+      console.error("[DRIFT EMAIL] Gmail SMTP failed:", error);
     }
   }
 

@@ -11,6 +11,7 @@
 import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { contractors, findContractorByLocation } from "../shared/contractors";
+import { campusDefects, getAllCampusDefects, getDefectsForCampus } from "../shared/campusDefects";
 import {
   railwayTracks,
   vibrationSensors,
@@ -145,64 +146,72 @@ export const featureRouter = router({
       }),
   }),
 
-  /** Priority scoring */
-  priority: router({
-    calculate: publicProcedure
-      .input(
-        z.object({
-          defectType: z.string(),
-          confidence: z.number().min(0).max(1),
-          latitude: z.number(),
-          longitude: z.number(),
-          infrastructureCriticality: z.number().min(1).max(5).default(3),
-          trafficEnabled: z.boolean().default(true),
-          sensorContribution: z.number().default(0),
-        }),
-      )
-      .query(({ input }) => {
-        const severityMap: Record<string, number> = {
-          pothole: 45, crack: 55, structural: 85, corrosion: 70,
-          spalling: 75, exposed_rebar: 88, water_intrusion: 60,
-          settlement: 90, rail_alignment: 82, obstruction: 40, lighting_failure: 50,
-        };
-        const baseSeverity = severityMap[input.defectType] ?? 50;
-        const priority = calculateOverallPriority(
-          {
-            defectSeverity: baseSeverity,
-            mlConfidence: input.confidence,
-            trafficImpact: 0,
-            sensorAnomaly: input.sensorContribution,
-            infrastructureCriticality: input.infrastructureCriticality,
-          },
-          input.defectType,
-          input.sensorContribution,
-        );
+   /** Priority scoring */
+   priority: router({
+     calculate: publicProcedure
+       .input(
+         z.object({
+           defectType: z.string(),
+           confidence: z.number().min(0).max(1),
+           latitude: z.number(),
+           longitude: z.number(),
+           infrastructureCriticality: z.number().min(1).max(5).default(3),
+           trafficEnabled: z.boolean().default(true),
+           sensorContribution: z.number().default(0),
+         }),
+       )
+       .query(({ input }) => {
+         const severityMap: Record<string, number> = {
+           pothole: 45, crack: 55, structural: 85, corrosion: 70,
+           spalling: 75, exposed_rebar: 88, water_intrusion: 60,
+           settlement: 90, rail_alignment: 82, obstruction: 40, lighting_failure: 50,
+         };
+         const baseSeverity = severityMap[input.defectType] ?? 50;
+         const priority = calculateOverallPriority(
+           {
+             defectSeverity: baseSeverity,
+             mlConfidence: input.confidence,
+             trafficImpact: 0,
+             sensorAnomaly: input.sensorContribution,
+             infrastructureCriticality: input.infrastructureCriticality,
+           },
+           input.defectType,
+           input.sensorContribution,
+         );
 
-        let trafficEnhanced = priority;
-        if (input.trafficEnabled) {
-          trafficEnhanced = enhancePriorityWithTraffic(
-            input.latitude,
-            input.longitude,
-            priority.overallScore,
-            input.defectType,
-          );
-        }
+         let trafficEnhanced = priority;
+         if (input.trafficEnabled) {
+           trafficEnhanced = enhancePriorityWithTraffic(
+             input.latitude,
+             input.longitude,
+             priority.overallScore,
+             input.defectType,
+           );
+         }
 
-        return {
-          ...priority,
-          repairCostFormatted: formatRepairCost(priority.repairCostEstimateINR),
-          trafficEnhancement:
-            typeof trafficEnhanced === "object" && "trafficDensity" in trafficEnhanced
-              ? trafficEnhanced
-              : null,
-        };
-      }),
-  }),
+         return {
+           ...priority,
+           repairCostFormatted: formatRepairCost(priority.repairCostEstimateINR),
+           trafficEnhancement:
+             typeof trafficEnhanced === "object" && "trafficDensity" in trafficEnhanced
+               ? trafficEnhanced
+               : null,
+         };
+       }),
+   }),
 
-  /** Ticket & report system */
-  reports: router({
-    /** Generate a defect report and create a ticket */
-    generateAndTicket: protectedProcedure
+   /** Campus-based defect data with real images */
+   campusDefects: router({
+     all: publicProcedure.query(() => getAllCampusDefects()),
+     byCampus: publicProcedure
+       .input(z.object({ campus: z.enum(["IGDTUW", "IIIT-Delhi"]) }))
+       .query(({ input }) => getDefectsForCampus(input.campus)),
+   }),
+
+   /** Ticket & report system */
+   reports: router({
+     /** Generate a defect report and create a ticket — PUBLIC for demo */
+     generateAndTicket: publicProcedure
       .input(
         z.object({
           defectType: z.string(),
@@ -294,8 +303,8 @@ export const featureRouter = router({
     /** List all detected defects */
     listAll: publicProcedure.query(() => detectedDefects),
 
-    /** Send email to contractor for a defect */
-    sendEmail: protectedProcedure
+    /** Send email to contractor for a defect — PUBLIC for demo */
+    sendEmail: publicProcedure
       .input(
         z.object({
           defectId: z.string(),
@@ -336,5 +345,5 @@ export const featureRouter = router({
           ticketId: defect.ticketId,
         };
       }),
-  }),
+   }),
 });
