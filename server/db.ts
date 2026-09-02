@@ -44,7 +44,7 @@ let _reportsMigrationApplied = false;
  */
 async function ensureReportsColumns(db: any): Promise<void> {
   try {
-    // Check which columns exist
+    // Check which columns exist (using raw SQL via the Drizzle session)
     const colCheck = await db.execute<{ column_name: string }>(sql`
       SELECT column_name FROM information_schema.columns
       WHERE table_name='reports' AND table_schema='public'
@@ -58,27 +58,27 @@ async function ensureReportsColumns(db: any): Promise<void> {
       return;
     }
 
-    const addIfMissing = async (col: string, ddl: string) => {
-      if (existing.has(col)) return;
-      try {
-        await db.execute(sql.raw(`ALTER TABLE "reports" ADD COLUMN ${ddl}`));
-        console.log(`[Database] Added reports.${col}`);
-      } catch (e) {
-        console.warn(`[Database] Add column ${col} failed:`, e instanceof Error ? e.message?.substring(0, 300) : e);
-      }
-    };
-    await addIfMissing("pdfBase64", `"pdfBase64" text`);
-    await addIfMissing("pdfSizeBytes", `"pdfSizeBytes" integer`);
-    await addIfMissing("pdfPages", `"pdfPages" integer`);
-    await addIfMissing("findingCount", `"findingCount" integer DEFAULT 0`);
-    await addIfMissing("emailStatus", `"emailStatus" varchar(20)`);
-    await addIfMissing("emailMessageId", `"emailMessageId" text`);
-    await addIfMissing("emailedAt", `"emailedAt" timestamp with time zone`);
-    await addIfMissing("emailError", `"emailError" text`);
-    await addIfMissing("updatedAt", `"updatedAt" timestamp with time zone DEFAULT now()`);
+    // Use individual ALTER TABLE statements via raw query
+    const statements: string[] = [];
+    if (!existing.has("pdfBase64")) statements.push(`ALTER TABLE "reports" ADD COLUMN "pdfBase64" text`);
+    if (!existing.has("pdfSizeBytes")) statements.push(`ALTER TABLE "reports" ADD COLUMN "pdfSizeBytes" integer`);
+    if (!existing.has("pdfPages")) statements.push(`ALTER TABLE "reports" ADD COLUMN "pdfPages" integer`);
+    if (!existing.has("findingCount")) statements.push(`ALTER TABLE "reports" ADD COLUMN "findingCount" integer DEFAULT 0`);
+    if (!existing.has("emailStatus")) statements.push(`ALTER TABLE "reports" ADD COLUMN "emailStatus" varchar(20)`);
+    if (!existing.has("emailMessageId")) statements.push(`ALTER TABLE "reports" ADD COLUMN "emailMessageId" text`);
+    if (!existing.has("emailedAt")) statements.push(`ALTER TABLE "reports" ADD COLUMN "emailedAt" timestamp with time zone`);
+    if (!existing.has("emailError")) statements.push(`ALTER TABLE "reports" ADD COLUMN "emailError" text`);
+    if (!existing.has("updatedAt")) statements.push(`ALTER TABLE "reports" ADD COLUMN "updatedAt" timestamp with time zone DEFAULT now()`);
+
+    // Execute as a single multi-statement query
+    if (statements.length > 0) {
+      console.log("[Database] Executing reports migration:", statements.length, "statements");
+      await db.execute(sql.raw(statements.join("; ")));
+      console.log("[Database] Reports columns added successfully");
+    }
     _reportsMigrationApplied = true;
   } catch (e) {
-    console.warn("[Database] Reports column migration failed:", e instanceof Error ? e.message : e);
+    console.warn("[Database] Reports column migration failed:", e instanceof Error ? e.message?.substring(0, 500) : e);
   }
 }
 
