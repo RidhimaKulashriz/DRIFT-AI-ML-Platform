@@ -45,36 +45,26 @@ let _reportsMigrationApplied = false;
 async function ensureReportsColumns(db: any): Promise<void> {
   if (_reportsMigrationApplied) return;
   try {
-    // The campus migration already added these columns, but if a fresh database
-    // is hit before campuses migration runs, we still need them.
-    await db.execute(sql`
-      DO $$ BEGIN
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='pdfBase64') THEN
-          ALTER TABLE "reports" ADD COLUMN "pdfBase64" text;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='pdfSizeBytes') THEN
-          ALTER TABLE "reports" ADD COLUMN "pdfSizeBytes" integer;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='pdfPages') THEN
-          ALTER TABLE "reports" ADD COLUMN "pdfPages" integer;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='findingCount') THEN
-          ALTER TABLE "reports" ADD COLUMN "findingCount" integer DEFAULT 0;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='emailStatus') THEN
-          ALTER TABLE "reports" ADD COLUMN "emailStatus" varchar(20);
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='emailMessageId') THEN
-          ALTER TABLE "reports" ADD COLUMN "emailMessageId" text;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='emailedAt') THEN
-          ALTER TABLE "reports" ADD COLUMN "emailedAt" timestamp with time zone;
-        END IF;
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='emailError') THEN
-          ALTER TABLE "reports" ADD COLUMN "emailError" text;
-        END IF;
-      END $$;
+    // Check which columns exist
+    const colCheck = await db.execute<{ column_name: string }>(sql`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_name='reports' AND table_schema='public'
     `);
+    const existing = new Set(colCheck.rows.map((r: any) => r.column_name));
+    const addIfMissing = async (col: string, ddl: string) => {
+      if (existing.has(col)) return;
+      try { await db.execute(sql.raw(`ALTER TABLE "reports" ADD COLUMN ${ddl}`)); }
+      catch (e) { console.warn(`[Database] Add column ${col} failed:`, e instanceof Error ? e.message : e); }
+    };
+    await addIfMissing("pdfBase64", `"pdfBase64" text`);
+    await addIfMissing("pdfSizeBytes", `"pdfSizeBytes" integer`);
+    await addIfMissing("pdfPages", `"pdfPages" integer`);
+    await addIfMissing("findingCount", `"findingCount" integer DEFAULT 0`);
+    await addIfMissing("emailStatus", `"emailStatus" varchar(20)`);
+    await addIfMissing("emailMessageId", `"emailMessageId" text`);
+    await addIfMissing("emailedAt", `"emailedAt" timestamp with time zone`);
+    await addIfMissing("emailError", `"emailError" text`);
+    await addIfMissing("updatedAt", `"updatedAt" timestamp with time zone DEFAULT now()`);
     _reportsMigrationApplied = true;
   } catch (e) {
     console.warn("[Database] Reports column migration failed:", e instanceof Error ? e.message : e);
