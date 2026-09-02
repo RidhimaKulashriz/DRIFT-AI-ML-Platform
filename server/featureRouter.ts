@@ -11,7 +11,7 @@
 import { z } from "zod";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { contractors, findContractorByLocation } from "../shared/contractors";
-import { campusDefects, getAllCampusDefects, getDefectsForCampus } from "../shared/campusDefects";
+import { getAllCampusDefects, getDefectsForCampus } from "../shared/campusDemoDefects";
 import {
   railwayTracks,
   vibrationSensors,
@@ -200,8 +200,8 @@ export const featureRouter = router({
        }),
    }),
 
-   /** Campus-based defect data with real images */
-   campusDefects: router({
+   /** Campus-based DEMO defect data with sample images (NOT real inspection detections) */
+   campusDemoDefects: router({
      all: publicProcedure.query(() => getAllCampusDefects()),
      byCampus: publicProcedure
        .input(z.object({ campus: z.enum(["IGDTUW", "IIIT-Delhi"]) }))
