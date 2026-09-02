@@ -1,27 +1,22 @@
 """
-DRIFT ML Inference Server
-Wraps Hitakshi's 4-model pipeline as an HTTP API for the DRIFT backend.
-
-Models:
-  CRACK  — Local YOLO (main_crack.pt)
-  ROAD   — Local YOLO (main_road.pt)
-  RAILWAY — Roboflow API (railway-track-fault-detection-hrem8/3)
-  RUST   — Roboflow API (corrosion-yolov8/4)
+DRIFT ML Inference Server — Hitakshi's 4-Model Pipeline
+========================================================
+Models: CRACK (YOLO), ROAD (YOLO), RAILWAY (Roboflow), RUST (Roboflow)
 
 Run:
-  pip install fastapi uvicorn ultralytics inference-sdk opencv-python numpy python-multipart
+  pip install -r requirements.txt
   python server.py
 
-DRIFT backend connects via ML_INFERENCE_URL=http://localhost:8000/detect
+DRIFT backend connects via ML_INFERENCE_URL
 """
 
 import os
 import io
+import sys
 import json
 import base64
 import tempfile
-import subprocess
-import sys
+import traceback
 from pathlib import Path
 from typing import Optional
 
@@ -29,373 +24,300 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-app = FastAPI(title="DRIFT ML Inference Server", version="1.0.0")
+app = FastAPI(title="DRIFT ML — Hitakshi Models", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# Path to Hitakshi's main_app1.py — adjust if needed
-ML_SCRIPT = os.environ.get("ML_SCRIPT_PATH", str(Path(__file__).parent.parent / "ml-models" / "main_app1.py"))
+# ── Config ────────────────────────────────────────────────────────────────────
 ROBOFLOW_API_KEY = os.environ.get("ROBOFLOW_API_KEY", "")
+CRACK_MODEL_PATH = os.environ.get("CRACK_MODEL_PATH", "cracks/main_crack.pt")
+ROAD_MODEL_PATH = os.environ.get("ROAD_MODEL_PATH", "road-ml/main_road.pt")
 
-# ── DRIFT-compatible response schema ──────────────────────────────────────────
+# ── Lazy-load models ──────────────────────────────────────────────────────────
+_crack_model = None
+_road_model = None
 
-class BoundingBox(BaseModel):
-    x: float   # percent 0-100
-    y: float
-    width: float
-    height: float
+def get_crack_model():
+    global _crack_model
+    if _crack_model is None:
+        from ultralytics import YOLO
+        path = Path(CRACK_MODEL_PATH)
+        if not path.exists():
+            # Try relative to script
+            path = Path(__file__).parent / CRACK_MODEL_PATH
+        if not path.exists():
+            raise FileNotFoundError(f"Crack model not found: {CRACK_MODEL_PATH}")
+        print(f"[ML] Loading CRACK model from {path}")
+        _crack_model = YOLO(str(path))
+        print(f"[ML] CRACK model loaded. Classes: {_crack_model.names}")
+    return _crack_model
 
-class Detection(BaseModel):
-    model: str            # "CRACK", "ROAD", "RAILWAY", "RUST", "gemini-2.5-flash"
-    label: str            # "crack", "pothole", "corrosion", etc.
-    confidence: float     # 0-1
-    boundingBox: BoundingBox
-    severity: str         # "low", "medium", "high", "critical"
-    classId: Optional[int] = None
+def get_road_model():
+    global _road_model
+    if _road_model is None:
+        from ultralytics import YOLO
+        path = Path(ROAD_MODEL_PATH)
+        if not path.exists():
+            path = Path(__file__).parent / ROAD_MODEL_PATH
+        if not path.exists():
+            raise FileNotFoundError(f"Road model not found: {ROAD_MODEL_PATH}")
+        print(f"[ML] Loading ROAD model from {path}")
+        _road_model = YOLO(str(path))
+        print(f"[ML] ROAD model loaded. Classes: {_road_model.names}")
+    return _road_model
 
-class DetectResponse(BaseModel):
-    success: bool
-    model: str
-    detections: list[Detection]
-    annotatedImageBase64: Optional[str] = None
-    rawJson: Optional[dict] = None
+def get_railway_detections(image_bytes: bytes, conf: float = 0.25):
+    """Run Railway model via Roboflow API."""
+    if not ROBOFLOW_API_KEY:
+        return []
+    try:
+        from inference_sdk import InferenceHTTPClient
+        client = InferenceHTTPClient(api_url="https://serverless.roboflow.com", api_key=ROBOFLOW_API_KEY)
+        temp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+        temp.write(image_bytes)
+        temp.close()
+        try:
+            result = client.infer(temp.name, model_id="railway-track-fault-detection-hrem8/3")
+            detections = []
+            for pred in result.get("predictions", []):
+                if pred.get("confidence", 0) >= conf:
+                    detections.append({
+                        "model": "RAILWAY",
+                        "label": pred.get("class", "railway_fault"),
+                        "confidence": pred.get("confidence", 0),
+                        "x": pred.get("x", 0),
+                        "y": pred.get("y", 0),
+                        "width": pred.get("width", 0),
+                        "height": pred.get("height", 0),
+                    })
+            return detections
+        finally:
+            os.unlink(temp.name)
+    except Exception as e:
+        print(f"[ML] Railway model error: {e}")
+        return []
 
+def get_rust_detections(image_bytes: bytes, conf: float = 0.25):
+    """Run Rust/Corrosion model via Roboflow API."""
+    if not ROBOFLOW_API_KEY:
+        return []
+    try:
+        from inference_sdk import InferenceHTTPClient
+        client = InferenceHTTPClient(api_url="https://serverless.roboflow.com", api_key=ROBOFLOW_API_KEY)
+        temp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+        temp.write(image_bytes)
+        temp.close()
+        try:
+            result = client.infer(temp.name, model_id="corrosion-yolov8/4")
+            detections = []
+            for pred in result.get("predictions", []):
+                if pred.get("confidence", 0) >= conf:
+                    detections.append({
+                        "model": "RUST",
+                        "label": pred.get("class", "corrosion"),
+                        "confidence": pred.get("confidence", 0),
+                        "x": pred.get("x", 0),
+                        "y": pred.get("y", 0),
+                        "width": pred.get("width", 0),
+                        "height": pred.get("height", 0),
+                    })
+            return detections
+        finally:
+            os.unlink(temp.name)
+    except Exception as e:
+        print(f"[ML] Rust model error: {e}")
+        return []
 
-# ── Mapping from Hitakshi's labels to DRIFT defect types ──────────────────────
+def run_local_yolo(model, image_bytes: bytes, model_name: str, conf: float = 0.25, imgsz: int = 640):
+    """Run a local YOLO model on image bytes."""
+    try:
+        import numpy as np
+        import cv2
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return []
+        
+        h, w = img.shape[:2]
+        results = model(img, imgsz=imgsz, conf=conf, verbose=False)
+        
+        detections = []
+        for r in results:
+            for box in r.boxes:
+                cls_id = int(box.cls[0])
+                label = r.names.get(cls_id, f"class_{cls_id}")
+                confidence = float(box.conf[0])
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                
+                # Convert to percent
+                bx = (x1 / w) * 100
+                by = (y1 / h) * 100
+                bw = ((x2 - x1) / w) * 100
+                bh = ((y2 - y1) / h) * 100
+                
+                detections.append({
+                    "model": model_name,
+                    "label": label,
+                    "confidence": confidence,
+                    "x": round(bx, 1),
+                    "y": round(by, 1),
+                    "width": round(bw, 1),
+                    "height": round(bh, 1),
+                })
+        return detections
+    except Exception as e:
+        print(f"[ML] {model_name} error: {e}")
+        return []
 
+# ── Label mapping to DRIFT defect types ───────────────────────────────────────
 LABEL_MAP = {
-    # CRACK model
-    "crack": "crack",
-    "cracks": "crack",
-    "Crack": "crack",
-    "Cracks": "crack",
-    # ROAD model
-    "pothole": "pothole",
-    "Pothole": "pothole",
-    "road_damage": "crack",
-    "potholes": "pothole",
-    "Longitudinal Crack": "crack",
-    "Transverse Crack": "crack",
-    "Alligator Crack": "crack",
-    "potholes": "pothole",
-    "rutting": "settlement",
-    "patching": "spalling",
-    "bumps": "settlement",
-    "crosswalk fading": "surface_damage",
-    "white line fading": "surface_damage",
-    "manhole": "obstruction",
-    "utility hole": "obstruction",
-    "road_crosswalk": "surface_damage",
-    "road_bumps": "settlement",
-    "road_longitudinal_crack": "crack",
-    "road_transverse_crack": "crack",
-    "road_alligator_crack": "crack",
-    "road_potholes": "pothole",
-    # RAILWAY model
-    "railway": "rail_alignment",
-    "track_fault": "rail_alignment",
-    "defective": "rail_alignment",
-    "fault": "rail_alignment",
-    # RUST / CORROSION model
-    "corrosion": "corrosion",
-    "Corrosion": "corrosion",
-    "rust": "corrosion",
-    "Rust": "corrosion",
+    "crack": "crack", "cracks": "crack", "Crack": "crack",
+    "pothole": "pothole", "potholes": "pothole", "Pothole": "pothole",
+    "corrosion": "corrosion", "Corrosion": "corrosion", "rust": "corrosion",
+    "spalling": "spalling", "patching": "spalling",
+    "settlement": "settlement", "rutting": "settlement", "bumps": "settlement",
+    "obstruction": "obstruction", "manhole": "obstruction",
+    "railway": "rail_alignment", "track_fault": "rail_alignment", "defective": "rail_alignment",
+    "Longitudinal Crack": "crack", "Transverse Crack": "crack", "Alligator Crack": "crack",
+    "potholes": "pothole", "surface_crack": "crack",
 }
 
-MODEL_MAP = {
+MODEL_NAME_MAP = {
     "CRACK": "hitakshi-crack-yolo",
     "ROAD": "hitakshi-road-yolo",
     "RAILWAY": "hitakshi-railway-roboflow",
     "RUST": "hitakshi-rust-roboflow",
 }
 
+def map_label(raw: str) -> str:
+    return LABEL_MAP.get(raw, LABEL_MAP.get(raw.lower(), raw.lower()))
 
-def map_label(raw_label: str) -> str:
-    """Map Hitakshi's label to DRIFT defect type."""
-    return LABEL_MAP.get(raw_label, LABEL_MAP.get(raw_label.lower(), raw_label.lower()))
-
-
-def estimate_severity(confidence: float, label: str) -> str:
-    """Deterministic severity from confidence + defect type (no randomness)."""
-    critical_types = {"structural", "exposed_rebar", "settlement", "rail_alignment"}
-    high_types = {"corrosion", "spalling", "pothole"}
-    
-    if label in critical_types:
-        if confidence >= 0.85: return "critical"
-        if confidence >= 0.60: return "high"
-        return "medium"
-    if label in high_types:
-        if confidence >= 0.90: return "high"
-        if confidence >= 0.70: return "medium"
-        return "low"
-    # default (crack, surface_damage, etc.)
-    if confidence >= 0.85: return "high"
-    if confidence >= 0.60: return "medium"
-    return "low"
-
-
-# ── Run Hitakshi's pipeline ───────────────────────────────────────────────────
-
-def run_hitakshi_pipeline(image_bytes: bytes, filename: str, confidence: float = 0.25, imgsz: int = 640) -> list[dict]:
-    """
-    Run Hitakshi's main_app1.py on the image and parse JSON output.
-    Returns list of raw detection dicts.
-    """
-    # Write image to temp file
-    with tempfile.NamedTemporaryFile(suffix=Path(filename).suffix or ".jpg", delete=False) as tmp:
-        tmp.write(image_bytes)
-        tmp_path = tmp.name
-    
-    output_dir = tempfile.mkdtemp()
-    json_path = None
-    
-    try:
-        # Build command
-        cmd = [
-            sys.executable, ML_SCRIPT,
-            "--source", tmp_path,
-            "--imgsz", str(imgsz),
-            "--conf", str(confidence),
-        ]
-        
-        # Set environment
-        env = os.environ.copy()
-        if ROBOFLOW_API_KEY:
-            env["ROBOFLOW_API_KEY"] = ROBOFLOW_API_KEY
-        
-        # Run
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=env, cwd=str(Path(ML_SCRIPT).parent))
-        
-        if result.returncode != 0:
-            print(f"[ML Server] Pipeline error: {result.stderr[:500]}")
-        
-        # Find the JSON output
-        # Hitakshi's output goes to outputs/<stem>/<stem>.json
-        stem = Path(filename).stem
-        json_candidates = [
-            Path(ML_SCRIPT).parent / "outputs" / stem / f"{stem}.json",
-            Path(output_dir) / f"{stem}.json",
-        ]
-        for candidate in json_candidates:
-            if candidate.exists():
-                json_path = candidate
-                break
-        
-        # Also try to find any .json in outputs/
-        if not json_path:
-            outputs_dir = Path(ML_SCRIPT).parent / "outputs"
-            if outputs_dir.exists():
-                for sub in outputs_dir.iterdir():
-                    if sub.is_dir():
-                        for f in sub.glob("*.json"):
-                            json_path = f
-                            break
-                    if json_path:
-                        break
-        
-        if json_path and json_path.exists():
-            with open(json_path) as f:
-                data = json.load(f)
-            # Hitakshi's JSON is a list of detections or a dict with detections
-            if isinstance(data, list):
-                return data
-            elif isinstance(data, dict) and "detections" in data:
-                return data["detections"]
-            return []
-        
-        # Fallback: parse stdout for detection lines
-        detections = []
-        for line in result.stdout.split("\n"):
-            line = line.strip()
-            if "|" in line and any(m in line for m in ["CRACK", "ROAD", "RAILWAY", "RUST"]):
-                parts = [p.strip() for p in line.split("|")]
-                if len(parts) >= 3:
-                    model = parts[0]
-                    label = parts[1]
-                    conf_str = parts[2].replace("%", "").strip()
-                    try:
-                        conf = float(conf_str) / 100
-                        detections.append({
-                            "model": model,
-                            "label": label,
-                            "confidence": conf,
-                        })
-                    except ValueError:
-                        pass
-        return detections
-    
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        try:
-            import shutil
-            shutil.rmtree(output_dir, ignore_errors=True)
-        except Exception:
-            pass
-
-
-def parse_detections(raw_detections: list[dict]) -> list[Detection]:
-    """Convert Hitakshi's raw detection dicts to DRIFT Detection format."""
-    results = []
-    for d in raw_detections:
-        model_key = d.get("model", "unknown")
-        raw_label = d.get("label", "unknown")
-        confidence = d.get("confidence", 0)
-        
-        # Parse bounding box — Hitakshi uses [x1, y1, x2, y2] in pixels or bounding_box dict
-        bbox_data = d.get("bounding_box", {})
-        if isinstance(bbox_data, dict):
-            x1 = bbox_data.get("x1", bbox_data.get("top_left", [0, 0])[0] if isinstance(bbox_data.get("top_left"), list) else 0)
-            y1 = bbox_data.get("y1", bbox_data.get("top_left", [0, 0])[1] if isinstance(bbox_data.get("top_left"), list) else 0)
-            x2 = bbox_data.get("x2", bbox_data.get("bottom_right", [100, 100])[0] if isinstance(bbox_data.get("bottom_right"), list) else 100)
-            y2 = bbox_data.get("y2", bbox_data.get("bottom_right", [100, 100])[1] if isinstance(bbox_data.get("bottom_right"), list) else 100)
-        else:
-            x1, y1, x2, y2 = 0, 0, 100, 100
-        
-        # Convert to percentages (assume standard image size if pixel coords)
-        img_w = d.get("image_width", max(x2, 100))
-        img_h = d.get("image_height", max(y2, 100))
-        
-        if img_w > 0 and img_h > 0 and (x2 > 100 or y2 > 100):
-            # Pixel coordinates — convert to percent
-            bx = (x1 / img_w) * 100
-            by = (y1 / img_h) * 100
-            bw = ((x2 - x1) / img_w) * 100
-            bh = ((y2 - y1) / img_h) * 100
-        else:
-            # Already percent or normalized
-            bx, by = x1, y1
-            bw = max(x2 - x1, 1)
-            bh = max(y2 - y1, 1)
-        
-        mapped_label = map_label(raw_label)
-        severity = estimate_severity(confidence, mapped_label)
-        
-        results.append(Detection(
-            model=MODEL_MAP.get(model_key, model_key),
-            label=mapped_label,
-            confidence=round(confidence, 4),
-            boundingBox=BoundingBox(
-                x=round(max(0, min(100, bx)), 1),
-                y=round(max(0, min(100, by)), 1),
-                width=round(max(1, min(100, bw)), 1),
-                height=round(max(1, min(100, bh)), 1),
-            ),
-            severity=severity,
-            classId=d.get("class_id"),
-        ))
-    
-    return results
-
+def estimate_severity(conf: float, label: str) -> str:
+    critical = {"structural", "exposed_rebar", "settlement", "rail_alignment"}
+    high = {"corrosion", "spalling", "pothole"}
+    if label in critical:
+        return "critical" if conf >= 0.85 else "high" if conf >= 0.60 else "medium"
+    if label in high:
+        return "high" if conf >= 0.90 else "medium" if conf >= 0.70 else "low"
+    return "high" if conf >= 0.85 else "medium" if conf >= 0.60 else "low"
 
 # ── API Endpoints ─────────────────────────────────────────────────────────────
 
 @app.get("/health")
 async def health():
-    script_exists = Path(ML_SCRIPT).exists()
     return {
-        "status": "healthy" if script_exists else "degraded",
-        "mlScript": ML_SCRIPT,
-        "scriptExists": script_exists,
+        "status": "healthy",
+        "models": {
+            "crack": Path(CRACK_MODEL_PATH).exists() or Path(Path(__file__).parent / CRACK_MODEL_PATH).exists(),
+            "road": Path(ROAD_MODEL_PATH).exists() or Path(Path(__file__).parent / ROAD_MODEL_PATH).exists(),
+            "railway": "robough" if ROBOFLOW_API_KEY else "no-key",
+            "rust": "robough" if ROBOFLOW_API_KEY else "no-key",
+        },
         "roboflowKey": "configured" if ROBOFLOW_API_KEY else "missing",
     }
 
-
-@app.post("/detect", response_model=DetectResponse)
-async def detect(
-    file: UploadFile = File(...),
-    confidence: float = 0.25,
-    imgsz: int = 640,
-):
-    """
-    Run Hitakshi's 4-model pipeline on the uploaded image.
-    Returns DRIFT-compatible detection results.
-    """
-    if not Path(ML_SCRIPT).exists():
-        raise HTTPException(
-            status_code=503,
-            detail=f"ML script not found at {ML_SCRIPT}. Set ML_SCRIPT_PATH environment variable."
-        )
-    
-    image_bytes = await file.read()
-    if len(image_bytes) == 0:
-        raise HTTPException(status_code=400, detail="Empty file")
-    if len(image_bytes) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File too large (max 20MB)")
-    
-    filename = file.filename or "upload.jpg"
-    
-    try:
-        raw_detections = run_hitakshi_pipeline(image_bytes, filename, confidence, imgsz)
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="ML inference timed out (120s limit)")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"ML pipeline error: {str(e)}")
-    
-    detections = parse_detections(raw_detections)
-    
-    # Determine which models were used
-    models_used = list(set(d.model for d in detections)) if detections else ["none"]
-    
-    return DetectResponse(
-        success=True,
-        model="+".join(models_used),
-        detections=detections,
-        rawJson={"rawDetections": raw_detections, "count": len(raw_detections)},
-    )
-
-
-@app.post("/detect-base64", response_model=DetectResponse)
+@app.post("/detect-base64")
 async def detect_base64(body: dict):
-    """
-    DRIFT backend sends base64 images here.
-    Accepts: { imageBase64, fileName, confidence, imgsz }
-    """
+    """DRIFT backend sends base64 images here."""
     image_b64 = body.get("imageBase64", "")
-    filename = body.get("fileName", "upload.jpg")
     confidence = body.get("confidence", 0.25)
     imgsz = body.get("imgsz", 640)
     
     if not image_b64:
-        raise HTTPException(status_code=400, detail="imageBase64 required")
+        raise HTTPException(400, "imageBase64 required")
     
-    # Strip data URL prefix if present
     if "," in image_b64 and image_b64.startswith("data:"):
         image_b64 = image_b64.split(",", 1)[1]
     
     try:
         image_bytes = base64.b64decode(image_b64)
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid base64")
+        raise HTTPException(400, "Invalid base64")
     
     if len(image_bytes) > 20 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Image too large")
+        raise HTTPException(400, "Image too large")
     
-    try:
-        raw_detections = run_hitakshi_pipeline(image_bytes, filename, confidence, imgsz)
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="ML inference timed out")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"ML pipeline error: {str(e)}")
-    
-    detections = parse_detections(raw_detections)
-    models_used = list(set(d.model for d in detections)) if detections else ["none"]
-    
-    return DetectResponse(
-        success=True,
-        model="+".join(models_used),
-        detections=detections,
-        rawJson={"rawDetections": raw_detections, "count": len(raw_detections)},
-    )
+    return _run_all_models(image_bytes, confidence, imgsz)
 
+@app.post("/detect")
+async def detect_file(file: UploadFile = File(...), confidence: float = 0.25, imgsz: int = 640):
+    """Upload file directly."""
+    image_bytes = await file.read()
+    if len(image_bytes) == 0:
+        raise HTTPException(400, "Empty file")
+    return _run_all_models(image_bytes, confidence, imgsz)
+
+def _run_all_models(image_bytes: bytes, confidence: float, imgsz: int):
+    """Run all 4 models and combine results."""
+    all_detections = []
+    models_used = []
+    
+    # 1. CRACK model (local YOLO)
+    try:
+        model = get_crack_model()
+        dets = run_local_yolo(model, image_bytes, "CRACK", confidence, imgsz)
+        all_detections.extend(dets)
+        if dets:
+            models_used.append("CRACK")
+    except Exception as e:
+        print(f"[ML] CRACK skipped: {e}")
+    
+    # 2. ROAD model (local YOLO)
+    try:
+        model = get_road_model()
+        dets = run_local_yolo(model, image_bytes, "ROAD", confidence, imgsz)
+        all_detections.extend(dets)
+        if dets:
+            models_used.append("ROAD")
+    except Exception as e:
+        print(f"[ML] ROAD skipped: {e}")
+    
+    # 3. RAILWAY model (Roboflow)
+    try:
+        dets = get_railway_detections(image_bytes, confidence)
+        all_detections.extend(dets)
+        if dets:
+            models_used.append("RAILWAY")
+    except Exception as e:
+        print(f"[ML] RAILWAY skipped: {e}")
+    
+    # 4. RUST model (Roboflow)
+    try:
+        dets = get_rust_detections(image_bytes, confidence)
+        all_detections.extend(dets)
+        if dets:
+            models_used.append("RUST")
+    except Exception as e:
+        print(f"[ML] RUST skipped: {e}")
+    
+    # Map to DRIFT format
+    mapped = []
+    for d in all_detections:
+        mapped_label = map_label(d["label"])
+        mapped.append({
+            "model": MODEL_NAME_MAP.get(d["model"], d["model"]),
+            "label": mapped_label,
+            "confidence": round(d["confidence"], 4),
+            "boundingBox": {
+                "x": round(max(0, min(100, d["x"])), 1),
+                "y": round(max(0, min(100, d["y"])), 1),
+                "width": round(max(1, min(100, d["width"])), 1),
+                "height": round(max(1, min(100, d["height"])), 1),
+            },
+            "severity": estimate_severity(d["confidence"], mapped_label),
+        })
+    
+    return {
+        "success": True,
+        "model": "+".join(models_used) if models_used else "none",
+        "detections": mapped,
+        "count": len(mapped),
+    }
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("ML_PORT", 8000))
-    print(f"[DRIFT ML Server] Starting on port {port}")
-    print(f"[DRIFT ML Server] Script: {ML_SCRIPT}")
-    print(f"[DRIFT ML Server] Script exists: {Path(ML_SCRIPT).exists()}")
-    print(f"[DRIFT ML Server] Roboflow key: {'configured' if ROBOFLOW_API_KEY else 'MISSING'}")
+    print(f"[DRIFT ML Server] Port: {port}")
+    print(f"[DRIFT ML Server] CRACK model: {CRACK_MODEL_PATH}")
+    print(f"[DRIFT ML Server] ROAD model: {ROAD_MODEL_PATH}")
+    print(f"[DRIFT ML Server] Roboflow: {'configured' if ROBOFLOW_API_KEY else 'MISSING'}")
     uvicorn.run(app, host="0.0.0.0", port=port)
