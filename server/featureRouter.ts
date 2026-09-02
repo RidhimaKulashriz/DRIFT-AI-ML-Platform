@@ -336,14 +336,18 @@ export const featureRouter = router({
           reportSummary: `Defect ${defect.ticketId} detected at (${defect.latitude.toFixed(6)}, ${defect.longitude.toFixed(6)}). Type: ${defect.defectType}. Severity: ${defect.severity}. This requires attention within the recommended deadline.`,
         });
 
-        defect.emailSent = true;
+        defect.emailSent = result.sent;
 
         return {
           emailSent: result.sent,
           method: result.method,
           recipient: result.recipient,
           ticketId: defect.ticketId,
+          deliveryConfirmed: result.sent,
+          message: result.sent
+            ? `Report sent to ${result.recipient} via ${result.method}`
+            : `Email not delivered — ${result.method}. Configure DRIFT_EMAIL_WEBHOOK_URL or EMAIL_USER/EMAIL_PASS on the backend to enable delivery.`,
         };
       }),
-   }),
+    }),
 });

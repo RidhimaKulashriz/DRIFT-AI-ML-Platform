@@ -40,6 +40,6 @@ export const CAMPUS_IMAGES = {
 
 export function getDefectImageForCampus(campus: "IGDTUW" | "IIIT-Delhi", defectType: string): string {
   const campusKey = campus === "IGDTUW" ? "igdtuw" : "iiitDelhi";
-  const campus = CAMPUS_IMAGES[campusKey];
-  return campus.defectImages[defectType as keyof typeof campus.defectImages] || campus.defectImages.crack;
+  const campusImages = CAMPUS_IMAGES[campusKey];
+  return campusImages.defectImages[defectType as keyof typeof campusImages.defectImages] ?? campusImages.defectImages.crack;
 }

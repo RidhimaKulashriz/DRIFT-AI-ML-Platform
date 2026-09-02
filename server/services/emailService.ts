@@ -25,6 +25,8 @@ export type EmailPayload = {
 };
 
 function buildHtmlEmail(payload: EmailPayload): string {
+  const severityClass = payload.severity === "critical" ? "critical" : payload.severity === "high" ? "high" : payload.severity === "medium" ? "moderate" : "low";
+  const priorityColor = payload.severity === "critical" ? "#dc2626" : payload.severity === "high" ? "#ea580c" : payload.severity === "medium" ? "#ca8a04" : "#16a34a";
   return `
 <!DOCTYPE html>
 <html>
@@ -67,7 +69,7 @@ function buildHtmlEmail(payload: EmailPayload): string {
     <div class="field"><span class="field-label">Ticket ID</span><span class="field-value"><span class="ticket-id">${payload.ticketId}</span></span></div>
     <div class="field"><span class="field-label">Assigned Contractor</span><span class="field-value">${payload.contractorName}</span></div>
     <div class="field"><span class="field-label">Organization</span><span class="field-value">${payload.contractorOrganization}</span></div>
-    <div class="field"><span class="field-label">Priority Level</span><span class="field-value"><span class="badge badge-${payload.severity}">${payload.severity.toUpperCase()}</span> Score: ${payload.priorityScore}/100</span></div>
+    <div class="field"><span class="field-label">Priority Level</span><span class="field-value"><span class="badge badge-${severityClass}">${payload.severity.toUpperCase()}</span> Score: ${payload.priorityScore}/100</span></div>
   </div>
 
   <div class="section">
@@ -76,7 +78,7 @@ function buildHtmlEmail(payload: EmailPayload): string {
     <div class="field"><span class="field-label">ML Confidence</span><span class="field-value">${payload.confidencePercent}%</span></div>
     <div class="field"><span class="field-label">Infrastructure</span><span class="field-value">${payload.infrastructureType.toUpperCase()}</span></div>
     <div class="field"><span class="field-label">GPS Location</span><span class="field-value">${payload.latitude.toFixed(6)}, ${payload.longitude.toFixed(6)}</span></div>
-    <div class="priority-bar"><div class="priority-fill" style="width: ${payload.priorityScore}%; background: ${payload.severity === "critical" ? "#dc2626" : payload.severity === "high" ? "#ea580c" : payload.severity === "moderate" ? "#ca8a04" : "#16a34a"}"></div></div>
+    <div class="priority-bar"><div class="priority-fill" style="width: ${payload.priorityScore}%; background: ${priorityColor}"></div></div>
   </div>
 
   <div class="section">
@@ -187,17 +189,17 @@ export async function sendContractorEmail(
     }
   }
 
-  // Console fallback for demo
+  // Console fallback for demo - explicitly marks delivery as NOT confirmed
   console.log(
     `\n[DRIFT EMAIL] To: ${payload.to}\n` +
     `[DRIFT EMAIL] Subject: ${payload.ticketId} — ${payload.defectType}\n` +
     `[DRIFT EMAIL] Severity: ${payload.severity} | Priority: ${payload.priorityScore}/100\n` +
     `[DRIFT EMAIL] Cost: ${payload.estimatedRepairCost} | Deadline: ${payload.recommendedDeadline}\n` +
     `[DRIFT EMAIL] Location: ${payload.latitude}, ${payload.longitude}\n` +
-    `[DRIFT EMAIL] (Configure DRIFT_EMAIL_WEBHOOK_URL or DRIFT_SMTP_URL for actual delivery)\n`,
+    `[DRIFT EMAIL] (No email provider configured. Set DRIFT_EMAIL_WEBHOOK_URL or EMAIL_USER/EMAIL_PASS.)\n`,
   );
 
-  return { sent: true, method: "console-fallback", recipient: payload.to };
+  return { sent: false, method: "console-fallback", recipient: payload.to };
 }
 
 export { buildHtmlEmail };

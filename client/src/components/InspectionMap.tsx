@@ -98,7 +98,7 @@ function LeafletFallbackMap({ defects, telemetry, selectedId, onSelect }: {
     L.marker([28.5449, 77.2750], { icon: L.divIcon({ className: "campus-marker", html: '<div style="background:#047857;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">IIIT-Delhi</div>', iconSize: [70, 20], iconAnchor: [35, 10] }) }).addTo(map);
 
     return () => { map.remove(); mapRef.current = null; };
-  }, [ready, defects.length, telemetry.length]);
+  }, [ready]);
 
   // Update markers
   useEffect(() => {
@@ -139,14 +139,7 @@ function LeafletFallbackMap({ defects, telemetry, selectedId, onSelect }: {
       bounds.push([point.lat, point.lng]);
     });
 
-    // Add campus markers
-    const igdtuw = L.circleMarker([28.6876, 77.2100], { radius: 6, fillColor: "#1e40af", color: "#fff", weight: 2, fillOpacity: 0.8 }).addTo(map);
-    igdtuw.bindPopup("<b>IGDTUW Campus</b><br/>Contractor: Manu<br/>ridhimakulashri07042025@gmail.com");
-    markersRef.current.push(igdtuw);
-
-    const iiitd = L.circleMarker([28.5449, 77.2750], { radius: 6, fillColor: "#047857", color: "#fff", weight: 2, fillOpacity: 0.8 }).addTo(map);
-    iiitd.bindPopup("<b>IIIT-Delhi Campus</b><br/>Contractor: Ridhima Kulashriz<br/>ridhimakulashriz@gmail.com");
-    markersRef.current.push(iiitd);
+    // Add campus reference points to bounds (campus markers themselves are created in init effect)
     bounds.push([28.6876, 77.2100], [28.5449, 77.2750]);
 
     if (bounds.length > 0) {
