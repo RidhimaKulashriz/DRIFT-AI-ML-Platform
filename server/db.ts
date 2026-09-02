@@ -53,13 +53,12 @@ async function ensureReportsColumns(db: any): Promise<void> {
 
     // Already complete
     if (existing.has("pdfBase64") && existing.has("emailStatus") && existing.has("updatedAt")) {
-      _reportsMigrationApplied = true;
-      return;
+      return; // No migration needed
     }
 
     console.log("[Database] Reports migration needed. Existing cols:", Array.from(existing).join(", "));
 
-    // Execute individual ALTER TABLE statements (multi-statement raw query may not work on Drizzle ORM)
+    // Execute individual ALTER TABLE statements
     const addIfMissing = async (col: string, ddl: string) => {
       if (existing.has(col)) return;
       try {
@@ -78,14 +77,6 @@ async function ensureReportsColumns(db: any): Promise<void> {
     await addIfMissing("emailedAt", `"emailedAt" timestamp with time zone`);
     await addIfMissing("emailError", `"emailError" text`);
     await addIfMissing("updatedAt", `"updatedAt" timestamp with time zone DEFAULT now()`);
-
-    // Verify
-    const verify = await db.execute<{ column_name: string }>(sql`
-      SELECT column_name FROM information_schema.columns
-      WHERE table_name='reports' AND table_schema='public'
-    `);
-    console.log("[Database] After migration, reports columns:", verify.rows.map((r: any) => r.column_name).join(", "));
-    _reportsMigrationApplied = true;
   } catch (e) {
     console.warn("[Database] Reports column migration failed:", e instanceof Error ? e.message : e);
   }
