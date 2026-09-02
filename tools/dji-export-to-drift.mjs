@@ -118,7 +118,7 @@ function sendEvidence(args: {
     aircraftProfile: "DJI Mini 3 Pro",
     captureZone: "oblique",
     runInference: true,
-    assetId: args.latitude > 28.6 ? 10 : 9,
+    assetId: 1,
     assetCriticality: 3,
     priorOpenDefects: 0,
     correlationKey: `dji-bridge:${args.missionId}:${Date.now()}`,
