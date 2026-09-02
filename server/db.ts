@@ -371,16 +371,25 @@ export async function getPublicMissionOverview() {
     assets: [], missions: [], defects: [], telemetry: [], reports: [], estimates: [], reviews: [], audit: [], alerts: [],
     persistence: { available: false, configured: Boolean(postgresDatabaseUrl()), driver: "postgresql", portableEvidenceStorage: false, message: "PostgreSQL is not configured." },
   };
+  // Run schema migrations BEFORE queries (idempotent, fast on subsequent calls)
+  await ensureReportsColumns(db);
+
+  // Each query is wrapped in try/catch so a single failing table doesn't crash the entire overview
+  const safe = async <T,>(label: string, fn: () => Promise<T>, fallback: T): Promise<T> => {
+    try { return await fn(); }
+    catch (err) { console.warn(`[getPublicMissionOverview] ${label} query failed:`, err instanceof Error ? err.message?.substring(0, 200) : err); return fallback; }
+  };
+
   const [assetRows, missionRows, defectRows, telemetryRows, reportRows, estimateRows, reviewRows, auditRows, alertRows] = await Promise.all([
-    db.select().from(assets).orderBy(desc(assets.updatedAt)).limit(40),
-    db.select().from(missions).orderBy(desc(missions.createdAt)).limit(30),
-    db.select().from(defects).orderBy(desc(defects.zeroErrorScore)).limit(120),
-    db.select().from(telemetry).orderBy(desc(telemetry.capturedAt)).limit(240),
-    db.select(reportListColumns).from(reports).orderBy(desc(reports.createdAt)).limit(30),
-    db.select().from(repairEstimates).orderBy(desc(repairEstimates.createdAt)).limit(120),
-    db.select().from(reviews).orderBy(desc(reviews.createdAt)).limit(120),
-    db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(120),
-    db.select().from(alerts).orderBy(desc(alerts.createdAt)).limit(120),
+    safe("assets", () => db.select().from(assets).orderBy(desc(assets.updatedAt)).limit(40), [] as any[]),
+    safe("missions", () => db.select().from(missions).orderBy(desc(missions.createdAt)).limit(30), [] as any[]),
+    safe("defects", () => db.select().from(defects).orderBy(desc(defects.zeroErrorScore)).limit(120), [] as any[]),
+    safe("telemetry", () => db.select().from(telemetry).orderBy(desc(telemetry.capturedAt)).limit(240), [] as any[]),
+    safe("reports", () => db.select(reportListColumns).from(reports).orderBy(desc(reports.createdAt)).limit(30), [] as any[]),
+    safe("repairEstimates", () => db.select().from(repairEstimates).orderBy(desc(repairEstimates.createdAt)).limit(120), [] as any[]),
+    safe("reviews", () => db.select().from(reviews).orderBy(desc(reviews.createdAt)).limit(120), [] as any[]),
+    safe("auditEvents", () => db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(120), [] as any[]),
+    safe("alerts", () => db.select().from(alerts).orderBy(desc(alerts.createdAt)).limit(120), [] as any[]),
   ]);
   return {
     assets: assetRows, missions: missionRows, defects: defectRows, telemetry: telemetryRows,
@@ -536,7 +545,13 @@ export async function listFilteredDefects(filters: { assetId?: number; missionId
 
 export async function listAlerts() { const db = await getDb(); return db ? db.select().from(alerts).orderBy(desc(alerts.createdAt)).limit(200) : []; }
 export async function acknowledgeAlert(alertId: number, actorId: number) { const db = await getDb(); if (!db) throw new Error("Database is unavailable."); await db.update(alerts).set({ status: "acknowledged", acknowledgedBy: actorId, acknowledgedAt: new Date() }).where(eq(alerts.id, alertId)); return { success: true }; }
-export async function listReportRecords() { const db = await getDb(); return db ? db.select(reportListColumns).from(reports).orderBy(desc(reports.createdAt)).limit(100) : []; }
+export async function listReportRecords() {
+  const db = await getDb();
+  if (!db) return [];
+  await ensureReportsColumns(db);
+  try { return await db.select(reportListColumns).from(reports).orderBy(desc(reports.createdAt)).limit(100); }
+  catch (err) { console.warn("[listReportRecords] Query failed:", err instanceof Error ? err.message?.substring(0, 200) : err); return []; }
+}
 export async function listAuditEvents(missionId?: number) { const db = await getDb(); if (!db) return []; const rows = await db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(300); return missionId ? rows.filter(row => row.missionId === missionId) : rows; }
 export async function listAssets() { const db = await getDb(); return db ? db.select().from(assets).orderBy(desc(assets.updatedAt)).limit(100) : []; }
 

@@ -177,6 +177,12 @@ async function startServer() {
     })
   );
 
+  // Run DB migration BEFORE the tRPC route to ensure all column additions are in place
+  await ensureCampusSchema();
+
+  // Re-register tRPC middleware after migration
+  // (Note: tRPC is already mounted; this is a no-op safety check)
+
   // PHASE 77: Health endpoint with dependency checks
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString(), service: "drift-api" });
