@@ -1,10 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "build": {
-    "env": {
-      "VITE_GOOGLE_MAPS_API_KEY": "AIzaSyAxpj6rrmEzhO8lobQWZe0khpBOkj-6HCI"
-    }
-  },
+
   "installCommand": "pnpm install",
   "buildCommand": "pnpm exec vite build",
   "outputDirectory": "dist/public",
