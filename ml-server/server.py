@@ -1,130 +1,24 @@
 """
-DRIFT ML Inference Server — Hitakshi's 4-Model Pipeline
-========================================================
-Models: CRACK (YOLO), ROAD (YOLO), RAILWAY (Roboflow), RUST (Roboflow)
-
-Run:
-  pip install -r requirements.txt
-  python server.py
-
-DRIFT backend connects via ML_INFERENCE_URL
+DRIFT ML Inference Server — Hitakshi's Models
+Works on Render FREE TIER (512MB RAM) by using only HTTP-based inference.
+YOLO models are skipped on free tier (need too much RAM).
+Roboflow API calls are lightweight HTTP requests.
 """
-
-import os
-import io
-import sys
-import json
-import base64
-import tempfile
-import traceback
+import os, json, base64, gc
 from pathlib import Path
-from typing import Optional
-
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 
-app = FastAPI(title="DRIFT ML — Hitakshi Models", version="1.0.0")
+app = FastAPI(title="DRIFT ML", version="2.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-# ── Config ────────────────────────────────────────────────────────────────────
 ROBOFLOW_API_KEY = os.environ.get("ROBOFLOW_API_KEY", "")
+USE_YOLO = os.environ.get("USE_YOLO", "false").lower() == "true"
 CRACK_MODEL_PATH = os.environ.get("CRACK_MODEL_PATH", "cracks/main_crack.pt")
 ROAD_MODEL_PATH = os.environ.get("ROAD_MODEL_PATH", "road-ml/main_road.pt")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
-# ── Lazy-load models (one at a time to save RAM on free tier) ──────────────────
-import gc
-
-def load_yolo_model(model_path: str):
-    """Load a YOLO model, return it. Caller should del after use."""
-    from ultralytics import YOLO
-    path = Path(model_path)
-    if not path.exists():
-        path = Path(__file__).parent / model_path
-    if not path.exists():
-        raise FileNotFoundError(f"Model not found: {model_path}")
-    print(f"[ML] Loading model from {path}")
-    model = YOLO(str(path))
-    print(f"[ML] Model loaded. Classes: {model.names}")
-    return model
-
-def roboflow_detect(image_bytes: bytes, model_id: str, model_name: str, conf: float = 0.25):
-    """Call Roboflow inference API directly via HTTP."""
-    if not ROBOFLOW_API_KEY:
-        return []
-    try:
-        import requests
-        url = f"https://serverless.roboflow.com/{model_id}?api_key={ROBOFLOW_API_KEY}"
-        response = requests.post(url, data=image_bytes, headers={"Content-Type": "image/jpeg"}, timeout=30)
-        if response.status_code != 200:
-            print(f"[ML] {model_name} Roboflow HTTP {response.status_code}")
-            return []
-        result = response.json()
-        detections = []
-        for pred in result.get("predictions", []):
-            if pred.get("confidence", 0) >= conf:
-                detections.append({
-                    "model": model_name,
-                    "label": pred.get("class", model_name.lower()),
-                    "confidence": pred.get("confidence", 0),
-                    "x": pred.get("x", 0),
-                    "y": pred.get("y", 0),
-                    "width": pred.get("width", 0),
-                    "height": pred.get("height", 0),
-                })
-        return detections
-    except Exception as e:
-        print(f"[ML] {model_name} error: {e}")
-        return []
-
-def get_railway_detections(image_bytes: bytes, conf: float = 0.25):
-    return roboflow_detect(image_bytes, "railway-track-fault-detection-hrem8/3", "RAILWAY", conf)
-
-def get_rust_detections(image_bytes: bytes, conf: float = 0.25):
-    return roboflow_detect(image_bytes, "corrosion-yolov8/4", "RUST", conf)
-
-def run_local_yolo(model, image_bytes: bytes, model_name: str, conf: float = 0.25, imgsz: int = 640):
-    """Run a local YOLO model on image bytes."""
-    try:
-        import numpy as np
-        import cv2
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is None:
-            return []
-        
-        h, w = img.shape[:2]
-        results = model(img, imgsz=imgsz, conf=conf, verbose=False)
-        
-        detections = []
-        for r in results:
-            for box in r.boxes:
-                cls_id = int(box.cls[0])
-                label = r.names.get(cls_id, f"class_{cls_id}")
-                confidence = float(box.conf[0])
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                
-                # Convert to percent
-                bx = (x1 / w) * 100
-                by = (y1 / h) * 100
-                bw = ((x2 - x1) / w) * 100
-                bh = ((y2 - y1) / h) * 100
-                
-                detections.append({
-                    "model": model_name,
-                    "label": label,
-                    "confidence": confidence,
-                    "x": round(bx, 1),
-                    "y": round(by, 1),
-                    "width": round(bw, 1),
-                    "height": round(bh, 1),
-                })
-        return detections
-    except Exception as e:
-        print(f"[ML] {model_name} error: {e}")
-        return []
-
-# ── Label mapping to DRIFT defect types ───────────────────────────────────────
+# ── Label mapping ─────────────────────────────────────────────────────────────
 LABEL_MAP = {
     "crack": "crack", "cracks": "crack", "Crack": "crack",
     "pothole": "pothole", "potholes": "pothole", "Pothole": "pothole",
@@ -132,22 +26,18 @@ LABEL_MAP = {
     "spalling": "spalling", "patching": "spalling",
     "settlement": "settlement", "rutting": "settlement", "bumps": "settlement",
     "obstruction": "obstruction", "manhole": "obstruction",
-    "railway": "rail_alignment", "track_fault": "rail_alignment", "defective": "rail_alignment",
     "Longitudinal Crack": "crack", "Transverse Crack": "crack", "Alligator Crack": "crack",
-    "potholes": "pothole", "surface_crack": "crack",
+    "surface_crack": "crack", "Defective": "rail_alignment",
 }
-
 MODEL_NAME_MAP = {
-    "CRACK": "hitakshi-crack-yolo",
-    "ROAD": "hitakshi-road-yolo",
-    "RAILWAY": "hitakshi-railway-roboflow",
-    "RUST": "hitakshi-rust-roboflow",
+    "CRACK": "hitakshi-crack-yolo", "ROAD": "hitakshi-road-yolo",
+    "RAILWAY": "hitakshi-railway-roboflow", "RUST": "hitakshi-rust-roboflow",
 }
 
-def map_label(raw: str) -> str:
+def map_label(raw):
     return LABEL_MAP.get(raw, LABEL_MAP.get(raw.lower(), raw.lower()))
 
-def estimate_severity(conf: float, label: str) -> str:
+def estimate_severity(conf, label):
     critical = {"structural", "exposed_rebar", "settlement", "rail_alignment"}
     high = {"corrosion", "spalling", "pothole"}
     if label in critical:
@@ -156,106 +46,171 @@ def estimate_severity(conf: float, label: str) -> str:
         return "high" if conf >= 0.90 else "medium" if conf >= 0.70 else "low"
     return "high" if conf >= 0.85 else "medium" if conf >= 0.60 else "low"
 
-# ── API Endpoints ─────────────────────────────────────────────────────────────
-
-@app.get("/health")
-async def health():
-    return {
-        "status": "healthy",
-        "models": {
-            "crack": Path(CRACK_MODEL_PATH).exists() or Path(Path(__file__).parent / CRACK_MODEL_PATH).exists(),
-            "road": Path(ROAD_MODEL_PATH).exists() or Path(Path(__file__).parent / ROAD_MODEL_PATH).exists(),
-            "railway": "robough" if ROBOFLOW_API_KEY else "no-key",
-            "rust": "robough" if ROBOFLOW_API_KEY else "no-key",
-        },
-        "roboflowKey": "configured" if ROBOFLOW_API_KEY else "missing",
-    }
-
-@app.post("/detect-base64")
-async def detect_base64(body: dict):
-    """DRIFT backend sends base64 images here."""
-    image_b64 = body.get("imageBase64", "")
-    confidence = body.get("confidence", 0.25)
-    imgsz = body.get("imgsz", 640)
-    
-    if not image_b64:
-        raise HTTPException(400, "imageBase64 required")
-    
-    if "," in image_b64 and image_b64.startswith("data:"):
-        image_b64 = image_b64.split(",", 1)[1]
-    
+def roboflow_detect(image_bytes, model_id, model_name, conf=0.25):
+    if not ROBOFLOW_API_KEY:
+        return []
     try:
-        image_bytes = base64.b64decode(image_b64)
-    except Exception:
-        raise HTTPException(400, "Invalid base64")
-    
-    if len(image_bytes) > 20 * 1024 * 1024:
-        raise HTTPException(400, "Image too large")
-    
-    return _run_all_models(image_bytes, confidence, imgsz)
+        import requests
+        url = f"https://serverless.roboflow.com/{model_id}?api_key={ROBOFLOW_API_KEY}"
+        resp = requests.post(url, data=image_bytes, headers={"Content-Type": "image/jpeg"}, timeout=30)
+        if resp.status_code != 200:
+            print(f"[ML] {model_name} Roboflow HTTP {resp.status_code}")
+            return []
+        result = resp.json()
+        dets = []
+        for pred in result.get("predictions", []):
+            if pred.get("confidence", 0) >= conf:
+                dets.append({
+                    "model": model_name,
+                    "label": pred.get("class", model_name.lower()),
+                    "confidence": pred.get("confidence", 0),
+                    "x": pred.get("x", 0), "y": pred.get("y", 0),
+                    "width": pred.get("width", 0), "height": pred.get("height", 0),
+                })
+        return dets
+    except Exception as e:
+        print(f"[ML] {model_name} error: {e}")
+        return []
 
-@app.post("/detect")
-async def detect_file(file: UploadFile = File(...), confidence: float = 0.25, imgsz: int = 640):
-    """Upload file directly."""
-    image_bytes = await file.read()
-    if len(image_bytes) == 0:
-        raise HTTPException(400, "Empty file")
-    return _run_all_models(image_bytes, confidence, imgsz)
+def run_yolo(model_path, image_bytes, model_name, conf=0.25, imgsz=640):
+    if not USE_YOLO:
+        return []
+    try:
+        from ultralytics import YOLO
+        import numpy as np, cv2
+        path = Path(model_path)
+        if not path.exists():
+            path = Path(__file__).parent / model_path
+        if not path.exists():
+            print(f"[ML] Model not found: {model_path}")
+            return []
+        model = YOLO(str(path))
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return []
+        h, w = img.shape[:2]
+        results = model(img, imgsz=imgsz, conf=conf, verbose=False)
+        dets = []
+        for r in results:
+            for box in r.boxes:
+                cls_id = int(box.cls[0])
+                label = r.names.get(cls_id, f"class_{cls_id}")
+                confidence = float(box.conf[0])
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                dets.append({
+                    "model": model_name, "label": label, "confidence": confidence,
+                    "x": round((x1/w)*100, 1), "y": round((y1/h)*100, 1),
+                    "width": round(((x2-x1)/w)*100, 1), "height": round(((y2-y1)/h)*100, 1),
+                })
+        del model
+        gc.collect()
+        return dets
+    except Exception as e:
+        print(f"[ML] {model_name} YOLO error: {e}")
+        return []
 
-def _run_all_models(image_bytes: bytes, confidence: float, imgsz: int):
-    """Run all 4 models and combine results."""
+def gemini_detect(image_b64, mime="image/jpeg"):
+    """Call Gemini Vision API directly for infrastructure defect detection."""
+    if not GEMINI_API_KEY:
+        return []
+    try:
+        import requests
+        prompt = (
+            "You are an infrastructure defect detector. Analyze this image for road cracks, "
+            "potholes, structural damage, corrosion, spalling, exposed rebar, water intrusion, "
+            "settlement, or other infrastructure defects. "
+            'Return JSON array: [{"label":"<pothole|crack|structural|corrosion|spalling|exposed_rebar|settlement|obstruction>","confidence":<0-1>,"x":<0-100>,"y":<0-100>,"width":<0-100>,"height":<0-100>}] '
+            "If no defect found, return empty array []. Return ONLY valid JSON."
+        )
+        body = {
+            "contents": [{"parts": [
+                {"text": prompt},
+                {"inlineData": {"mimeType": mime, "data": image_b64}}
+            ]}],
+            "generationConfig": {"temperature": 0, "responseMimeType": "application/json"}
+        }
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
+        resp = requests.post(url, json=body, timeout=60)
+        if resp.status_code != 200:
+            print(f"[ML] Gemini HTTP {resp.status_code}")
+            return []
+        result = resp.json()
+        text = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+        if not text:
+            return []
+        parsed = json.loads(text)
+        if isinstance(parsed, dict) and "detections" in parsed:
+            parsed = parsed["detections"]
+        if not isinstance(parsed, list):
+            return []
+        dets = []
+        for item in parsed:
+            label = item.get("label", "crack")
+            if label == "none" or label == "none_found":
+                continue
+            conf = float(item.get("confidence", 0.5))
+            if conf <= 0:
+                continue
+            dets.append({
+                "model": "gemini-2.5-flash",
+                "label": label,
+                "confidence": conf,
+                "x": float(item.get("x", 20)),
+                "y": float(item.get("y", 20)),
+                "width": float(item.get("width", 40)),
+                "height": float(item.get("height", 40)),
+            })
+        return dets
+    except Exception as e:
+        print(f"[ML] Gemini error: {e}")
+        return []
+
+def _run_all_models(image_bytes, image_b64, confidence, imgsz):
     all_detections = []
     models_used = []
-    
-    # 1. CRACK model (local YOLO) — load, run, unload to save RAM
-    try:
-        model = load_yolo_model(CRACK_MODEL_PATH)
-        dets = run_local_yolo(model, image_bytes, "CRACK", confidence, imgsz)
-        all_detections.extend(dets)
-        if dets:
-            models_used.append("CRACK")
-        del model
-        gc.collect()
-    except Exception as e:
-        print(f"[ML] CRACK skipped: {e}")
-    
-    # 2. ROAD model (local YOLO) — load, run, unload to save RAM
-    try:
-        model = load_yolo_model(ROAD_MODEL_PATH)
-        dets = run_local_yolo(model, image_bytes, "ROAD", confidence, imgsz)
-        all_detections.extend(dets)
-        if dets:
-            models_used.append("ROAD")
-        del model
-        gc.collect()
-    except Exception as e:
-        print(f"[ML] ROAD skipped: {e}")
-    
-    # 3. RAILWAY model (Roboflow)
-    try:
-        dets = get_railway_detections(image_bytes, confidence)
-        all_detections.extend(dets)
-        if dets:
-            models_used.append("RAILWAY")
-    except Exception as e:
-        print(f"[ML] RAILWAY skipped: {e}")
-    
-    # 4. RUST model (Roboflow)
-    try:
-        dets = get_rust_detections(image_bytes, confidence)
-        all_detections.extend(dets)
-        if dets:
-            models_used.append("RUST")
-    except Exception as e:
-        print(f"[ML] RUST skipped: {e}")
-    
-    # Map to DRIFT format
+
+    # 1. Try Roboflow models (lightweight HTTP calls)
+    for model_id, name in [
+        ("railway-track-fault-detection-hrem8/3", "RAILWAY"),
+        ("corrosion-yolov8/4", "RUST"),
+    ]:
+        try:
+            dets = roboflow_detect(image_bytes, model_id, name, confidence)
+            all_detections.extend(dets)
+            if dets:
+                models_used.append(name)
+        except Exception as e:
+            print(f"[ML] {name} failed: {e}")
+
+    # 2. Try YOLO models only if USE_YOLO=true (needs >512MB RAM)
+    if USE_YOLO:
+        for mp, name in [(CRACK_MODEL_PATH, "CRACK"), (ROAD_MODEL_PATH, "ROAD")]:
+            try:
+                dets = run_yolo(mp, image_bytes, name, confidence, imgsz)
+                all_detections.extend(dets)
+                if dets:
+                    models_used.append(name)
+            except Exception as e:
+                print(f"[ML] {name} failed: {e}")
+
+    # 3. If no detections yet, try Gemini Vision (if configured)
+    if not all_detections and GEMINI_API_KEY:
+        try:
+            dets = gemini_detect(image_b64)
+            all_detections.extend(dets)
+            if dets:
+                models_used.append("GEMINI")
+        except Exception as e:
+            print(f"[ML] Gemini failed: {e}")
+
+    # Map labels to DRIFT format
     mapped = []
     for d in all_detections:
-        mapped_label = map_label(d["label"])
+        ml = map_label(d["label"])
         mapped.append({
             "model": MODEL_NAME_MAP.get(d["model"], d["model"]),
-            "label": mapped_label,
+            "label": ml,
             "confidence": round(d["confidence"], 4),
             "boundingBox": {
                 "x": round(max(0, min(100, d["x"])), 1),
@@ -263,9 +218,9 @@ def _run_all_models(image_bytes: bytes, confidence: float, imgsz: int):
                 "width": round(max(1, min(100, d["width"])), 1),
                 "height": round(max(1, min(100, d["height"])), 1),
             },
-            "severity": estimate_severity(d["confidence"], mapped_label),
+            "severity": estimate_severity(d["confidence"], ml),
         })
-    
+
     return {
         "success": True,
         "model": "+".join(models_used) if models_used else "none",
@@ -273,11 +228,34 @@ def _run_all_models(image_bytes: bytes, confidence: float, imgsz: int):
         "count": len(mapped),
     }
 
+@app.get("/health")
+async def health():
+    return {
+        "status": "healthy",
+        "yolo": USE_YOLO,
+        "roboflow": "configured" if ROBOFLOW_API_KEY else "missing",
+        "gemini": "configured" if GEMINI_API_KEY else "missing",
+    }
+
+@app.post("/detect-base64")
+async def detect_base64(body: dict):
+    image_b64 = body.get("imageBase64", "")
+    confidence = body.get("confidence", 0.25)
+    imgsz = body.get("imgsz", 640)
+    if not image_b64:
+        raise HTTPException(400, "imageBase64 required")
+    if "," in image_b64 and image_b64.startswith("data:"):
+        image_b64 = image_b64.split(",", 1)[1]
+    try:
+        image_bytes = base64.b64decode(image_b64)
+    except Exception:
+        raise HTTPException(400, "Invalid base64")
+    if len(image_bytes) > 20 * 1024 * 1024:
+        raise HTTPException(400, "Image too large")
+    return _run_all_models(image_bytes, image_b64, confidence, imgsz)
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("ML_PORT", 8000))
-    print(f"[DRIFT ML Server] Port: {port}")
-    print(f"[DRIFT ML Server] CRACK model: {CRACK_MODEL_PATH}")
-    print(f"[DRIFT ML Server] ROAD model: {ROAD_MODEL_PATH}")
-    print(f"[DRIFT ML Server] Roboflow: {'configured' if ROBOFLOW_API_KEY else 'MISSING'}")
+    print(f"[DRIFT ML] Port: {port} | YOLO: {USE_YOLO} | Roboflow: {'OK' if ROBOFLOW_API_KEY else 'NO KEY'} | Gemini: {'OK' if GEMINI_API_KEY else 'NO KEY'}")
     uvicorn.run(app, host="0.0.0.0", port=port)
