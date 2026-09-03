@@ -1,156 +1,70 @@
 """
-DRIFT ML Server v12 — Hitakshi's REAL YOLO Models
-- Uses ONNX Runtime for crack + road detection (no PyTorch needed)
-- Roboflow for railway + rust detection
-- Never returns 500
+DRIFT ML Server v13 — EXACT Hitakshi Code + FastAPI Wrapper
+Uses her real main_app1.py logic: Ultralytics YOLO + Roboflow SDK
+No ONNX conversion. No Gemini. No fakes. REAL ML.
 """
-import os, json, base64, time, traceback
+import os, io, json, base64, time, traceback
+import cv2
 import numpy as np
+import torch
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-app = FastAPI(title="DRIFT ML", version="12.0.0")
+os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
+
+from ultralytics import YOLO
+
+app = FastAPI(title="DRIFT ML", version="13.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 ROBOFLOW_API_KEY = os.environ.get("ROBOFLOW_API_KEY", "")
 BASE_DIR = Path(__file__).parent
-CRACK_ONNX = str(BASE_DIR / "cracks" / "main_crack.onnx")
-ROAD_ONNX = str(BASE_DIR / "road-ml" / "main_road.onnx")
+CRACK_MODEL_PATH = BASE_DIR / "cracks" / "main_crack.pt"
+ROAD_MODEL_PATH = BASE_DIR / "road-ml" / "main_road.pt"
 
-_sessions = {}
+# Load models at startup (Hitakshi's exact code)
+crack_model = None
+road_model = None
 
+try:
+    if CRACK_MODEL_PATH.exists():
+        print(f"[LOAD] CRACK model: {CRACK_MODEL_PATH}")
+        crack_model = YOLO(str(CRACK_MODEL_PATH))
+        print(f"[OK] Crack loaded. Classes: {crack_model.names}")
+    else:
+        print(f"[WARN] CRACK model not found: {CRACK_MODEL_PATH}")
+except Exception as e:
+    print(f"[ERROR] CRACK load failed: {e}")
+    traceback.print_exc()
 
-def load_onnx(name, path):
-    if name in _sessions:
-        return _sessions[name]
-    if not os.path.exists(path):
-        print(f"[ML] ONNX not found: {path}")
-        return None
-    try:
-        import onnxruntime as ort
-        print(f"[ML] Loading {name} ONNX...")
-        t0 = time.time()
-        sess = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
-        print(f"[ML] {name} loaded in {time.time()-t0:.1f}s")
-        _sessions[name] = sess
-        return sess
-    except Exception as e:
-        print(f"[ML] Load {name} FAILED: {e}")
-        traceback.print_exc()
-        return None
+try:
+    if ROAD_MODEL_PATH.exists():
+        print(f"[LOAD] ROAD model: {ROAD_MODEL_PATH}")
+        road_model = YOLO(str(ROAD_MODEL_PATH))
+        print(f"[OK] Road loaded. Classes: {road_model.names}")
+    else:
+        print(f"[WARN] ROAD model not found: {ROAD_MODEL_PATH}")
+except Exception as e:
+    print(f"[ERROR] ROAD load failed: {e}")
+    traceback.print_exc()
 
+# Roboflow client (Hitakshi's exact code)
+roboflow_client = None
+try:
+    if ROBOFLOW_API_KEY:
+        from inference_sdk import InferenceHTTPClient, InferenceConfiguration
+        roboflow_client = InferenceHTTPClient(
+            api_url="https://serverless.roboflow.com",
+            api_key=ROBOFLOW_API_KEY,
+        ).configure(InferenceConfiguration(api_key_transport="header"))
+        print("[OK] Roboflow client ready")
+except Exception as e:
+    print(f"[WARN] Roboflow client failed: {e}")
 
-def preprocess(image_bytes, size=640):
-    try:
-        from PIL import Image as PILImage
-        import io
-        pil = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")
-        w, h = pil.size
-        pil = pil.resize((size, size), PILImage.LANCZOS)
-        arr = np.array(pil, dtype=np.float32) / 255.0
-        return arr.transpose(2, 0, 1)[np.newaxis], w, h
-    except Exception as e:
-        print(f"[ML] preprocess error: {e}")
-        return None, 0, 0
+RAILWAY_MODEL_ID = "railway-track-fault-detection-hrem8/3"
+RUST_MODEL_ID = "corrosion-yolov8/4"
 
-
-def yolo_detect(image_bytes, model_name, onnx_path, class_names, conf_thresh=0.25):
-    sess = load_onnx(model_name, onnx_path)
-    if sess is None:
-        return []
-    try:
-        tensor, orig_w, orig_h = preprocess(image_bytes)
-        if tensor is None:
-            return []
-        out = sess.run(None, {sess.get_inputs()[0].name: tensor})[0]
-        raw = out[0]
-        nf = raw.shape[0]
-        nd = raw.shape[1]
-        nc = len(class_names)
-        boxes = raw[:4, :]
-        if nf <= 6:
-            scores = raw[4:4+nc, :]
-        else:
-            scores = raw[nf-1:nf, :]
-        if scores.min() < -0.1:
-            scores = 1.0 / (1.0 + np.exp(-scores))
-        class_ids = np.argmax(scores, axis=0)
-        confidences = np.max(scores, axis=0)
-        sx, sy = orig_w / 640, orig_h / 640
-        thresh = max(conf_thresh, 0.5) if nf > 10 else conf_thresh
-        dets = []
-        for i in range(nd):
-            if confidences[i] < thresh:
-                continue
-            xc, yc, bw, bh = boxes[:, i]
-            x1 = max(0, (xc - bw/2) * sx)
-            y1 = max(0, (yc - bh/2) * sy)
-            x2 = min(orig_w, (xc + bw/2) * sx)
-            y2 = min(orig_h, (yc + bh/2) * sy)
-            if x2 <= x1 or y2 <= y1:
-                continue
-            label = class_names.get(int(class_ids[i]), f"class_{class_ids[i]}")
-            dets.append({
-                "model": model_name, "label": label,
-                "confidence": float(confidences[i]),
-                "x": round((x1 / orig_w) * 100, 1),
-                "y": round((y1 / orig_h) * 100, 1),
-                "width": round(((x2 - x1) / orig_w) * 100, 1),
-                "height": round(((y2 - y1) / orig_h) * 100, 1),
-            })
-        dets.sort(key=lambda d: -d["confidence"])
-        dets = dets[:10]
-        print(f"[ML] {model_name}: {len(dets)} detections")
-        return dets
-    except Exception as e:
-        print(f"[ML] {model_name} error: {e}")
-        traceback.print_exc()
-        return []
-
-
-def roboflow_detect(image_bytes, model_id, model_name, conf=0.25):
-    if not ROBOFLOW_API_KEY:
-        return []
-    try:
-        import requests
-        url = f"https://serverless.roboflow.com/{model_id}?api_key={ROBOFLOW_API_KEY}"
-        resp = requests.post(url, data=image_bytes, headers={"Content-Type": "image/jpeg"}, timeout=30)
-        if resp.status_code != 200:
-            print(f"[ML] {model_name}: HTTP {resp.status_code}")
-            return []
-        result = resp.json()
-        dets = []
-        for pred in result.get("predictions", []):
-            if pred.get("confidence", 0) >= conf:
-                dets.append({
-                    "model": model_name, "label": pred.get("class", model_name.lower()),
-                    "confidence": pred.get("confidence", 0),
-                    "x": pred.get("x", 0), "y": pred.get("y", 0),
-                    "width": pred.get("width", 0), "height": pred.get("height", 0),
-                })
-        print(f"[ML] {model_name}: {len(dets)} detections")
-        return dets
-    except Exception as e:
-        print(f"[ML] {model_name} error: {e}")
-        return []
-
-
-LABEL_MAP = {
-    "crack": "crack", "cracks": "crack",
-    "Longitudinal Crack": "crack", "Transverse Crack": "crack",
-    "Alligator Crack": "crack", "surface_crack": "crack",
-    "pothole": "pothole", "potholes": "pothole",
-    "Damage": "pothole", "damage": "pothole",
-    "corrosion": "corrosion", "rust": "corrosion",
-    "spalling": "spalling", "settlement": "settlement",
-    "Defective": "rail_alignment", "defective": "rail_alignment",
-    "defect": "crack", "obstruction": "obstruction",
-}
-
-def map_label(raw):
-    if not raw: return "crack"
-    return LABEL_MAP.get(raw.strip(), LABEL_MAP.get(raw.strip().lower(), raw.strip().lower()))
 
 def estimate_severity(conf, label):
     critical = {"structural", "exposed_rebar", "settlement", "rail_alignment"}
@@ -163,10 +77,12 @@ def estimate_severity(conf, label):
 @app.get("/health")
 async def health():
     return {
-        "status": "healthy", "mode": "hitakshi-v12", "version": "12.0.0",
-        "onnx": {"available": bool(_sessions), "models": list(_sessions.keys()),
-                 "crack_exists": os.path.exists(CRACK_ONNX), "road_exists": os.path.exists(ROAD_ONNX)},
-        "roboflow": "configured" if ROBOFLOW_API_KEY else "missing",
+        "status": "healthy", "mode": "hitakshi-v13-real-yolo", "version": "13.0.0",
+        "crack_model": crack_model is not None,
+        "road_model": road_model is not None,
+        "roboflow": roboflow_client is not None,
+        "crack_classes": crack_model.names if crack_model else {},
+        "road_classes": road_model.names if road_model else {},
     }
 
 
@@ -174,77 +90,148 @@ async def health():
 async def detect_base64(request_body: dict):
     t0 = time.time()
     all_detections = []
-    models_used = []
     errors = []
 
     try:
         image_b64 = request_body.get("imageBase64", "")
-        confidence = request_body.get("confidence", 0.25)
+        confidence = float(request_body.get("confidence", 0.30))
+        imgsz = int(request_body.get("imgsz", 640))
         if not image_b64:
             return {"success": True, "model": "none", "detections": [], "count": 0, "errors": ["no image"]}
         if "," in image_b64 and image_b64.startswith("data:"):
             image_b64 = image_b64.split(",", 1)[1]
         image_bytes = base64.b64decode(image_b64)
-        if len(image_bytes) > 20 * 1024 * 1024:
-            return {"success": True, "model": "none", "detections": [], "count": 0, "errors": ["too large"]}
+        # Decode to numpy (Hitakshi uses cv2)
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if frame is None:
+            return {"success": True, "model": "none", "detections": [], "count": 0, "errors": ["decode failed"]}
     except Exception as e:
-        return {"success": True, "model": "none", "detections": [], "count": 0, "errors": [f"bad request: {e}"]}
+        return {"success": True, "model": "none", "detections": [], "count": 0, "errors": [str(e)]}
 
-    # CRACK YOLO
-    try:
-        dets = yolo_detect(image_bytes, "CRACK", CRACK_ONNX, {0: "crack"}, confidence)
-        all_detections.extend(dets)
-        if dets: models_used.append("CRACK-YOLO")
-    except Exception as e:
-        errors.append(f"crack: {e}")
+    models_used = []
 
-    # ROAD YOLO
-    try:
-        dets = yolo_detect(image_bytes, "ROAD", ROAD_ONNX, {0: "Longitudinal Crack", 1: "Transverse Crack", 2: "Alligator Crack", 3: "Potholes"}, confidence)
-        all_detections.extend(dets)
-        if dets: models_used.append("ROAD-YOLO")
-    except Exception as e:
-        errors.append(f"road: {e}")
+    # 1. CRACK (Hitakshi's exact code)
+    if crack_model is not None:
+        try:
+            results = crack_model.predict(source=frame, imgsz=imgsz, conf=confidence, iou=0.45, device="cpu", verbose=False)
+            result = results[0]
+            if result.boxes is not None and len(result.boxes) > 0:
+                boxes = result.boxes.xyxy.cpu().numpy()
+                confs = result.boxes.conf.cpu().numpy()
+                clses = result.boxes.cls.cpu().numpy().astype(int)
+                h, w = frame.shape[:2]
+                for bbox, conf, cid in zip(boxes, confs, clses):
+                    x1, y1, x2, y2 = [float(v) for v in bbox]
+                    label = result.names.get(int(cid), str(cid))
+                    all_detections.append({
+                        "model": "CRACK-YOLO", "label": label,
+                        "confidence": round(float(conf), 4),
+                        "x": round(max(0, min(100, (x1/w)*100)), 1),
+                        "y": round(max(0, min(100, (y1/h)*100)), 1),
+                        "width": round(max(1, min(100, ((x2-x1)/w)*100)), 1),
+                        "height": round(max(1, min(100, ((y2-y1)/h)*100)), 1),
+                        "severity": estimate_severity(float(conf), label.lower().replace(" ", "_")),
+                    })
+                models_used.append("CRACK-YOLO")
+                print(f"[ML] CRACK: {len(boxes)} detections")
+        except Exception as e:
+            errors.append(f"crack: {e}")
+            print(f"[ML] CRACK error: {e}")
 
-    # RAILWAY Roboflow
-    try:
-        dets = roboflow_detect(image_bytes, "railway-track-fault-detection-hrem8/3", "RAILWAY", confidence)
-        all_detections.extend(dets)
-        if dets: models_used.append("RAILWAY")
-    except Exception as e:
-        errors.append(f"railway: {e}")
+    # 2. ROAD (Hitakshi's exact code)
+    if road_model is not None:
+        try:
+            results = road_model.predict(source=frame, device="cpu", conf=confidence, iou=0.45, imgsz=imgsz, verbose=False)
+            result = results[0]
+            if result.boxes is not None and len(result.boxes) > 0:
+                boxes = result.boxes.xyxy.cpu().numpy()
+                confs = result.boxes.conf.cpu().numpy()
+                clses = result.boxes.cls.cpu().numpy().astype(int)
+                h, w = frame.shape[:2]
+                for bbox, conf, cid in zip(boxes, confs, clses):
+                    x1, y1, x2, y2 = [float(v) for v in bbox]
+                    label = result.names.get(int(cid), str(cid))
+                    all_detections.append({
+                        "model": "ROAD-YOLO", "label": label,
+                        "confidence": round(float(conf), 4),
+                        "x": round(max(0, min(100, (x1/w)*100)), 1),
+                        "y": round(max(0, min(100, (y1/h)*100)), 1),
+                        "width": round(max(1, min(100, ((x2-x1)/w)*100)), 1),
+                        "height": round(max(1, min(100, ((y2-y1)/h)*100)), 1),
+                        "severity": estimate_severity(float(conf), label.lower().replace(" ", "_")),
+                    })
+                models_used.append("ROAD-YOLO")
+                print(f"[ML] ROAD: {len(boxes)} detections")
+        except Exception as e:
+            errors.append(f"road: {e}")
+            print(f"[ML] ROAD error: {e}")
 
-    # RUST Roboflow
-    try:
-        dets = roboflow_detect(image_bytes, "corrosion-yolov8/4", "RUST", confidence)
-        all_detections.extend(dets)
-        if dets: models_used.append("RUST")
-    except Exception as e:
-        errors.append(f"rust: {e}")
+    # 3. RAILWAY (Hitakshi's exact Roboflow code)
+    if roboflow_client is not None:
+        try:
+            result = roboflow_client.infer(frame, model_id=RAILWAY_MODEL_ID)
+            preds = result.get("predictions", []) if isinstance(result, dict) else getattr(result, "predictions", [])
+            if preds:
+                h, w = frame.shape[:2]
+                for p in preds:
+                    if hasattr(p, "dict"): p = p.dict()
+                    elif hasattr(p, "__dict__"): p = vars(p)
+                    if not isinstance(p, dict): continue
+                    conf = float(p.get("confidence", 0))
+                    if conf < confidence: continue
+                    label = p.get("class", "railway_defect")
+                    px, py, pw, ph = float(p.get("x",0)), float(p.get("y",0)), float(p.get("width",0)), float(p.get("height",0))
+                    all_detections.append({
+                        "model": "RAILWAY", "label": label,
+                        "confidence": round(conf, 4),
+                        "x": round(max(0, min(100, ((px-pw/2)/w)*100)), 1),
+                        "y": round(max(0, min(100, ((py-ph/2)/h)*100)), 1),
+                        "width": round(max(1, min(100, (pw/w)*100)), 1),
+                        "height": round(max(1, min(100, (ph/h)*100)), 1),
+                        "severity": estimate_severity(conf, "rail_alignment"),
+                    })
+                models_used.append("RAILWAY")
+                print(f"[ML] RAILWAY: {len(preds)} detections")
+        except Exception as e:
+            errors.append(f"railway: {e}")
 
-    best = {}
-    for d in all_detections:
-        ml = map_label(d["label"])
-        if ml not in best or d["confidence"] > best[ml]["confidence"]:
-            best[ml] = {
-                "model": d["model"], "label": ml,
-                "confidence": round(d["confidence"], 4),
-                "boundingBox": {
-                    "x": round(max(0, min(100, d["x"])), 1),
-                    "y": round(max(0, min(100, d["y"])), 1),
-                    "width": round(max(1, min(100, d["width"])), 1),
-                    "height": round(max(1, min(100, d["height"])), 1),
-                },
-                "severity": estimate_severity(d["confidence"], ml),
-            }
+    # 4. RUST (Hitakshi's exact Roboflow code)
+    if roboflow_client is not None:
+        try:
+            result = roboflow_client.infer(frame, model_id=RUST_MODEL_ID)
+            preds = result.get("predictions", []) if isinstance(result, dict) else getattr(result, "predictions", [])
+            if preds:
+                h, w = frame.shape[:2]
+                for p in preds:
+                    if hasattr(p, "dict"): p = p.dict()
+                    elif hasattr(p, "__dict__"): p = vars(p)
+                    if not isinstance(p, dict): continue
+                    conf = float(p.get("confidence", 0))
+                    if conf < confidence: continue
+                    label = p.get("class", "corrosion")
+                    px, py, pw, ph = float(p.get("x",0)), float(p.get("y",0)), float(p.get("width",0)), float(p.get("height",0))
+                    all_detections.append({
+                        "model": "RUST", "label": label,
+                        "confidence": round(conf, 4),
+                        "x": round(max(0, min(100, ((px-pw/2)/w)*100)), 1),
+                        "y": round(max(0, min(100, ((py-ph/2)/h)*100)), 1),
+                        "width": round(max(1, min(100, (pw/w)*100)), 1),
+                        "height": round(max(1, min(100, (ph/h)*100)), 1),
+                        "severity": estimate_severity(conf, "corrosion"),
+                    })
+                models_used.append("RUST")
+                print(f"[ML] RUST: {len(preds)} detections")
+        except Exception as e:
+            errors.append(f"rust: {e}")
 
-    mapped = list(best.values())
     elapsed = time.time() - t0
-    print(f"[ML] TOTAL: {len(mapped)} detections from {models_used} in {elapsed:.1f}s")
+    print(f"[ML] TOTAL: {len(all_detections)} detections from {models_used} in {elapsed:.1f}s")
     return {
         "success": True,
         "model": "+".join(models_used) if models_used else "none",
-        "detections": mapped, "count": len(mapped),
+        "detections": all_detections,
+        "count": len(all_detections),
         "errors": errors if errors else None,
     }
 
@@ -252,9 +239,8 @@ async def detect_base64(request_body: dict):
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("ML_PORT", 8000))
-    print(f"[DRIFT ML v12] Port: {port}")
-    # Load ONNX models at startup
-    for name, path in [("CRACK", CRACK_ONNX), ("ROAD", ROAD_ONNX)]:
-        load_onnx(name, path)
-    print(f"[DRIFT ML v12] Roboflow: {'OK' if ROBOFLOW_API_KEY else 'NO KEY'}")
+    print(f"[DRIFT ML v13] Hitakshi REAL YOLO — Port: {port}")
+    print(f"[DRIFT ML v13] CRACK: {'OK' if crack_model else 'MISSING'}")
+    print(f"[DRIFT ML v13] ROAD: {'OK' if road_model else 'MISSING'}")
+    print(f"[DRIFT ML v13] Roboflow: {'OK' if roboflow_client else 'NO KEY'}")
     uvicorn.run(app, host="0.0.0.0", port=port)
