@@ -48,17 +48,32 @@ def load_onnx(name, path):
 
 def preprocess(image_bytes, size=640):
     """Decode image, resize, normalize to [0,1] CHW float32."""
-    import cv2
-    nparr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    if img is None:
-        return None, 0, 0
-    h, w = img.shape[:2]
-    resized = cv2.resize(img, (size, size))
-    rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-    tensor = rgb.astype(np.float32) / 255.0
-    tensor = tensor.transpose(2, 0, 1)[np.newaxis]  # HWC→NCHW
-    return tensor, w, h
+    try:
+        from PIL import Image as PILImage
+        import io
+        pil_img = PILImage.open(io.BytesIO(image_bytes)).convert("RGB")
+        w, h = pil_img.size
+        pil_img = pil_img.resize((size, size), PILImage.LANCZOS)
+        arr = np.array(pil_img, dtype=np.float32) / 255.0
+        tensor = arr.transpose(2, 0, 1)[np.newaxis]
+        return tensor, w, h
+    except Exception as e:
+        print(f"[ML] preprocess PIL failed: {e}")
+        try:
+            import cv2
+            nparr = np.frombuffer(image_bytes, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            if img is None:
+                return None, 0, 0
+            h, w = img.shape[:2]
+            resized = cv2.resize(img, (size, size))
+            rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+            tensor = rgb.astype(np.float32) / 255.0
+            tensor = tensor.transpose(2, 0, 1)[np.newaxis]
+            return tensor, w, h
+        except Exception as e2:
+            print(f"[ML] preprocess cv2 failed: {e2}")
+            return None, 0, 0
 
 
 def yolo_detect(image_bytes, model_name, onnx_path, class_names, conf_thresh=0.25):
