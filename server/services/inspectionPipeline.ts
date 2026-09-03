@@ -136,7 +136,7 @@ async function callGeminiVision(buffer: Buffer, mimeType: string): Promise<{ def
       }],
       generationConfig: { temperature: 0, responseMimeType: "application/json" }
     });
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 60_000);
     const response = await fetch(url, {
@@ -172,7 +172,7 @@ async function callGeminiVision(buffer: Buffer, mimeType: string): Promise<{ def
       boundingBox: parsed.boundingBoxPercent && typeof parsed.boundingBoxPercent.x === "number"
         ? { x: parsed.boundingBoxPercent.x, y: parsed.boundingBoxPercent.y, width: parsed.boundingBoxPercent.width, height: parsed.boundingBoxPercent.height }
         : null,
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash",
     };
   } catch (err) {
     console.error("[InspectionPipeline] Gemini vision error:", err instanceof Error ? err.message : String(err));
@@ -323,7 +323,7 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({ imageBase64: buffer.toString("base64"), fileName: input.fileName, confidence: 0.25, imgsz: 640 }),
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.timeout(30_000),
       });
       if (mlResponse.ok) {
         const mlData = await mlResponse.json() as any;
