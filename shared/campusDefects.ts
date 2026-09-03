@@ -2,8 +2,8 @@
  * Real defect data for IGDTUW and IIIT-Delhi campuses.
  * Uses publicly available sample images and real campus coordinates.
  *
- * IGDTUW campus center: 28.6876, 77.2100
- * IIIT-Delhi campus center: 28.5449, 77.2750
+ * IGDTUW campus center: 28.6647, 77.2325
+ * IIIT-Delhi campus center: 28.5444, 77.2725
  */
 
 export type CampusDefect = {
@@ -24,8 +24,8 @@ export type CampusDefect = {
   contractorEmail: string;
 };
 
-// Real roads around IGDTUW campus (near 28.6876, 77.2100)
-// Real roads around IIIT-Delhi campus (near 28.5449, 77.2750)
+// Real roads around IGDTUW campus (near 28.6647, 77.2325)
+// Real roads around IIIT-Delhi campus (near 28.5444, 77.2725)
 
 export const campusDefects: CampusDefect[] = [
   // ── IGDTUW Campus Defects ──
@@ -35,8 +35,8 @@ export const campusDefects: CampusDefect[] = [
     defectType: "pothole",
     severity: "medium",
     confidence: 88,
-    latitude: "28.6882",
-    longitude: "77.2098",
+    latitude: "28.6652",
+    longitude: "77.2323",
     campus: "IGDTUW",
     infrastructureType: "roads",
     imageUrl: "https://raw.githubusercontent.com/biankatpas/Cracks-and-Potholes-in-Road-Images-Dataset/master/PreviewImages/1097248_DF_070_070BDF0010_04158_RAW.jpg",
@@ -52,8 +52,8 @@ export const campusDefects: CampusDefect[] = [
     defectType: "crack",
     severity: "high",
     confidence: 92,
-    latitude: "28.6871",
-    longitude: "77.2104",
+    latitude: "28.6641",
+    longitude: "77.2329",
     campus: "IGDTUW",
     infrastructureType: "buildings",
     imageUrl: "https://raw.githubusercontent.com/biankatpas/Cracks-and-Potholes-in-Road-Images-Dataset/master/PreviewImages/1097248_DF_070_070BDF0010_04158_RAW.jpg",
@@ -69,8 +69,8 @@ export const campusDefects: CampusDefect[] = [
     defectType: "spalling",
     severity: "medium",
     confidence: 85,
-    latitude: "28.6879",
-    longitude: "77.2095",
+    latitude: "28.6649",
+    longitude: "77.2320",
     campus: "IGDTUW",
     infrastructureType: "buildings",
     imageUrl: "https://raw.githubusercontent.com/berttarosio/StructuralDefects/master/Examples/spalling_01.jpg",
@@ -86,8 +86,8 @@ export const campusDefects: CampusDefect[] = [
     defectType: "water_intrusion",
     severity: "low",
     confidence: 78,
-    latitude: "28.6865",
-    longitude: "77.2108",
+    latitude: "28.6635",
+    longitude: "77.2333",
     campus: "IGDTUW",
     infrastructureType: "drainage",
     imageUrl: "https://raw.githubusercontent.com/biankatpas/Cracks-and-Potholes-in-Road-Images-Dataset/master/PreviewImages/1097248_DF_070_070BDF0010_04158_RAW.jpg",
@@ -106,7 +106,7 @@ export const campusDefects: CampusDefect[] = [
     severity: "medium",
     confidence: 90,
     latitude: "28.5442",
-    longitude: "77.2745",
+    longitude: "77.2720",
     campus: "IIIT-Delhi",
     infrastructureType: "roads",
     imageUrl: "https://raw.githubusercontent.com/biankatpas/Cracks-and-Potholes-in-Road-Images-Dataset/master/PreviewImages/1097248_DF_070_070BDF0010_04158_RAW.jpg",
@@ -122,8 +122,8 @@ export const campusDefects: CampusDefect[] = [
     defectType: "structural",
     severity: "critical",
     confidence: 95,
-    latitude: "28.5453",
-    longitude: "77.2757",
+    latitude: "28.5447",
+    longitude: "77.2732",
     campus: "IIIT-Delhi",
     infrastructureType: "bridges",
     imageUrl: "https://raw.githubusercontent.com/berttarosio/StructuralDefects/master/Examples/cracks_01.jpg",
@@ -140,7 +140,7 @@ export const campusDefects: CampusDefect[] = [
     severity: "high",
     confidence: 87,
     latitude: "28.5440",
-    longitude: "77.2760",
+    longitude: "77.2735",
     campus: "IIIT-Delhi",
     infrastructureType: "roads",
     imageUrl: "https://raw.githubusercontent.com/biankatpas/Cracks-and-Potholes-in-Road-Images-Dataset/master/PreviewImages/1097248_DF_070_070BDF0010_04158_RAW.jpg",
@@ -157,7 +157,7 @@ export const campusDefects: CampusDefect[] = [
     severity: "critical",
     confidence: 91,
     latitude: "28.5438",
-    longitude: "77.2742",
+    longitude: "77.2717",
     campus: "IIIT-Delhi",
     infrastructureType: "bridges",
     imageUrl: "https://raw.githubusercontent.com/berttarosio/StructuralDefects/master/Examples/exposed_rebar_01.jpg",
@@ -174,7 +174,7 @@ export const campusDefects: CampusDefect[] = [
     severity: "low",
     confidence: 76,
     latitude: "28.5455",
-    longitude: "77.2735",
+    longitude: "77.2730",
     campus: "IIIT-Delhi",
     infrastructureType: "buildings",
     imageUrl: "https://raw.githubusercontent.com/berttarosio/StructuralDefects/master/Examples/corrosion_01.jpg",

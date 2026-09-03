@@ -47,10 +47,10 @@ async function seed() {
     await db.execute(
       sql`INSERT INTO assets (name, assetType, locality, latitude, longitude, criticality, status, createdat, updatedat)
           VALUES
-            ('IGDTUW Campus — Main Building', 'building', 'IGDTUW, New Delhi', '28.6876', '77.2100', 4, 'watch', NOW(), NOW()),
-            ('IGDTUW Campus — Main Road', 'road', 'IGDTUW, New Delhi', '28.6880', '77.2110', 3, 'operational', NOW(), NOW()),
-            ('IIIT-Delhi Campus — Academic Block', 'building', 'IIIT-Delhi, New Delhi', '28.5449', '77.2750', 5, 'watch', NOW(), NOW()),
-            ('IIIT-Delhi Campus — Access Road', 'road', 'IIIT-Delhi, New Delhi', '28.5440', '77.2740', 3, 'operational', NOW(), NOW()),
+            ('IGDTUW Campus — Main Building', 'building', 'IGDTUW, New Delhi', '28.6647', '77.2325', 4, 'watch', NOW(), NOW()),
+            ('IGDTUW Campus — Main Road', 'road', 'IGDTUW, New Delhi', '28.6651', '77.2333', 3, 'operational', NOW(), NOW()),
+            ('IIIT-Delhi Campus — Academic Block', 'building', 'IIIT-Delhi, New Delhi', '28.5444', '77.2725', 5, 'watch', NOW(), NOW()),
+            ('IIIT-Delhi Campus — Access Road', 'road', 'IIIT-Delhi, New Delhi', '28.5440', '77.2720', 3, 'operational', NOW(), NOW()),
             ('Delhi Ring Road — connecting corridor', 'road', 'New Delhi', '28.6163', '77.2425', 3, 'operational', NOW(), NOW())`
     );
     console.log("[Seed] Created 5 assets");
