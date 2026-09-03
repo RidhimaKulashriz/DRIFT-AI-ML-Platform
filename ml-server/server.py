@@ -264,19 +264,19 @@ async def health():
 
 
 @app.post("/detect-base64")
-async def detect_base64(body: dict):
-    image_b64 = body.get("imageBase64", "")
-    confidence = body.get("confidence", 0.25)
-    if not image_b64:
-        raise HTTPException(400, "imageBase64 required")
-    if "," in image_b64 and image_b64.startswith("data:"):
-        image_b64 = image_b64.split(",", 1)[1]
+async def detect_base64(request_body: dict):
     try:
+        image_b64 = request_body.get("imageBase64", "")
+        confidence = request_body.get("confidence", 0.25)
+        if not image_b64:
+            return {"success": False, "error": "imageBase64 required", "detections": [], "count": 0}
+        if "," in image_b64 and image_b64.startswith("data:"):
+            image_b64 = image_b64.split(",", 1)[1]
         image_bytes = base64.b64decode(image_b64)
-    except Exception:
-        raise HTTPException(400, "Invalid base64")
-    if len(image_bytes) > 20 * 1024 * 1024:
-        raise HTTPException(400, "Image too large")
+        if len(image_bytes) > 20 * 1024 * 1024:
+            return {"success": False, "error": "Image too large", "detections": [], "count": 0}
+    except Exception as e:
+        return {"success": False, "error": f"Bad request: {e}", "detections": [], "count": 0}
 
     all_detections = []
     models_used = []
