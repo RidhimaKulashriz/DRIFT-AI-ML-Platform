@@ -267,21 +267,30 @@ async def detect_base64(body: dict):
     models_used = []
     t0 = time.time()
 
+    errors = []
     try:
         dets = yolo_detect(image_bytes, "CRACK", CRACK_ONNX, {0: "crack"}, confidence)
         all_detections.extend(dets)
         if dets:
             models_used.append("CRACK-YOLO")
+        else:
+            errors.append("CRACK: 0 detections")
     except Exception as e:
+        errors.append(f"CRACK: {e}")
         print(f"[ML] CRACK error: {e}")
+        traceback.print_exc()
 
     try:
         dets = yolo_detect(image_bytes, "ROAD", ROAD_ONNX, {0: "Longitudinal Crack", 1: "Transverse Crack", 2: "Alligator Crack", 3: "Potholes"}, confidence)
         all_detections.extend(dets)
         if dets:
             models_used.append("ROAD-YOLO")
+        else:
+            errors.append("ROAD: 0 detections")
     except Exception as e:
+        errors.append(f"ROAD: {e}")
         print(f"[ML] ROAD error: {e}")
+        traceback.print_exc()
 
     try:
         dets = roboflow_detect(image_bytes, "railway-track-fault-detection-hrem8/3", "RAILWAY", confidence)
@@ -324,6 +333,7 @@ async def detect_base64(body: dict):
         "model": "+".join(models_used) if models_used else "none",
         "detections": mapped,
         "count": len(mapped),
+        "errors": errors if errors else None,
     }
 
 
