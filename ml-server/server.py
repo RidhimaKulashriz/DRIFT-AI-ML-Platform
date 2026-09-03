@@ -70,47 +70,45 @@ def preprocess_image(image_bytes, target_size=640):
 
 
 def postprocess_output(output, orig_w, orig_h, conf_threshold=0.25, input_size=640):
-    """Parse YOLO ONNX output into detections."""
-    # YOLO output shape: [1, num_classes+4, num_detections] or [1, num_detections, num_classes+4]
-    preds = output[0]
+    """Parse YOLO ONNX output into detections.
+    YOLOv8 ONNX shape: [1, 4+num_classes, num_detections] (features-first)
+    """
+    preds = output[0]  # Remove batch dim
     if preds.ndim == 3:
-        preds = preds[0]  # [num_detections, num_classes+4]
+        preds = preds[0]  # [4+num_classes, num_detections]
 
-    detections = []
-    num_features = preds.shape[-1]
-
-    # Standard YOLO format: [x_center, y_center, w, h, class1_score, class2_score, ...]
-    boxes = preds[:, :4]
-    scores = preds[:, 4:]
-
-    # Get best class for each detection
+    # YOLOv8 format: [4+num_classes, num_detections]
+    # First 4 rows = box coords, rest = class scores
+    if preds.shape[0] < preds.shape[1]:
+        # Shape is [features, detections] — transpose to [detections, features]
+        preds = preds.T
+    
+    num_features = preds.shape[1]
+    num_classes = num_features - 4
+    
+    boxes = preds[:, :4]      # [N, 4]: x_center, y_center, w, h
+    scores = preds[:, 4:]     # [N, num_classes]: class scores
+    
     class_ids = np.argmax(scores, axis=1)
     confidences = np.max(scores, axis=1)
-
-    # Filter by confidence
+    
     mask = confidences >= conf_threshold
     boxes = boxes[mask]
     class_ids = class_ids[mask]
     confidences = confidences[mask]
-
-    # Scale boxes from input size back to original image size
+    
     scale_x = orig_w / input_size
     scale_y = orig_h / input_size
-
+    
+    detections = []
     for i in range(len(boxes)):
         x_center, y_center, w, h = boxes[i]
-        # Convert from center format to corner format
         x1 = (x_center - w / 2) * scale_x
         y1 = (y_center - h / 2) * scale_y
         x2 = (x_center + w / 2) * scale_x
         y2 = (y_center + h / 2) * scale_y
-
-        # Clip to image bounds
-        x1 = max(0, x1)
-        y1 = max(0, y1)
-        x2 = min(orig_w, x2)
-        y2 = min(orig_h, y2)
-
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(orig_w, x2), min(orig_h, y2)
         detections.append({
             "class_id": int(class_ids[i]),
             "confidence": float(confidences[i]),
@@ -119,7 +117,7 @@ def postprocess_output(output, orig_w, orig_h, conf_threshold=0.25, input_size=6
             "width": float(x2 - x1),
             "height": float(y2 - y1),
         })
-
+    
     return detections
 
 
@@ -265,23 +263,31 @@ async def detect_base64(body: dict):
     models_used = []
     t0 = time.time()
 
-    # 1. CRACK detection — Hitakshi's YOLO ONNX model
-    dets = yolo_onnx_detect(
-        image_bytes, "CRACK", CRACK_ONNX,
-        {0: "crack", 1: "defect"}, confidence
-    )
-    all_detections.extend(dets)
-    if dets:
-        models_used.append("CRACK-YOLO")
+    try:
+        # 1. CRACK detection — Hitakshi's YOLO ONNX model
+        dets = yolo_onnx_detect(
+            image_bytes, "CRACK", CRACK_ONNX,
+            {0: "crack", 1: "defect"}, confidence
+        )
+        all_detections.extend(dets)
+        if dets:
+            models_used.append("CRACK-YOLO")
+    except Exception as e:
+        print(f"[ML] CRACK detection error: {e}")
+        traceback.print_exc()
 
-    # 2. ROAD detection — Hitakshi's YOLO ONNX model
-    dets = yolo_onnx_detect(
-        image_bytes, "ROAD", ROAD_ONNX,
-        {0: "pothole", 1: "road-damage", 2: "crack"}, confidence
-    )
-    all_detections.extend(dets)
-    if dets:
-        models_used.append("ROAD-YOLO")
+    try:
+        # 2. ROAD detection — Hitakshi's YOLO ONNX model
+        dets = yolo_onnx_detect(
+            image_bytes, "ROAD", ROAD_ONNX,
+            {0: "pothole", 1: "road-damage", 2: "crack"}, confidence
+        )
+        all_detections.extend(dets)
+        if dets:
+            models_used.append("ROAD-YOLO")
+    except Exception as e:
+        print(f"[ML] ROAD detection error: {e}")
+        traceback.print_exc()
 
     # 3. RAILWAY detection — Hitakshi's Roboflow model
     dets = roboflow_detect(image_bytes, "railway-track-fault-detection-hrem8/3", "RAILWAY", confidence)
