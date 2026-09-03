@@ -68,6 +68,11 @@ async function callProductionCv(input: InferenceInput): Promise<z.infer<typeof c
       return null;
     }
     const raw = await response.json() as any;
+    // Accept the canonical DRIFT envelope and the flat production-CV contract.
+    if (raw && typeof raw.model === "string" && typeof raw.label === "string" && typeof raw.confidence === "number" && raw.boundingBox) {
+      const parsed = cvResponseSchema.safeParse({ model: raw.model, label: mapDefectLabel(raw.label), confidence: raw.confidence, boundingBox: raw.boundingBox, coveragePercent: raw.coveragePercent, uncertainty: raw.uncertainty, calibrationVersion: raw.calibrationVersion });
+      if (parsed.success) return parsed.data;
+    }
     // Hitakshi's server returns { success, detections: [{model, label, confidence, boundingBox, severity}] }
     if (raw && raw.success && Array.isArray(raw.detections) && raw.detections.length > 0) {
       // Take the highest-confidence detection

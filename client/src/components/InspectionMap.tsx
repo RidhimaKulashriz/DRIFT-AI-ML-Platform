@@ -1,6 +1,7 @@
 /// <reference types="google.maps" />
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { VERIFIED_CAMPUS_COORDINATES } from "@shared/campusCoordinates";
 
 type Severity = "low" | "medium" | "high" | "critical";
 type MapDefect = { id: number; label: string; severity: Severity; latitude: string | number; longitude: string | number; isTransient?: boolean };
@@ -105,8 +106,8 @@ function LeafletFallbackMap({ defects, telemetry, selectedId, onSelect }: {
 
     // Add campus labels
     const campusStyle = { className: "campus-label" };
-    L.marker([28.6876, 77.2100], { icon: L.divIcon({ className: "campus-marker", html: '<div style="background:#1e40af;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">IGDTUW</div>', iconSize: [60, 20], iconAnchor: [30, 10] }) }).addTo(map);
-    L.marker([28.5449, 77.2750], { icon: L.divIcon({ className: "campus-marker", html: '<div style="background:#047857;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">IIIT-Delhi</div>', iconSize: [70, 20], iconAnchor: [35, 10] }) }).addTo(map);
+    L.marker([VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude], { icon: L.divIcon({ className: "campus-marker", html: '<div style="background:#1e40af;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">IGDTUW</div>', iconSize: [60, 20], iconAnchor: [30, 10] }) }).addTo(map);
+    L.marker([VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude], { icon: L.divIcon({ className: "campus-marker", html: '<div style="background:#047857;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">IIIT-Delhi</div>', iconSize: [70, 20], iconAnchor: [35, 10] }) }).addTo(map);
 
     return () => { map.remove(); mapRef.current = null; };
   }, [ready]);
@@ -151,7 +152,7 @@ function LeafletFallbackMap({ defects, telemetry, selectedId, onSelect }: {
     });
 
     // Add campus reference points to bounds (campus markers themselves are created in init effect)
-    bounds.push([28.6876, 77.2100], [28.5449, 77.2750]);
+    bounds.push([VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude], [VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude]);
 
     if (bounds.length > 0) {
       map.fitBounds(bounds, { padding: [40, 40] });
@@ -256,15 +257,15 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     }
 
     // Campus markers
-    const igdtuwMarker = new window.google.maps.Marker({ map, position: { lat: 28.6876, lng: 77.2100 }, title: "IGDTUW Campus", label: { text: "IGDTUW", color: "#ffffff", fontSize: "10px", fontWeight: "700" }, icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: "#1e40af", fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 10 } });
+    const igdtuwMarker = new window.google.maps.Marker({ map, position: { lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude }, title: "IGDTUW Campus", label: { text: "IGDTUW", color: "#ffffff", fontSize: "10px", fontWeight: "700" }, icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: "#1e40af", fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 10 } });
     igdtuwMarker.addListener("click", () => { infoWindow.setContent('<div style="font:13px Arial,sans-serif"><b>IGDTUW Campus</b><br/>Contractor: Manu<br/>ridhimakulashri07042025@gmail.com</div>'); infoWindow.open({ map, anchor: igdtuwMarker }); });
     projectMarkers.current.push(igdtuwMarker);
-    bounds.extend({ lat: 28.6876, lng: 77.2100 });
+    bounds.extend({ lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude });
 
-    const iiitdMarker = new window.google.maps.Marker({ map, position: { lat: 28.5449, lng: 77.2750 }, title: "IIIT-Delhi Campus", label: { text: "IIIT-D", color: "#ffffff", fontSize: "10px", fontWeight: "700" }, icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: "#047857", fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 10 } });
+    const iiitdMarker = new window.google.maps.Marker({ map, position: { lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude }, title: "IIIT-Delhi Campus", label: { text: "IIIT-D", color: "#ffffff", fontSize: "10px", fontWeight: "700" }, icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: "#047857", fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 10 } });
     iiitdMarker.addListener("click", () => { infoWindow.setContent('<div style="font:13px Arial,sans-serif"><b>IIIT-Delhi Campus</b><br/>Contractor: Ridhima Kulashriz<br/>ridhimakulashriz@gmail.com</div>'); infoWindow.open({ map, anchor: iiitdMarker }); });
     projectMarkers.current.push(iiitdMarker);
-    bounds.extend({ lat: 28.5449, lng: 77.2750 });
+    bounds.extend({ lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude });
 
     if (validDefects.length || (shouldShowTelemetry && validTelemetry.length)) map.fitBounds(bounds, 54);
   }, [mapState, onSelect, selectedId, shouldShowTelemetry, validDefects, validTelemetry]);
@@ -292,7 +293,7 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     if (!map || !selectedDefect || !window.google?.maps) return;
     setStreetViewStatus("checking");
     try {
-      const response = await new window.google.maps.StreetViewService().getPanorama({ location: selectedDefect.point, radius: 250 });
+      const response = await new window.google.maps.StreetViewService().getPanorama({ location: selectedDefect.point, radius: 1000, source: window.google.maps.StreetViewSource.DEFAULT });
       const pano = response.data.location?.pano;
       if (!pano) throw new Error("No panorama");
       const panorama = map.getStreetView();
@@ -336,7 +337,7 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     {mapState === "error" && <div className="absolute inset-0 grid place-items-center bg-slate-950 p-8 text-center text-xs font-semibold uppercase tracking-[.14em] text-slate-200"><div><strong className="block text-sm text-white">Google Maps could not load</strong><span className="mt-3 block max-w-md normal-case font-normal leading-5 tracking-normal text-slate-400">Set VITE_GOOGLE_MAPS_API_KEY on Vercel to enable Google Maps.</span></div></div>}
     <div className="pointer-events-none absolute left-3 top-3 z-10 max-w-[calc(100%-1.5rem)] bg-slate-950/95 px-3 py-2 text-[10px] font-semibold uppercase tracking-[.13em] text-slate-100 shadow-xl"><div>{validDefects.length} defect{validDefects.length === 1 ? "" : "s"} &middot; {validTelemetry.length} telemetry {shouldShowTelemetry ? "points" : "hidden"}</div><div className="mt-2 flex flex-wrap gap-2 text-[9px] tracking-[.08em]">{severityCounts.map(item => <span key={item.severity} className="flex items-center gap-1"><i className="h-2 w-2 rounded-full" style={{ backgroundColor: colors[item.severity] }} />{item.count} {item.severity}</span>)}</div></div>
     <div className="absolute bottom-3 left-3 right-3 z-10 flex flex-wrap items-center gap-2 bg-slate-950/95 p-2.5 text-[9px] font-semibold uppercase tracking-[.1em] text-slate-100 shadow-xl"><span className="mr-auto">Defect markers &middot; Campus boundaries</span><button type="button" onClick={focusTemporaryGrid} disabled={!transientDefects.length || mapState !== "ready"} className="pointer-events-auto border border-emerald-300/70 bg-emerald-900/90 px-2.5 py-1.5 text-[9px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">FOCUS CAMPUSES</button><button type="button" onClick={() => setTelemetryVisible(current => !current)} disabled={!validTelemetry.length || mapState !== "ready"} className="pointer-events-auto border border-cyan-300/70 bg-cyan-900/90 px-2.5 py-1.5 text-[9px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">{shouldShowTelemetry ? "HIDE TELEMETRY" : `SHOW ${validTelemetry.length} TELEMETRY`}</button><button type="button" onClick={openStreetView} disabled={!selectedDefect || mapState !== "ready" || streetViewStatus === "checking"} className="pointer-events-auto border border-sky-300/70 bg-sky-900/90 px-2.5 py-1.5 text-[9px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-60">{streetViewStatus === "checking" ? "CHECKING" : "STREET VIEW"}</button></div>
-    {streetViewStatus === "unavailable" && <div className="absolute bottom-16 left-3 z-10 max-w-xs bg-amber-950/95 px-3 py-2 text-[10px] leading-4 text-amber-50 shadow-xl" role="status">Street View is not available within 250m of this coordinate.</div>}
+    {streetViewStatus === "unavailable" && <div className="absolute bottom-16 left-3 z-10 max-w-xs bg-amber-950/95 px-3 py-2 text-[10px] leading-4 text-amber-50 shadow-xl" role="status">Street View is not available within 1 km of this coordinate; campus interiors may not have official road imagery.</div>}
     {streetViewStatus === "open" && <div className="absolute bottom-16 left-3 z-10 max-w-xs bg-sky-950/95 px-3 py-2 text-[10px] leading-4 text-sky-50 shadow-xl" role="status">Street View opened for the selected coordinate.</div>}
   </section>;
 }

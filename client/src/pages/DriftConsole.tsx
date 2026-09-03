@@ -323,7 +323,7 @@ export default function DriftConsole() {
   });
   const selectedTransientFinding = transientSimulatorRun?.findings.find((_, index) => -(index + 1) === selectedId);
   const selected = defects.find(defect => defect.id === selectedId) ?? (selectedTransientFinding ? { id: selectedId, label: selectedTransientFinding.title, defectType: selectedTransientFinding.label, severity: selectedTransientFinding.score.severity, zeroErrorScore: selectedTransientFinding.score.score, confidencePercent: Math.round(selectedTransientFinding.confidence * 100), coveragePercent: null, latitude: selectedTransientFinding.latitude, longitude: selectedTransientFinding.longitude, status: "detected", reviewState: "pending", missionId: 0, assetId: 0, inspectionDomain: "infrastructure", explanation: selectedTransientFinding.score.explanation } : defects[0] ?? { id: 0, label: "No finding selected", defectType: "structural", severity: "low" as Severity, zeroErrorScore: 0, confidencePercent: 0, coveragePercent: null, latitude: "—", longitude: "—", status: "detected", reviewState: "pending", missionId: 0, assetId: 0, explanation: ["Run an inspection scan to detect infrastructure defects."] });
-  const selectedExplanation = Array.isArray(selected.explanation) ? selected.explanation.filter((item): item is string => typeof item === "string") : [];
+  const selectedExplanation = Array.isArray(selected.explanation) ? selected.explanation.filter((item: unknown): item is string => typeof item === "string") : [];
   const selectedEvidenceId = (selected as typeof selected & { evidenceId?: number | null }).evidenceId;
   const selectedEvidence = selectedEvidenceId ? evidenceItems.find(item => item.id === selectedEvidenceId && item.source !== "reference") : undefined;
   const visibleDefects = useMemo(() => defects.filter(defect =>
@@ -502,7 +502,9 @@ export default function DriftConsole() {
       ? contractorData.find(c => Math.sqrt((lat - c.centerLat) ** 2 + (lng - c.centerLng) ** 2) <= c.radiusDegrees)
       : contractorData[0];
     const contractorName = matchedContractor?.name ?? "Unassigned";
-    const priority = calculateOverallPriority({ defectSeverity: { pothole: 45, crack: 55, structural: 85, corrosion: 70, spalling: 75, exposed_rebar: 88, water_intrusion: 60, settlement: 90, rail_alignment: 82, obstruction: 40, lighting_failure: 50 }[selected.defectType] ?? 50, mlConfidence: (selected.confidencePercent ?? 0) / 100, trafficImpact: 0, sensorAnomaly: 0, infrastructureCriticality: 3 }, selected.defectType);
+    const severityImpact = { pothole: 45, crack: 55, structural: 85, corrosion: 70, spalling: 75, exposed_rebar: 88, water_intrusion: 60, settlement: 90, rail_alignment: 82, obstruction: 40, lighting_failure: 50 } as const;
+    const selectedDefectType = String(selected.defectType) as keyof typeof severityImpact;
+    const priority = calculateOverallPriority({ defectSeverity: severityImpact[selectedDefectType] ?? 50, mlConfidence: (selected.confidencePercent ?? 0) / 100, trafficImpact: 0, sensorAnomaly: 0, infrastructureCriticality: 3 }, String(selected.defectType));
     sendReportEmail.mutate({
       ticketId: lastTicketId ?? undefined,
       subject: `DRIFT inspection report · ${selected.label} · ${contractorName}`,

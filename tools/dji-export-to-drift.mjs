@@ -31,23 +31,14 @@ const DEFAULT_TOKEN = "drift_ingest_2026_secure";
 const DEFAULT_MISSION_ID = 1;
 const DEFAULT_WATCH_DIR = path.join(process.cwd(), "drift-media");
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-type GpsCoords = { latitude: number; longitude: number };
-type ExifData = {
-  Latitude?: number;
-  Longitude?: number;
-  GPSLatitude?: number;
-  GPSLongitude?: number;
-  GPSLatitudeRef?: string;
-  GPSLongitudeRef?: string;
-};
+// ─── Runtime helpers ─────────────────────────────────────────────────────────
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-function toRadians(deg: number): number {
+function toRadians(deg) {
   return (deg * Math.PI) / 180;
 }
 
-function extractGps(exif: ExifData): GpsCoords | null {
+function extractGps(exif) {
   // DD format (already decimal)
   if (typeof exif.Latitude === "number" && typeof exif.Longitude === "number") {
     return { latitude: exif.Latitude, longitude: exif.Longitude };
@@ -62,7 +53,7 @@ function extractGps(exif: ExifData): GpsCoords | null {
   return null;
 }
 
-async function getFileBase64(filePath: string): Promise<string> {
+async function getFileBase64(filePath) {
   return new Promise((resolve, reject) => {
     fs.readFile(filePath, (err, data) => {
       if (err) reject(err);
@@ -71,8 +62,7 @@ async function getFileBase64(filePath: string): Promise<string> {
   });
 }
 
-function distanceCheck(coords: GpsCoords, igdtuw: GpsCoords, iiitd: GpsCoords): string {
-  const degToKm = (deg: number) => deg * 111;
+function distanceCheck(coords, igdtuw, iiitd) {
 
   const distIgdtuw = Math.sqrt(
     Math.pow(coords.latitude - igdtuw.latitude, 2) + Math.pow(coords.longitude - igdtuw.longitude, 2)
@@ -87,29 +77,14 @@ function distanceCheck(coords: GpsCoords, igdtuw: GpsCoords, iiitd: GpsCoords): 
   return "Corridor";
 }
 
-function sendEvidence(args: {
-  backend: string;
-  token: string;
-  missionId: number;
-  fileName: string;
-  mimeType: string;
-  base64: string;
-  mediaKind: "photo" | "video";
-  latitude: number;
-  longitude: number;
-  altitude: number;
-  timestamp: number;
-  batteryPercent: number;
-  cameraId: string;
-}): Promise<{ status: number; body: any }> {
+function sendEvidence(args) {
   const payload = JSON.stringify({
     missionId: args.missionId,
     fileName: args.fileName,
     mimeType: args.mimeType,
     base64: `data:${args.mimeType};base64,${args.base64}`,
     mediaKind: args.mediaKind,
-    latitude: args.latitude,
-    longitude: args.longitude,
+    ...(args.latitude !== null && args.longitude !== null ? { latitude: args.latitude, longitude: args.longitude } : {}),
     altitude: args.altitude,
     timestamp: args.timestamp,
     batteryPercent: args.batteryPercent,
@@ -125,7 +100,7 @@ function sendEvidence(args: {
   });
 
   const url = new URL(args.backend);
-  const options: https.RequestOptions = {
+  const options = {
     hostname: url.hostname,
     port: url.port || 443,
     path: "/api/drift/evidence",
@@ -155,16 +130,7 @@ function sendEvidence(args: {
   });
 }
 
-async function sendTelemetry(args: {
-  backend: string;
-  token: string;
-  missionId: number;
-  latitude: number;
-  longitude: number;
-  altitude: number;
-  speedMps: number;
-  batteryPercent: number;
-}): Promise<{ status: number; body: any }> {
+async function sendTelemetry(args) {
   const payload = JSON.stringify({
     missionId: args.missionId,
     latitude: args.latitude,
@@ -176,7 +142,7 @@ async function sendTelemetry(args: {
   });
 
   const url = new URL(args.backend);
-  const options: https.RequestOptions = {
+  const options = {
     hostname: url.hostname,
     port: url.port || 443,
     path: "/api/drift/telemetry",
@@ -224,8 +190,8 @@ const token = opts.token ?? DEFAULT_TOKEN;
 const missionId = Number(opts.missionId ?? DEFAULT_MISSION_ID);
 const watchDir = path.resolve(opts.watchDir ?? DEFAULT_WATCH_DIR);
 
-const igdtuwCoords = { latitude: 28.6876, longitude: 77.21 };
-const iiitdCoords = { latitude: 28.5449, longitude: 77.275 };
+const igdtuwCoords = { latitude: 28.6647, longitude: 77.2325 };
+const iiitdCoords = { latitude: 28.5444, longitude: 77.2725 };
 
 console.log("┌────────────────────────────────────────────────┐");
 console.log("│  DRIFT Bridge — DJI Mini 3 Pro → Backend     │");
@@ -250,7 +216,7 @@ if (!fs.existsSync(watchDir)) {
 
 // Start watcher
 const watcher = chokidar.watch(watchDir, {
-  ignored: /(?:\$|\.)/\w/, // ignore dotfiles
+  ignored: /(?:^|[\\/])\./, // ignore dotfiles
   persistent: true,
   ignoreInitial: true,
   awaitWriteFinish: { stabilityThreshold: 2000, pollInterval: 200 },
@@ -260,11 +226,13 @@ console.log("👀 Watching for new photos...\n");
 
 watcher.on("add", async (filePath) => {
   const ext = path.extname(filePath).toLowerCase();
-  if (![".jpg", ".jpeg", ".png", ".webp"].includes(ext)) return;
+  const supportedExtensions = [".jpg", ".jpeg", ".png", ".webp", ".mp4", ".mov", ".m4v", ".webm"];
+  if (!supportedExtensions.includes(ext)) return;
 
   const fileName = path.basename(filePath);
-  const mimeType = mime.lookup(ext) || "image/jpeg";
-  console.log(`📸 New photo: ${fileName}`);
+  const mimeType = mime.lookup(ext) || (ext === ".mov" ? "video/quicktime" : ext === ".webm" ? "video/webm" : ext.startsWith(".mp") ? "video/mp4" : "image/jpeg");
+  const mediaKind = mimeType.startsWith("video/") ? "video" : "photo";
+  console.log(`📥 New ${mediaKind}: ${fileName}`);
 
   try {
     // Read image as base64
@@ -272,47 +240,33 @@ watcher.on("add", async (filePath) => {
     console.log(`   → Base64 extracted (${(base64.length / 1024).toFixed(0)} KB)`);
 
     // Read EXIF for GPS
-    let gps: GpsCoords | null = null;
+    let gps = null;
     try {
-      const exif = await parse(filePath) as any;
+      const exif = await parse(filePath);
       if (exif) {
-        gps = extractGps(exif as ExifData) ?? null;
+        gps = extractGps(exif) ?? null;
       }
     } catch (exifErr) {
       console.log(`   → No GPS EXIF data (drone media may not embed GPS)`);
     }
 
-    // If no GPS in EXIF, try to use last known telemetry or fallback to a default
-    let latitude: number;
-    let longitude: number;
     if (gps) {
-      latitude = gps.latitude;
-      longitude = gps.longitude;
-      console.log(`   → GPS: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+      console.log(`   → GPS: ${gps.latitude.toFixed(6)}, ${gps.longitude.toFixed(6)}`);
     } else {
-      // Fallback: alternate between campuses for demo
-      const toggle = Math.random() > 0.5;
-      latitude = toggle ? igdtuwCoords.latitude : iiitdCoords.latitude;
-      longitude = toggle ? igdtuwCoords.longitude : iiitdCoords.longitude;
-      console.log(`   → No GPS found — assigning to ${distanceCheck({ latitude, longitude }, igdtuwCoords, iiitdCoords)} (demo fallback)`);
+      console.log("   → No GPS found — sending media without location; assign a campus in the dashboard before review.");
     }
-
-    // Determine campus
-    const campus = distanceCheck({ latitude, longitude }, igdtuwCoords, iiitdCoords);
+    const latitude = gps?.latitude ?? null;
+    const longitude = gps?.longitude ?? null;
+    const campus = gps ? distanceCheck(gps, igdtuwCoords, iiitdCoords) : "Unknown";
     console.log(`   → Campus: ${campus}`);
 
-    // Send telemetry (simulated drone position)
-    const telResult = await sendTelemetry({
-      backend,
-      token,
-      missionId,
-      latitude,
-      longitude,
-      altitude: 45,
-      speedMps: 6,
-      batteryPercent: 92,
-    });
-    console.log(`   → Telemetry: ${telResult.status} ${telResult.body?.acceptedAt ? "accepted" : telResult.body?.error || ""}`);
+    // Send telemetry only when the media contains real GPS coordinates.
+    if (latitude !== null && longitude !== null) {
+      const telResult = await sendTelemetry({ backend, token, missionId, latitude, longitude, altitude: 45, speedMps: 6, batteryPercent: 92 });
+      console.log(`   → Telemetry: ${telResult.status} ${telResult.body?.acceptedAt ? "accepted" : telResult.body?.error || ""}`);
+    } else {
+      console.log("   → Telemetry skipped because GPS is unavailable.");
+    }
 
     // Send evidence with inference enabled
     const result = await sendEvidence({
@@ -320,9 +274,9 @@ watcher.on("add", async (filePath) => {
       token,
       missionId,
       fileName,
-      mimeType: mimeType as string,
+      mimeType: mimeType,
       base64,
-      mediaKind: "photo",
+      mediaKind,
       latitude,
       longitude,
       altitude: 45,

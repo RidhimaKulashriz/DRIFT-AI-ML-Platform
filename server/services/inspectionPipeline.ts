@@ -24,6 +24,7 @@ import { sendContractorEmail, type EmailPayload } from "./emailService";
 import { findContractorByLocation } from "../../shared/contractors";
 import { calculateOverallPriority, formatRepairCost } from "../../shared/priorityScoring";
 import { extractFramesFromVideo, type VideoFrame } from "./videoFrameExtractor";
+import { defects as defectsTable } from "../../drizzle/schema";
 
 export type InspectionPipelineInput = {
   fileName: string | null;
@@ -55,7 +56,7 @@ export type InspectionPipelineResult = {
   emailError?: string;
   locationUsed?: { latitude: number; longitude: number; source: string } | null;
   campusVerified?: { id: number; name: string; shortName: string; latitude: number; longitude: number } | null;
-  mlUsed?: { source: "gemini" | "fallback-deterministic"; model: string; confidence: number; defectType: string | null; severity: string | null };
+  mlUsed?: { source: "gemini" | "hitakshi-ml" | "no-ml-configured" | "fallback-deterministic"; model: string; confidence: number; defectType: string | null; severity: string | null };
   videoFrames?: VideoFrame[]; // For video uploads
   frameDetections?: Array<{ frameIndex: number; detection: any }>; // Per-frame detection results
   durationMs?: number;
@@ -318,7 +319,7 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
 
   if (db) {
     try {
-      const { assets, missions, evidence, defects, reports, repairEstimates, campusLocations, InsertAsset, InsertMission, InsertEvidence, InsertDefect, InsertReport } = await import("../../drizzle/schema");
+      const { assets, missions, evidence } = await import("../../drizzle/schema");
       const { sql, eq } = await import("drizzle-orm");
 
       // Use first asset for demo, or create a new one
@@ -362,10 +363,7 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
           originalCaptureRequired: true,
           notSimulator: true,
         },
-        attachmentData: {
-          ...stored.attachmentData,
-          ...(isVideo && { frameCount: videoFrames.length, frameStorageKeys }),
-        },
+        attachmentData: Buffer.isBuffer(stored.attachmentData) ? stored.attachmentData : null,
       }).returning({ id: evidence.id });
       evidenceId = newEvidence?.id ?? null;
     } catch (dbErr) {
@@ -503,7 +501,7 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
   let detectionId: number | null = null;
   if (mlResult.defectType && db && evidenceId) {
     try {
-      const { defects } = await import("../../drizzle/schema");
+
       const severityMap: Record<string, number> = { pothole: 45, crack: 55, structural: 85, corrosion: 70, spalling: 75, exposed_rebar: 88, water_intrusion: 60, settlement: 90, rail_alignment: 82, obstruction: 40, lighting_failure: 50 };
       const priority = calculateOverallPriority({
         defectSeverity: severityMap[mlResult.defectType] ?? 50,
@@ -513,7 +511,7 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
         infrastructureCriticality: input.assetCriticality,
       }, mlResult.defectType);
 
-      const [newDefect] = await db.insert(defects).values({
+      const [newDefect] = await db.insert(defectsTable as any).values({
         missionId: missionId ?? 0,
         assetId: assetId ?? 1,
         evidenceId: evidenceId,
@@ -536,9 +534,9 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
           ...(isVideo ? [`Video frame: ${frameDetections.findIndex(f => f.detection.defectType === mlResult.defectType) + 1}/${videoFrames.length}`] : []),
         ],
         correlationKey: `inspection-${missionId ?? "0"}-evidence-${evidenceId}`,
-      }).returning({ id: defects.id });
+      }).returning({ id: defectsTable.id });
       detectionId = newDefect?.id ?? null;
-      detectionIds.push(detectionId);
+      if (detectionId !== null) detectionIds.push(detectionId);
     } catch (e) {
       console.warn("[InspectionPipeline] Detection persist failed:", e);
     }
@@ -547,7 +545,7 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
   // For videos, also persist detections for each frame that has a defect
   if (isVideo && frameDetections.length > 0 && db && evidenceId) {
     try {
-      const { defects } = await import("../../drizzle/schema");
+
       const severityMap: Record<string, number> = { pothole: 45, crack: 55, structural: 85, corrosion: 70, spalling: 75, exposed_rebar: 88, water_intrusion: 60, settlement: 90, rail_alignment: 82, obstruction: 40, lighting_failure: 50 };
 
       for (const frameDetection of frameDetections) {
@@ -561,7 +559,7 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
             infrastructureCriticality: input.assetCriticality,
           }, frameMlResult.defectType);
 
-          const [newFrameDefect] = await db.insert(defects).values({
+          const [newFrameDefect] = await db.insert(defectsTable as any).values({
             missionId: missionId ?? 0,
             assetId: assetId ?? 1,
             evidenceId: evidenceId,
@@ -584,7 +582,7 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
               `Video frame: ${frameDetection.frameIndex + 1}/${videoFrames.length} (${videoFrames[frameDetection.frameIndex].timestamp.toFixed(1)}s)`,
             ],
             correlationKey: `inspection-${missionId ?? "0"}-evidence-${evidenceId}-frame-${frameDetection.frameIndex}`,
-          }).returning({ id: defects.id });
+          }).returning({ id: defectsTable.id });
           
           if (newFrameDefect?.id) {
             detectionIds.push(newFrameDefect.id);
