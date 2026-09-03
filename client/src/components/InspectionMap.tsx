@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { VERIFIED_CAMPUS_COORDINATES } from "@shared/campusCoordinates";
+import { CAMPUS_MAP_DATA, CAMPUS_REFERENCE_RADIUS_METERS, campusPopupHtml, campusPopupText } from "@shared/campusMapData";
 
 type Severity = "low" | "medium" | "high" | "critical";
 type MapDefect = { id: number; label: string; severity: Severity; latitude: string | number; longitude: string | number; isTransient?: boolean };
@@ -104,10 +105,16 @@ function LeafletFallbackMap({ defects, telemetry, selectedId, onSelect }: {
 
     mapRef.current = map;
 
-    // Add campus labels
-    const campusStyle = { className: "campus-label" };
-    L.marker([VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude], { icon: L.divIcon({ className: "campus-marker", html: '<div style="background:#1e40af;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">IGDTUW</div>', iconSize: [60, 20], iconAnchor: [30, 10] }) }).addTo(map);
-    L.marker([VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude], { icon: L.divIcon({ className: "campus-marker", html: '<div style="background:#047857;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">IIIT-Delhi</div>', iconSize: [70, 20], iconAnchor: [35, 10] }) }).addTo(map);
+    // These are official campus reference points, not surveyed boundaries.
+    const campusPoints = [
+      [VERIFIED_CAMPUS_COORDINATES.IGDTUW, CAMPUS_MAP_DATA.IGDTUW, [60, 20]],
+      [VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI, CAMPUS_MAP_DATA.IIIT_DELHI, [70, 20]],
+    ] as const;
+    campusPoints.forEach(([point, campus, iconSize]) => {
+      L.marker([point.latitude, point.longitude], { icon: L.divIcon({ className: "campus-marker", html: `<div style="background:${campus.color};color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap">${campus.shortName}</div>`, iconSize, iconAnchor: [iconSize[0] / 2, 10] }) })
+        .bindPopup(campusPopupText(campus)).addTo(map);
+      L.circle([point.latitude, point.longitude], { radius: CAMPUS_REFERENCE_RADIUS_METERS, color: campus.color, fillColor: campus.color, fillOpacity: 0.08, weight: 1, dashArray: "4 4" }).bindTooltip(`${campus.shortName} · approximate reference area`).addTo(map);
+    });
 
     return () => { map.remove(); mapRef.current = null; };
   }, [ready]);
@@ -256,15 +263,17 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
       });
     }
 
-    // Campus markers
-    const igdtuwMarker = new window.google.maps.Marker({ map, position: { lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude }, title: "IGDTUW Campus", label: { text: "IGDTUW", color: "#ffffff", fontSize: "10px", fontWeight: "700" }, icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: "#1e40af", fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 10 } });
-    igdtuwMarker.addListener("click", () => { infoWindow.setContent('<div style="font:13px Arial,sans-serif"><b>IGDTUW Campus</b><br/>Contractor: Manu<br/>ridhimakulashri07042025@gmail.com</div>'); infoWindow.open({ map, anchor: igdtuwMarker }); });
+    // Official campus reference points plus a clearly approximate context radius.
+    const igdtuwMarker = new window.google.maps.Marker({ map, position: { lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude }, title: CAMPUS_MAP_DATA.IGDTUW.name, label: { text: "IGDTUW", color: "#ffffff", fontSize: "10px", fontWeight: "700" }, icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: CAMPUS_MAP_DATA.IGDTUW.color, fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 10 } });
+    igdtuwMarker.addListener("click", () => { infoWindow.setContent(campusPopupHtml(CAMPUS_MAP_DATA.IGDTUW)); infoWindow.open({ map, anchor: igdtuwMarker }); });
     projectMarkers.current.push(igdtuwMarker);
+    new window.google.maps.Circle({ map, center: { lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude }, radius: CAMPUS_REFERENCE_RADIUS_METERS, strokeColor: CAMPUS_MAP_DATA.IGDTUW.color, strokeOpacity: 0.65, strokeWeight: 1, fillColor: CAMPUS_MAP_DATA.IGDTUW.color, fillOpacity: 0.08, clickable: false });
     bounds.extend({ lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude });
 
-    const iiitdMarker = new window.google.maps.Marker({ map, position: { lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude }, title: "IIIT-Delhi Campus", label: { text: "IIIT-D", color: "#ffffff", fontSize: "10px", fontWeight: "700" }, icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: "#047857", fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 10 } });
-    iiitdMarker.addListener("click", () => { infoWindow.setContent('<div style="font:13px Arial,sans-serif"><b>IIIT-Delhi Campus</b><br/>Contractor: Ridhima Kulashriz<br/>ridhimakulashriz@gmail.com</div>'); infoWindow.open({ map, anchor: iiitdMarker }); });
+    const iiitdMarker = new window.google.maps.Marker({ map, position: { lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude }, title: CAMPUS_MAP_DATA.IIIT_DELHI.name, label: { text: "IIIT-D", color: "#ffffff", fontSize: "10px", fontWeight: "700" }, icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: CAMPUS_MAP_DATA.IIIT_DELHI.color, fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 10 } });
+    iiitdMarker.addListener("click", () => { infoWindow.setContent(campusPopupHtml(CAMPUS_MAP_DATA.IIIT_DELHI)); infoWindow.open({ map, anchor: iiitdMarker }); });
     projectMarkers.current.push(iiitdMarker);
+    new window.google.maps.Circle({ map, center: { lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude }, radius: CAMPUS_REFERENCE_RADIUS_METERS, strokeColor: CAMPUS_MAP_DATA.IIIT_DELHI.color, strokeOpacity: 0.65, strokeWeight: 1, fillColor: CAMPUS_MAP_DATA.IIIT_DELHI.color, fillOpacity: 0.08, clickable: false });
     bounds.extend({ lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude });
 
     if (validDefects.length || (shouldShowTelemetry && validTelemetry.length)) map.fitBounds(bounds, 54);
