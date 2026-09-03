@@ -49,47 +49,48 @@ function resolveContractorEmail(payload: ContractorReportDelivery): { email: str
  */
 export async function deliverContractorReport(payload: ContractorReportDelivery) {
   const endpoint = process.env.DRIFT_EMAIL_WEBHOOK_URL?.trim();
-  if (!endpoint) {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message: "Contractor email delivery is not configured. Set DRIFT_EMAIL_WEBHOOK_URL on Render; no email was sent.",
-    });
-  }
-
   const route = resolveContractorEmail(payload);
 
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({
-      // Make webhook uses 'to' field to route to the correct Gmail recipient
-      to: route.email,
-      recipientName: route.name,
-      matchedBy: route.matchedBy,
-      subject: payload.subject,
-      // Full report data for Make/Gmail module
-      report: {
-        ticketId: payload.ticketId ? `DRIFT-${payload.ticketId}` : null,
-        contractorName: route.name,
-        contractorEmail: route.email,
-        defectType: payload.defect,
-        confidencePercent: payload.confidencePercent,
-        severity: payload.severity,
-        latitude: payload.latitude,
-        longitude: payload.longitude,
-        estimatedRepairCost: payload.estimatedRepairCost,
-        recommendedDeadline: payload.recommendedDeadline,
-        reportUrl: payload.reportUrl ?? null,
-        evidenceUrl: payload.evidenceUrl ?? null,
-      },
-      generatedAt: new Date().toISOString(),
-      disclaimer: "DRIFT AI findings are advisory and require engineer review before action.",
-    }),
-  }).catch(() => null);
+  const report = {
+    ticketId: payload.ticketId ? `DRIFT-${payload.ticketId}` : null,
+    contractorName: route.name,
+    contractorEmail: route.email,
+    defectType: payload.defect,
+    confidencePercent: payload.confidencePercent,
+    severity: payload.severity,
+    latitude: payload.latitude,
+    longitude: payload.longitude,
+    estimatedRepairCost: payload.estimatedRepairCost,
+    recommendedDeadline: payload.recommendedDeadline,
+    reportUrl: payload.reportUrl ?? null,
+    evidenceUrl: payload.evidenceUrl ?? null,
+  };
+  const text = `DRIFT inspection report\n\nTicket: ${report.ticketId ?? "not assigned"}\nDefect: ${report.defectType}\nSeverity: ${report.severity}\nConfidence: ${report.confidencePercent}%\nLocation: ${report.latitude}, ${report.longitude}\nEstimated repair cost: ${report.estimatedRepairCost}\nRecommended deadline: ${report.recommendedDeadline}\nReport: ${report.reportUrl ?? "not available"}\n\nDRIFT AI findings are advisory and require engineer review before action.`;
 
-  if (!response || !response.ok) {
-    throw new TRPCError({ code: "BAD_GATEWAY", message: `The email relay rejected the report for ${route.email}. No delivery was confirmed.` });
+  if (endpoint) {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ to: route.email, recipientName: route.name, matchedBy: route.matchedBy, subject: payload.subject, report, generatedAt: new Date().toISOString(), disclaimer: "DRIFT AI findings are advisory and require engineer review before action." }),
+    }).catch(() => null);
+    if (response?.ok) return { sent: true as const, recipient: route.email, matchedBy: route.matchedBy, delivery: "confirmed-by-relay" as const };
   }
 
-  return { sent: true as const, recipient: route.email, matchedBy: route.matchedBy, delivery: "confirmed-by-relay" as const };
+  // SMTP is useful when a webhook relay is unavailable or not configured.
+  const smtpUser = (process.env.EMAIL_USER ?? process.env.DRIFT_SMTP_USER)?.trim();
+  const smtpPass = (process.env.EMAIL_PASS ?? process.env.DRIFT_SMTP_PASS)?.trim();
+  if (smtpUser && smtpPass) {
+    try {
+      const nodemailer = await import("nodemailer");
+      const smtpHost = process.env.DRIFT_SMTP_HOST?.trim() || "smtp.gmail.com";
+      const smtpPort = Number(process.env.DRIFT_SMTP_PORT ?? 465);
+      const transporter = nodemailer.createTransport({ host: smtpHost, port: smtpPort, secure: process.env.DRIFT_SMTP_SECURE !== "false", auth: { user: smtpUser, pass: smtpPass } });
+      await transporter.sendMail({ from: smtpUser, to: route.email, subject: payload.subject, text, html: `<h2>DRIFT Infrastructure Inspection Report</h2><p>${text.replaceAll("\n", "<br>")}</p>` });
+      return { sent: true as const, recipient: route.email, matchedBy: route.matchedBy, delivery: "confirmed-by-smtp" as const };
+    } catch (error) {
+      console.error("[DRIFT EMAIL] SMTP delivery failed:", error instanceof Error ? error.message : error);
+    }
+  }
+
+  throw new TRPCError({ code: endpoint ? "BAD_GATEWAY" : "PRECONDITION_FAILED", message: endpoint ? `The email relay rejected the report for ${route.email}; SMTP fallback also failed.` : "Contractor email delivery is not configured. Set DRIFT_EMAIL_WEBHOOK_URL or EMAIL_USER/EMAIL_PASS on Render; no email was sent." });
 }

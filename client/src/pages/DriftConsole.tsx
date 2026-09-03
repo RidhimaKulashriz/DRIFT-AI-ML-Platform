@@ -352,7 +352,10 @@ export default function DriftConsole() {
   // The stateless walkthrough is deliberately browser-only and creates no operational record.
   // It remains available after sign-in so a default citizen account is not trapped in an empty view.
   const canRunDemo = true;
-  const canGeneratePublicReport = canOperate && persistenceAvailable && portableEvidenceStorageAvailable;
+  // Reports are persisted through storagePutWithFallback, which stores the PDF
+  // in PostgreSQL when portable object storage is not configured. Do not block
+  // report generation on the evidence-upload storage prerequisite.
+  const canGeneratePublicReport = canOperate && persistenceAvailable;
   const transientMapDefects = useMemo(() => (transientSimulatorRun?.findings ?? []).map((finding, index) => ({ id: -(index + 1), label: finding.title, defectType: finding.label, severity: finding.score.severity, zeroErrorScore: finding.score.score, confidencePercent: Math.round(finding.confidence * 100), latitude: finding.latitude, longitude: finding.longitude, isTransient: true })), [transientSimulatorRun]);
   const transientMapTelemetry = transientSimulatorRun?.telemetry ?? [];
   const startAvailableSimulator = () => {

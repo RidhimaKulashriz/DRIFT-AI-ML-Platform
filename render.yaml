@@ -46,5 +46,17 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
+      - key: DRIFT_EMAIL_WEBHOOK_URL
+        sync: false
+      - key: DRIFT_SMTP_HOST
+        sync: false
+      - key: DRIFT_SMTP_PORT
+        value: "465"
+      - key: DRIFT_SMTP_SECURE
+        value: "true"
+      - key: DRIFT_SMTP_USER
+        sync: false
+      - key: DRIFT_SMTP_PASS
+        sync: false
       - key: DRIFT_HARDWARE_ENDPOINT
         sync: false
