@@ -14,6 +14,42 @@ function getBrowserClient() {
   return browserClient;
 }
 
+/**
+ * Reads only the untrusted exp claim to prevent sending a known-expired token.
+ * Supabase remains the authority for token validity and signature verification.
+ */
+export function isSupabaseTokenUsable(token: string, leewaySeconds = 60) {
+  try {
+    const tokenPart = token.split(".")[1];
+    if (!tokenPart) return false;
+    const normalized = tokenPart.replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="))) as { exp?: unknown };
+    return typeof payload.exp === "number" && payload.exp > Math.floor(Date.now() / 1000) + leewaySeconds;
+  } catch {
+    return false;
+  }
+}
+
+async function clearExpiredSession(client: SupabaseClient) {
+  await client.auth.signOut().catch(() => undefined);
+  try {
+    sessionStorage.removeItem("manus-cookie");
+  } catch {
+    // sessionStorage may be unavailable in a restricted browser context.
+  }
+}
+
+export async function refreshSupabaseSession() {
+  const client = getBrowserClient();
+  if (!client) return null;
+  const refreshed = await client.auth.refreshSession();
+  if (refreshed.error || !refreshed.data.session?.access_token || !isSupabaseTokenUsable(refreshed.data.session.access_token)) {
+    await clearExpiredSession(client);
+    return null;
+  }
+  return refreshed.data.session.access_token;
+}
+
 export function magicLinkErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : "";
   if (message.includes("invalidjwt") || message.includes("exp claim") || (message.includes("jwt") && message.includes("expired"))) {
@@ -31,39 +67,20 @@ export function magicLinkErrorMessage(error: unknown) {
   return "Supabase could not send the sign-in link. Check the email address, wait 60 seconds, and retry once. If it still fails, the project owner must verify Supabase email delivery and approved redirect URLs.";
 }
 
-export async function getSupabaseAccessToken() {
+export async function getSupabaseAccessToken(forceRefresh = false) {
   const client = getBrowserClient();
   if (!client) return null;
   try {
+    if (forceRefresh) return await refreshSupabaseSession();
     const sessionPromise = client.auth.getSession();
     const timeoutPromise = new Promise<null>(resolve => window.setTimeout(() => resolve(null), 1500));
     const result = await Promise.race([sessionPromise, timeoutPromise]);
     if (!result || !("data" in result)) return null;
-    const session = result.data.session;
-    if (!session?.access_token) return null;
-
-    // A tab can retain an old session while auto-refresh is paused. Decode only
-    // the untrusted expiry claim locally; Supabase remains the authority.
-    const tokenPart = session.access_token.split(".")[1];
-    let expiresSoon = false;
-    if (tokenPart) {
-      try {
-        const payload = JSON.parse(atob(tokenPart.replace(/-/g, "+").replace(/_/g, "/"))) as { exp?: number };
-        expiresSoon = typeof payload.exp === "number" && payload.exp <= Math.floor(Date.now() / 1000) + 60;
-      } catch {
-        expiresSoon = true;
-      }
-    }
-    if (!expiresSoon) return session.access_token;
-
-    const refreshed = await client.auth.refreshSession();
-    if (refreshed.error || !refreshed.data.session?.access_token) {
-      await client.auth.signOut().catch(() => undefined);
-      return null;
-    }
-    return refreshed.data.session.access_token;
+    const token = result.data.session?.access_token;
+    if (token && isSupabaseTokenUsable(token)) return token;
+    return await refreshSupabaseSession();
   } catch {
-    await client.auth.signOut().catch(() => undefined);
+    await clearExpiredSession(client);
     return null;
   }
 }
