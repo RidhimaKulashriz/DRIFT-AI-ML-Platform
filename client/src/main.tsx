@@ -6,7 +6,7 @@ import { httpBatchLink } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
 import App from "./App";
-import { getSupabaseAccessToken, isSupabaseTokenUsable } from "./lib/supabase";
+import { getSupabaseAccessToken, isSupabaseAuthConfigured, isSupabaseTokenUsable } from "./lib/supabase";
 import "./index.css";
 
 const queryClient = new QueryClient();
@@ -37,6 +37,10 @@ const backendOrigin = getBackendOrigin();
 async function authHeaders(forceRefresh = false) {
   const supabaseToken = await getSupabaseAccessToken(forceRefresh);
   if (supabaseToken) return { Authorization: `Bearer ${supabaseToken}` };
+  // When Supabase Auth is configured, never replace a failed/expired Supabase
+  // session with an unrelated Manus JWT. That fallback can itself be expired
+  // and produces the same InvalidJWT exp-claim error on protected requests.
+  if (isSupabaseAuthConfigured) return {};
 
   // Preview auto-login fallback: when the browser blocks iframe cookies
   // (Safari ITP / private browsing / WebView), the runtime mirrors the
