@@ -1,9 +1,7 @@
 #!/bin/bash
-# Render build script: installs runtime deps only
-# ONNX conversion was too heavy for free tier — using Roboflow API + Gemini instead
+# Render build: install runtime deps (ultralytics includes torch)
 set -e
-
-echo "[BUILD] Installing runtime dependencies..."
+echo "[BUILD] Installing dependencies..."
+pip install --upgrade pip
 pip install -r requirements.txt
-
 echo "[BUILD] Done!"
