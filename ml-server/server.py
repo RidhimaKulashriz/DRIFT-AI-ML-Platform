@@ -25,23 +25,11 @@ _onnx_available = None  # None = untested, True = works, False = broken
 
 
 def test_onnx():
-    """Test if onnxruntime works on this machine."""
+    """ONNX disabled on Render — crashes due to OOM. Use Roboflow instead."""
     global _onnx_available
-    if _onnx_available is not None:
-        return _onnx_available
-    try:
-        import onnxruntime as ort
-        for name, path in [("CRACK", CRACK_ONNX), ("ROAD", ROAD_ONNX)]:
-            if os.path.exists(path):
-                sess = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
-                print(f"[ML] ONNX {name} loaded OK — input={sess.get_inputs()[0].shape} output={sess.get_outputs()[0].shape}")
-                _sessions[name] = sess
-        _onnx_available = bool(_sessions)
-        print(f"[ML] ONNX available: {_onnx_available} ({len(_sessions)} models loaded)")
-    except Exception as e:
-        print(f"[ML] ONNX not available: {e}")
-        _onnx_available = False
-    return _onnx_available
+    _onnx_available = False
+    print("[ML] ONNX disabled (OOM on Render). Using Roboflow + Roboflow.")
+    return False
 
 
 def preprocess(image_bytes, size=640):
