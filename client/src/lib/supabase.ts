@@ -16,6 +16,9 @@ function getBrowserClient() {
 
 export function magicLinkErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message.toLowerCase() : "";
+  if (message.includes("invalidjwt") || message.includes("exp claim") || (message.includes("jwt") && message.includes("expired"))) {
+    return "Your sign-in session has expired. Sign in again to continue.";
+  }
   if (message.includes("email rate") || message.includes("rate limit") || message.includes("too many")) {
     return "Supabase has temporarily limited sign-in emails. Wait at least 60 seconds before retrying. If it still fails, the project owner must configure approved transactional email delivery in Supabase.";
   }
@@ -35,8 +38,32 @@ export async function getSupabaseAccessToken() {
     const sessionPromise = client.auth.getSession();
     const timeoutPromise = new Promise<null>(resolve => window.setTimeout(() => resolve(null), 1500));
     const result = await Promise.race([sessionPromise, timeoutPromise]);
-    return result && "data" in result ? result.data.session?.access_token ?? null : null;
+    if (!result || !("data" in result)) return null;
+    const session = result.data.session;
+    if (!session?.access_token) return null;
+
+    // A tab can retain an old session while auto-refresh is paused. Decode only
+    // the untrusted expiry claim locally; Supabase remains the authority.
+    const tokenPart = session.access_token.split(".")[1];
+    let expiresSoon = false;
+    if (tokenPart) {
+      try {
+        const payload = JSON.parse(atob(tokenPart.replace(/-/g, "+").replace(/_/g, "/"))) as { exp?: number };
+        expiresSoon = typeof payload.exp === "number" && payload.exp <= Math.floor(Date.now() / 1000) + 60;
+      } catch {
+        expiresSoon = true;
+      }
+    }
+    if (!expiresSoon) return session.access_token;
+
+    const refreshed = await client.auth.refreshSession();
+    if (refreshed.error || !refreshed.data.session?.access_token) {
+      await client.auth.signOut().catch(() => undefined);
+      return null;
+    }
+    return refreshed.data.session.access_token;
   } catch {
+    await client.auth.signOut().catch(() => undefined);
     return null;
   }
 }
