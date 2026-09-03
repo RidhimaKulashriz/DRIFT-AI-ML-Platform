@@ -1,233 +1,67 @@
 import PDFDocument from "pdfkit";
 
 const COLORS = {
-  ink: "#121417",
-  navy: "#071225",
-  slate: "#52606d",
-  line: "#d7dce1",
-  paper: "#f7f8f6",
-  white: "#ffffff",
-  cyan: "#15b8c9",
-  critical: "#c62828",
-  high: "#e56b22",
-  medium: "#b48a00",
-  low: "#2f8b57",
+  ink: "#121417", navy: "#071225", slate: "#52606d", line: "#d7dce1", paper: "#f7f8f6",
+  white: "#ffffff", cyan: "#15b8c9", critical: "#c62828", high: "#e56b22", medium: "#b48a00", low: "#2f8b57",
 };
 
 type Severity = "critical" | "high" | "medium" | "low";
-type PdfEvidence = {
-  id: number;
-  fileName: string;
-  source?: string | null;
-  captureZone?: string | null;
-  qualityStatus?: string | null;
-  latitude?: string | null;
-  longitude?: string | null;
-  cameraId?: string | null;
-  storageUrl?: string | null;
-  provenance?: unknown;
-  imageBuffer?: Buffer;
-};
-type PdfDefect = {
-  id: number;
-  label: string;
-  defectType: string;
-  severity: Severity;
-  zeroErrorScore?: number | null;
-  confidencePercent?: number | null;
-  coveragePercent?: number | null;
-  status?: string | null;
-  reviewState?: string | null;
-  inspectionDomain?: string | null;
-  latitude?: string | null;
-  longitude?: string | null;
-  evidenceId?: number | null;
-  explanation?: unknown;
-  uncertainty?: unknown;
-  correlationKey?: string | null;
-};
-
+type PdfEvidence = { id: number; fileName: string; source?: string | null; captureZone?: string | null; qualityStatus?: string | null; latitude?: string | null; longitude?: string | null; cameraId?: string | null; storageUrl?: string | null; provenance?: unknown; imageBuffer?: Buffer };
+type PdfDefect = { id: number; label: string; defectType: string; severity: Severity; zeroErrorScore?: number | null; confidencePercent?: number | null; coveragePercent?: number | null; status?: string | null; reviewState?: string | null; inspectionDomain?: string | null; latitude?: string | null; longitude?: string | null; evidenceId?: number | null; explanation?: unknown; uncertainty?: unknown; correlationKey?: string | null };
 type PdfMission = { id: number; name: string; startedAt?: Date | null; completedAt?: Date | null; mode?: string | null; status?: string | null };
 
-function safeText(value: unknown, fallback = "Not recorded") {
-  if (value === null || value === undefined || value === "") return fallback;
-  return String(value);
-}
-function listText(value: unknown, fallback = "Not recorded") {
-  if (!Array.isArray(value)) return fallback;
-  const items = value.filter(item => typeof item === "string");
-  return items.length ? items.join(" · ") : fallback;
-}
-function severityColor(severity: Severity) { return COLORS[severity] ?? COLORS.slate; }
+function safeText(value: unknown, fallback = "Not recorded") { return value === null || value === undefined || value === "" ? fallback : String(value); }
+function listText(value: unknown, fallback = "Not recorded") { return Array.isArray(value) && value.some(item => typeof item === "string") ? value.filter(item => typeof item === "string").join(" · ") : fallback; }
 function titleCase(value: string) { return value.replaceAll("_", " ").replace(/\b\w/g, char => char.toUpperCase()); }
 function formatDate(value?: Date | null) { return value ? value.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "Not recorded"; }
+function severityColor(severity: Severity) { return COLORS[severity] ?? COLORS.slate; }
 type FitTextOptions = PDFKit.Mixins.TextOptions & { fontSize?: number; fillColor?: string };
-function fitText(doc: PDFKit.PDFDocument, text: string, x: number, y: number, width: number, height: number, options?: FitTextOptions) {
-  const { fontSize = 9, fillColor = COLORS.ink, ...textOptions } = options ?? {};
-  doc.fontSize(fontSize).fillColor(fillColor).text(text, x, y, { width, height, ellipsis: true, lineGap: 2, ...textOptions });
-}
-function pageHeader(doc: PDFKit.PDFDocument, section: string, page: number) {
-  doc.save().rect(0, 0, 612, 44).fill(COLORS.navy).restore();
-  doc.fillColor(COLORS.white).font("Helvetica-Bold").fontSize(10).text("DRIFT", 38, 17, { characterSpacing: 1.5 });
-  doc.font("Helvetica").fontSize(8).fillColor("#b8c6d9").text(section.toUpperCase(), 115, 18, { characterSpacing: 1.2 });
-  doc.text(`PAGE ${page}`, 510, 18, { width: 64, align: "right" });
-}
-function footer(doc: PDFKit.PDFDocument) {
-  doc.font("Helvetica").fontSize(7).fillColor(COLORS.slate).text("DRIFT · Automated outputs are advisory and require qualified engineer review before maintenance release.", 38, 768, { width: 536 });
-}
-function severityPill(doc: PDFKit.PDFDocument, severity: Severity, x: number, y: number, width = 72) {
-  doc.roundedRect(x, y, width, 19, 3).fill(severityColor(severity));
-  doc.fillColor(COLORS.white).font("Helvetica-Bold").fontSize(8).text(severity.toUpperCase(), x, y + 6, { width, align: "center", characterSpacing: 0.8 });
-}
-function metric(doc: PDFKit.PDFDocument, label: string, value: string, x: number, y: number, width: number) {
-  doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(7).text(label.toUpperCase(), x, y, { width, characterSpacing: 0.7 });
-  doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(14).text(value, x, y + 12, { width });
-}
-function drawCoordinatePlot(doc: PDFKit.PDFDocument, defects: PdfDefect[], x: number, y: number, width: number, height: number) {
-  doc.roundedRect(x, y, width, height, 5).fill(COLORS.navy);
-  doc.strokeColor("#27415b").lineWidth(0.5);
-  for (let i = 1; i < 6; i += 1) {
-    doc.moveTo(x + width * i / 6, y).lineTo(x + width * i / 6, y + height).stroke();
-    doc.moveTo(x, y + height * i / 6).lineTo(x + width, y + height * i / 6).stroke();
-  }
-  const points = defects.map(item => ({ lat: Number(item.latitude), lng: Number(item.longitude), item })).filter(item => Number.isFinite(item.lat) && Number.isFinite(item.lng));
-  if (!points.length) {
-    doc.fillColor("#9bb0c7").font("Helvetica").fontSize(9).text("No coordinate-bearing findings were available for this report.", x + 18, y + height / 2 - 5, { width: width - 36, align: "center" });
-    return;
-  }
-  const minLat = Math.min(...points.map(p => p.lat));
-  const maxLat = Math.max(...points.map(p => p.lat));
-  const minLng = Math.min(...points.map(p => p.lng));
-  const maxLng = Math.max(...points.map(p => p.lng));
-  points.forEach(point => {
-    const px = x + 18 + ((point.lng - minLng) / (maxLng - minLng || 1)) * (width - 36);
-    const py = y + height - 18 - ((point.lat - minLat) / (maxLat - minLat || 1)) * (height - 36);
-    doc.circle(px, py, 7).fill(severityColor(point.item.severity));
-    doc.circle(px, py, 7).lineWidth(1).strokeColor(COLORS.white).stroke();
-    doc.fillColor(COLORS.white).font("Helvetica-Bold").fontSize(6.5).text(String(point.item.id), px - 6, py - 2.5, { width: 12, align: "center" });
-  });
-  doc.fillColor("#9bb0c7").font("Helvetica").fontSize(7).text("NORTH ↑  ·  COORDINATE PLOT  ·  NOT A SURVEY BASEMAP", x + 15, y + height - 13, { width: width - 30, characterSpacing: 0.4 });
-}
+function fitText(doc: PDFKit.PDFDocument, text: string, x: number, y: number, width: number, height: number, options?: FitTextOptions) { const { fontSize = 9, fillColor = COLORS.ink, ...rest } = options ?? {}; doc.fontSize(fontSize).fillColor(fillColor).text(text, x, y, { width, height, ellipsis: true, lineGap: 2, ...rest }); }
+function pageHeader(doc: PDFKit.PDFDocument, section: string, page: number) { doc.save().rect(0, 0, 612, 44).fill(COLORS.navy).restore(); doc.fillColor(COLORS.white).font("Helvetica-Bold").fontSize(10).text("DRIFT", 38, 17, { characterSpacing: 1.5 }); doc.font("Helvetica").fontSize(8).fillColor("#b8c6d9").text(section.toUpperCase(), 115, 18, { characterSpacing: 1.2 }); doc.text(`PAGE ${page} OF 10`, 475, 18, { width: 99, align: "right" }); }
+function footer(doc: PDFKit.PDFDocument) { doc.font("Helvetica").fontSize(7).fillColor(COLORS.slate).text("DRIFT · Automated outputs are advisory and require qualified engineer review before maintenance release.", 38, 768, { width: 536 }); }
+function heading(doc: PDFKit.PDFDocument, title: string, subtitle: string) { doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(23).text(title, 38, 72); doc.fillColor(COLORS.slate).font("Helvetica").fontSize(9).text(subtitle, 38, 105, { width: 520 }); }
+function pill(doc: PDFKit.PDFDocument, severity: Severity, x: number, y: number, width = 72) { doc.roundedRect(x, y, width, 19, 3).fill(severityColor(severity)); doc.fillColor(COLORS.white).font("Helvetica-Bold").fontSize(8).text(severity.toUpperCase(), x, y + 6, { width, align: "center", characterSpacing: 0.8 }); }
+function metric(doc: PDFKit.PDFDocument, label: string, value: string, x: number, y: number, width: number) { doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(7).text(label.toUpperCase(), x, y, { width, characterSpacing: 0.7 }); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(14).text(value, x, y + 12, { width }); }
+function coordinatePlot(doc: PDFKit.PDFDocument, defects: PdfDefect[], x: number, y: number, width: number, height: number) { doc.roundedRect(x, y, width, height, 5).fill(COLORS.navy); doc.strokeColor("#27415b").lineWidth(0.5); for (let i = 1; i < 6; i += 1) { doc.moveTo(x + width * i / 6, y).lineTo(x + width * i / 6, y + height).stroke(); doc.moveTo(x, y + height * i / 6).lineTo(x + width, y + height * i / 6).stroke(); } const points = defects.map(item => ({ lat: Number(item.latitude), lng: Number(item.longitude), item })).filter(item => Number.isFinite(item.lat) && Number.isFinite(item.lng)); if (!points.length) { doc.fillColor("#9bb0c7").font("Helvetica").fontSize(9).text("No coordinate-bearing findings were available for this report.", x + 18, y + height / 2 - 5, { width: width - 36, align: "center" }); return; } const minLat = Math.min(...points.map(p => p.lat)), maxLat = Math.max(...points.map(p => p.lat)), minLng = Math.min(...points.map(p => p.lng)), maxLng = Math.max(...points.map(p => p.lng)); points.forEach(point => { const px = x + 18 + ((point.lng - minLng) / (maxLng - minLng || 1)) * (width - 36); const py = y + height - 18 - ((point.lat - minLat) / (maxLat - minLat || 1)) * (height - 36); doc.circle(px, py, 7).fill(severityColor(point.item.severity)); doc.circle(px, py, 7).lineWidth(1).strokeColor(COLORS.white).stroke(); doc.fillColor(COLORS.white).font("Helvetica-Bold").fontSize(6.5).text(String(point.item.id), px - 6, py - 2.5, { width: 12, align: "center" }); }); doc.fillColor("#9bb0c7").font("Helvetica").fontSize(7).text("NORTH ↑ · RELATIVE COORDINATE PLOT · NOT A SURVEY BASEMAP", x + 15, y + height - 13, { width: width - 30, characterSpacing: 0.4 }); }
 
 export type PdfContractorRoute = { contractorName: string; ragStatus: "green" | "amber" | "red"; workProfile: string; sourceLabel: string; sourceUrl: string; disclaimer: string };
 
 export async function renderInspectionPdf(input: { mission: PdfMission; evidence: PdfEvidence[]; defects: PdfDefect[]; repairTotalCents: number; contractorRoute?: PdfContractorRoute }) {
-  const doc = new PDFDocument({ size: "A4", margin: 38, autoFirstPage: false, compress: false });
-  doc.initForm();
-  const chunks: Buffer[] = [];
-  const result = new Promise<Buffer>((resolve, reject) => {
-    doc.on("data", chunk => chunks.push(Buffer.from(chunk)));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-  });
-  const counts = (Object.keys(COLORS) as string[]).filter(key => ["critical", "high", "medium", "low"].includes(key)).reduce<Record<string, number>>((acc, key) => { acc[key] = input.defects.filter(item => item.severity === key).length; return acc; }, {});
+  const doc = new PDFDocument({ size: "A4", margin: 38, autoFirstPage: false, compress: false }); doc.initForm(); const chunks: Buffer[] = [];
+  const result = new Promise<Buffer>((resolve, reject) => { doc.on("data", chunk => chunks.push(Buffer.from(chunk))); doc.on("end", () => resolve(Buffer.concat(chunks))); doc.on("error", reject); });
+  const counts = ( ["critical", "high", "medium", "low"] as Severity[]).reduce<Record<string, number>>((acc, key) => { acc[key] = input.defects.filter(item => item.severity === key).length; return acc; }, {});
   const coordinateCount = input.defects.filter(item => Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude))).length;
-  const generated = new Date();
   const reportStatus = input.defects.some(item => item.reviewState === "pending" || item.reviewState === "rejected") ? "ENGINEER REVIEW REQUIRED" : "READY FOR SIGN-OFF";
+  const campusFor = (lat?: string | null) => Number(lat) > 28.6 ? "IGDTUW" : "IIIT-Delhi";
 
-  doc.addPage();
-  doc.rect(0, 0, 612, 842).fill(COLORS.paper);
-  doc.rect(0, 0, 612, 260).fill(COLORS.navy);
-  doc.rect(38, 49, 8, 44).fill(COLORS.cyan);
-  doc.fillColor(COLORS.white).font("Helvetica-Bold").fontSize(34).text("DRIFT", 60, 48, { characterSpacing: 2 });
-  doc.fillColor("#b8c6d9").font("Helvetica-Bold").fontSize(8).text("DRONE BASED RECONNAISSANCE & FAULT TRACKING", 62, 91, { characterSpacing: 1.2 });
-  doc.fillColor(COLORS.white).font("Helvetica-Bold").fontSize(26).text("INFRASTRUCTURE\nINSPECTION REPORT", 38, 144, { lineGap: 3 });
-  doc.fillColor(COLORS.cyan).font("Helvetica-Bold").fontSize(9).text(reportStatus, 40, 232, { characterSpacing: 1.2 });
-  doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(22).text(input.mission.name, 38, 310, { width: 500 });
-  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(10).text(`Mission ${input.mission.id}  ·  ${titleCase(safeText(input.mission.mode, "inspection"))}  ·  ${titleCase(safeText(input.mission.status, "completed"))}`, 40, 348);
-  doc.moveTo(38, 380).lineTo(574, 380).strokeColor(COLORS.line).stroke();
-  metric(doc, "Report generated", formatDate(generated), 40, 407, 170);
-  metric(doc, "Evidence records", String(input.evidence.length), 240, 407, 110);
-  metric(doc, "Candidate findings", String(input.defects.length), 410, 407, 130);
-  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(9).text("This report binds persisted evidence, coordinate context, model outputs, review state, uncertainty, and recommended next actions. It is not a substitute for a qualified field inspection.", 40, 490, { width: 485, lineGap: 3 });
-  if (input.contractorRoute) {
-    doc.roundedRect(40, 530, 500, 58, 5).fill(input.contractorRoute.ragStatus === "green" ? "#e8f5ee" : input.contractorRoute.ragStatus === "amber" ? "#fff5df" : "#ffeded");
-    doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(9).text(`RAG HANDOFF CANDIDATE · ${input.contractorRoute.ragStatus.toUpperCase()}`, 58, 544, { characterSpacing: 0.5 });
-    doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(`${input.contractorRoute.contractorName} · ${input.contractorRoute.workProfile}`, 58, 560, { width: 455, ellipsis: true });
-    doc.fillColor(COLORS.slate).font("Helvetica").fontSize(7).text(`${input.contractorRoute.sourceLabel} · ${input.contractorRoute.disclaimer}`, 58, 574, { width: 455, ellipsis: true });
-  }
-  const controlY = input.contractorRoute ? 610 : 560;
-  doc.roundedRect(40, controlY, 500, 82, 5).fill("#e8eef3");
-  doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(11).text("CONTROL BOUNDARY", 58, controlY + 20, { characterSpacing: 0.8 });
-  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(9).text("Automated outputs are advisory. Every critical and high finding must be reviewed by an authorised engineer before a work order, restriction, or release decision.", 58, controlY + 42, { width: 455, lineGap: 3 });
-  footer(doc);
+  // 1 — Cover
+  doc.addPage(); doc.rect(0, 0, 612, 842).fill(COLORS.paper); doc.rect(0, 0, 612, 260).fill(COLORS.navy); doc.rect(38, 49, 8, 44).fill(COLORS.cyan); doc.fillColor(COLORS.white).font("Helvetica-Bold").fontSize(34).text("DRIFT", 60, 48, { characterSpacing: 2 }); doc.fillColor("#b8c6d9").font("Helvetica-Bold").fontSize(8).text("DRONE BASED RECONNAISSANCE & FAULT TRACKING", 62, 91, { characterSpacing: 1.2 }); doc.fillColor(COLORS.white).font("Helvetica-Bold").fontSize(26).text("INFRASTRUCTURE\nINSPECTION REPORT", 38, 144, { lineGap: 3 }); doc.fillColor(COLORS.cyan).font("Helvetica-Bold").fontSize(9).text(reportStatus, 40, 232, { characterSpacing: 1.2 }); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(22).text(input.mission.name, 38, 310, { width: 500 }); doc.fillColor(COLORS.slate).font("Helvetica").fontSize(10).text(`Mission ${input.mission.id} · ${titleCase(safeText(input.mission.mode, "inspection"))} · ${titleCase(safeText(input.mission.status, "completed"))}`, 40, 348); doc.moveTo(38, 380).lineTo(574, 380).strokeColor(COLORS.line).stroke(); metric(doc, "Report generated", formatDate(new Date()), 40, 407, 170); metric(doc, "Evidence records", String(input.evidence.length), 240, 407, 110); metric(doc, "Candidate findings", String(input.defects.length), 410, 407, 130); fitText(doc, "This is a genuine text/vector PDF. It binds persisted evidence, coordinate context, model outputs, review state, uncertainty, and recommended actions. It is not a substitute for a qualified field inspection.", 40, 490, 485, 45, { fontSize: 9, fillColor: COLORS.slate }); doc.roundedRect(40, 560, 500, 82, 5).fill("#e8eef3"); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(11).text("CONTROL BOUNDARY", 58, 580, { characterSpacing: 0.8 }); fitText(doc, "Automated outputs are advisory. Every critical and high finding requires authorised engineer review before a work order, restriction, or release decision.", 58, 603, 455, 32, { fontSize: 9, fillColor: COLORS.slate }); footer(doc);
 
-  doc.addPage();
-  pageHeader(doc, "Executive summary", 2);
-  doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(23).text("Executive summary", 38, 72);
-  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(9).text("Decision-ready overview of the inspection pass and its open engineering controls.", 38, 105);
-  const summaryCards = [
-    ["CRITICAL", String(counts.critical ?? 0), COLORS.critical], ["HIGH", String(counts.high ?? 0), COLORS.high], ["MEDIUM", String(counts.medium ?? 0), COLORS.medium], ["LOW", String(counts.low ?? 0), COLORS.low],
-  ];
-  summaryCards.forEach(([label, value, color], index) => { const x = 38 + index * 132; doc.roundedRect(x, 145, 118, 78, 4).fill("#edf0f2"); doc.rect(x, 145, 118, 6).fill(color); doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(8).text(label, x + 12, 164, { characterSpacing: 0.9 }); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(28).text(value, x + 12, 183); });
-  doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(13).text("Inspection controls", 38, 267);
-  const controls = [["Mission status", titleCase(safeText(input.mission.status, "completed"))], ["Review gate", reportStatus], ["Coordinate-bearing findings", `${coordinateCount} / ${input.defects.length}`], ["Repair exposure", `₹${Math.round(input.repairTotalCents / 100).toLocaleString("en-IN")}`], ["Evidence provenance", input.evidence.some(item => item.source === "simulator") ? "Simulator/reference media present" : "Uploaded/hardware media"], ["Coverage interpretation", "Media-linked, not a site-survey completeness claim"], ...(input.contractorRoute ? [["RAG route", `${input.contractorRoute.ragStatus.toUpperCase()} · ${input.contractorRoute.contractorName}`] as [string, string]] : [])];
-  controls.forEach(([label, value], index) => { const y = 305 + index * 31; doc.strokeColor(COLORS.line).lineWidth(0.7).moveTo(38, y + 21).lineTo(574, y + 21).stroke(); doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(8).text(label.toUpperCase(), 38, y + 5, { width: 180, characterSpacing: 0.5 }); doc.fillColor(COLORS.ink).font("Helvetica").fontSize(9).text(value, 228, y + 5, { width: 340 }); });
-  doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(13).text("Coordinate context", 38, 521);
-  drawCoordinatePlot(doc, input.defects, 38, 548, 536, 165);
-  footer(doc);
+  // 2 — Executive summary
+  doc.addPage(); pageHeader(doc, "Executive summary", 2); heading(doc, "Executive summary", "Decision-ready overview of the inspection pass and its open engineering controls."); ([ ["CRITICAL", counts.critical, COLORS.critical], ["HIGH", counts.high, COLORS.high], ["MEDIUM", counts.medium, COLORS.medium], ["LOW", counts.low, COLORS.low] ] as [string, number, string][]).forEach(([label, value, color], index) => { const x = 38 + index * 132; doc.roundedRect(x, 145, 118, 78, 4).fill("#edf0f2"); doc.rect(x, 145, 118, 6).fill(color); doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(8).text(label, x + 12, 164, { characterSpacing: 0.9 }); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(28).text(String(value), x + 12, 183); }); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(13).text("Inspection controls", 38, 267); const controls = [["Mission status", titleCase(safeText(input.mission.status, "completed"))], ["Review gate", reportStatus], ["Coordinate-bearing findings", `${coordinateCount} / ${input.defects.length}`], ["Repair exposure", `₹${Math.round(input.repairTotalCents / 100).toLocaleString("en-IN")}`], ["Evidence provenance", input.evidence.some(item => item.source === "simulator") ? "Simulator/reference media present" : "Uploaded/hardware media"], ["Coverage interpretation", "Media-linked, not a site-survey completeness claim"]]; controls.forEach(([label, value], index) => { const y = 305 + index * 31; doc.strokeColor(COLORS.line).lineWidth(0.7).moveTo(38, y + 21).lineTo(574, y + 21).stroke(); doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(8).text(label.toUpperCase(), 38, y + 5, { width: 180, characterSpacing: 0.5 }); doc.fillColor(COLORS.ink).font("Helvetica").fontSize(9).text(value, 228, y + 5, { width: 340 }); }); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(13).text("Relative finding locations", 38, 521); coordinatePlot(doc, input.defects, 38, 548, 536, 165); footer(doc);
 
-  doc.addPage();
-  pageHeader(doc, "Evidence register", 3);
-  doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(23).text("Evidence register", 38, 72);
-  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(9).text(`${input.evidence.length} persisted media record(s) linked to mission ${input.mission.id}.`, 38, 105);
-  let ey = 145;
-  for (const item of input.evidence) {
-    if (ey > 690) { footer(doc); doc.addPage(); pageHeader(doc, "Evidence register", 3); ey = 72; }
-    doc.roundedRect(38, ey, 536, 112, 4).fill("#eef1f2");
-    if (item.imageBuffer) {
-      try { doc.image(item.imageBuffer, 50, ey + 12, { fit: [104, 76], align: "center", valign: "center" }); } catch { doc.rect(50, ey + 12, 104, 76).fill("#d2d9dd"); }
-    } else { doc.rect(50, ey + 12, 104, 76).fill(COLORS.navy); doc.fillColor("#9bb0c7").font("Helvetica-Bold").fontSize(8).text("MEDIA\nPREVIEW", 50, ey + 39, { width: 104, align: "center", lineGap: 2 }); }
-    doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(10).text(`#${item.id}  ${safeText(item.fileName)}`, 174, ey + 14, { width: 380, ellipsis: true });
-    doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(`${titleCase(safeText(item.source, "unknown"))}  ·  ${titleCase(safeText(item.captureZone, "unknown"))}  ·  ${titleCase(safeText(item.qualityStatus, "unknown"))}`, 174, ey + 33, { width: 380 });
-    doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(`GPS  ${safeText(item.latitude)}  /  ${safeText(item.longitude)}    CAMERA  ${safeText(item.cameraId)}`, 174, ey + 51, { width: 380 });
-    const provenance = item.provenance && typeof item.provenance === "object" ? item.provenance as Record<string, unknown> : {};
-    const kind = typeof provenance.kind === "string" ? provenance.kind : "unclassified";
-    const aircraftProfile = typeof provenance.aircraftProfile === "string" ? provenance.aircraftProfile : "not recorded";
-    doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(`Provenance: ${kind} · Aircraft: ${aircraftProfile}`, 174, ey + 69, { width: 380, ellipsis: true });
-    doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(item.storageUrl ? `Stored original: ${item.storageUrl}` : "Stored media URL not recorded", 174, ey + 85, { width: 380, ellipsis: true });
-    ey += 124;
-  }
-  if (!input.evidence.length) doc.fillColor(COLORS.slate).font("Helvetica").fontSize(10).text("No evidence records are available for this mission.", 38, 150);
-  footer(doc);
+  // 3 — Verified campus context
+  doc.addPage(); pageHeader(doc, "Campus context", 3); heading(doc, "Verified campus context", "Institution facts are separated from DRIFT findings. Campus reference coordinates are approximate points for orientation, not proof of a defect."); const campuses = [{ code: "IGDTUW", name: "Indira Gandhi Delhi Technical University for Women", address: "Kashmere Gate, near St. James Church, New Delhi, Delhi 110006", coords: "28.6647, 77.2325", fact: "Established as the Indira Gandhi Institute of Technology in 1998; constituted as a university by Government of Delhi Act 9 of 2012.", site: "https://www.igdtuw.ac.in/", source: "Official university website" }, { code: "IIIT-Delhi", name: "Indraprastha Institute of Information Technology Delhi", address: "Okhla Industrial Estate, Phase III, near Govind Puri Metro Station, New Delhi 110020", coords: "28.5444, 77.2725", fact: "Created by an Act of the Delhi Legislature in 2008 and focused on information-technology education and research.", site: "https://iiitd.ac.in/", source: "Official institute website" }]; campuses.forEach((campus, index) => { const y = 145 + index * 225; doc.roundedRect(38, y, 536, 190, 5).fill(index === 0 ? "#eef5f6" : "#f1f0ed"); doc.fillColor(COLORS.cyan).font("Helvetica-Bold").fontSize(10).text(campus.code, 58, y + 20, { characterSpacing: 1 }); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(14).text(campus.name, 58, y + 47, { width: 470 }); doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(8).text("ADDRESS", 58, y + 82); fitText(doc, campus.address, 155, y + 80, 390, 28, { fontSize: 9, fillColor: COLORS.ink }); doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(8).text("REFERENCE GPS", 58, y + 119); doc.fillColor(COLORS.ink).font("Helvetica").fontSize(9).text(campus.coords, 155, y + 117); fitText(doc, campus.fact, 58, y + 145, 470, 28, { fontSize: 8.5, fillColor: COLORS.slate }); doc.fillColor(COLORS.slate).font("Helvetica").fontSize(7).text(`${campus.source} · ${campus.site}`, 58, y + 170, { width: 470, ellipsis: true }); }); doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text("Source note: exact finding coordinates, capture provenance, and review states in this report come only from the persisted mission records supplied to the renderer.", 38, 625, { width: 536, lineGap: 3 }); footer(doc);
 
-  let page = 4;
-  for (const defect of input.defects) {
-    doc.addPage();
-    pageHeader(doc, "Finding review", page);
-    doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(22).text(`Finding ${String(defect.id).padStart(3, "0")}`, 38, 72);
-    severityPill(doc, defect.severity, 466, 75, 108);
-    doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(15).text(defect.label, 38, 121, { width: 400 });
-    doc.fillColor(COLORS.slate).font("Helvetica").fontSize(9).text(`${titleCase(defect.defectType)}  ·  ${titleCase(safeText(defect.inspectionDomain, "domain pending"))}`, 38, 146);
-    const findingMetrics = [["ZEROERROR SCORE", safeText(defect.zeroErrorScore, "0")], ["CONFIDENCE", `${safeText(defect.confidencePercent, "0")}%`], ["COVERAGE", `${safeText(defect.coveragePercent, "0")}%`], ["REVIEW STATE", titleCase(safeText(defect.reviewState, "pending"))]];
-    findingMetrics.forEach(([label, value], index) => { const x = 38 + index * 134; doc.roundedRect(x, 178, 120, 59, 4).fill("#edf0f2"); doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(7).text(label, x + 10, 191, { characterSpacing: 0.5 }); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(14).text(value, x + 10, 208, { width: 100, ellipsis: true }); });
-    doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(12).text("Location and lifecycle", 38, 276);
-    const fields = [["Coordinates", `${safeText(defect.latitude)}  /  ${safeText(defect.longitude)}`], ["Status", titleCase(safeText(defect.status, "detected"))], ["Evidence link", defect.evidenceId ? `Evidence ${defect.evidenceId}` : "Unlinked"], ["Correlation key", safeText(defect.correlationKey)], ["Review requirement", "Engineer verification required before release"]];
-    fields.forEach(([label, value], index) => { const y = 306 + index * 24; doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(8).text(label.toUpperCase(), 38, y, { width: 142, characterSpacing: 0.5 }); doc.fillColor(COLORS.ink).font("Helvetica").fontSize(9).text(value, 184, y, { width: 390, ellipsis: true }); });
-    doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(12).text("Explainable assessment", 38, 450);
-    fitText(doc, listText(defect.explanation, "No model explanation was recorded."), 38, 477, 536, 55, { fontSize: 9, fillColor: COLORS.slate });
-    doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(12).text("Uncertainty and next action", 38, 565);
-    const uncertainty = typeof defect.uncertainty === "object" && defect.uncertainty ? JSON.stringify(defect.uncertainty) : safeText(defect.uncertainty, "Uncertainty not recorded.");
-    fitText(doc, `${uncertainty}\nRecommended action: ${defect.severity === "critical" ? "Isolate risk and dispatch an engineer within 4 hours." : defect.severity === "high" ? "Engineer review within 24 hours and plan site verification." : "Retain in the maintenance queue and confirm on the next approved pass."}`, 38, 592, 536, 70, { fontSize: 9, fillColor: COLORS.slate });
-    footer(doc);
-    page += 1;
-  }
-  doc.addPage();
-  pageHeader(doc, "Release gate", page);
-  doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(23).text("Release gate", 38, 72);
-  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(9).text("Recommended controls before a maintenance or public-safety decision is released.", 38, 105);
-  const steps = ["Confirm coordinate context and asset identity against the operator mission log.", "Review every critical and high finding with original media and model provenance.", "Resolve failed or review-state evidence gates before creating a work order.", "Perform site verification for uncertain, low-quality, obstructed, or under-structure captures.", "Record engineer decision, priority override, and sign-off in the DRIFT audit trail."];
-  steps.forEach((step, index) => { const y = 150 + index * 50; doc.roundedRect(38, y, 536, 34, 4).fill(index < 2 ? "#fff1ed" : "#eef3f4"); doc.circle(58, y + 17, 10).fill(index < 2 ? COLORS.high : COLORS.cyan); doc.fillColor(COLORS.white).font("Helvetica-Bold").fontSize(8).text(String(index + 1), 54, y + 14, { width: 8, align: "center" }); doc.fillColor(COLORS.ink).font("Helvetica").fontSize(9).text(step, 82, y + 11, { width: 470 }); });
-  doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(13).text("Engineer sign-off", 38, 445);
-  doc.roundedRect(38, 474, 536, 122, 4).strokeColor(COLORS.line).stroke();
-  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(9).text("Decision", 55, 492);
-  const interactiveDoc = doc as unknown as { formCheckbox?: (name: string, x: number, y: number, width: number, height: number, options?: Record<string, unknown>) => void; formText?: (name: string, x: number, y: number, width: number, height: number, options?: Record<string, unknown>) => void };
-  ["Approve", "Override", "Site visit required", "Reject"].forEach((label, index) => { const x = 55 + index * 116; interactiveDoc.formCheckbox?.(`decision_${label.replaceAll(" ", "_")}`, x, 512, 11, 11, { size: 11, borderColor: COLORS.slate, fillColor: COLORS.white, textColor: COLORS.ink }); doc.fillColor(COLORS.ink).font("Helvetica").fontSize(8).text(label, x + 16, 514); });
-  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text("Reviewer name / role", 55, 546); interactiveDoc.formText?.("reviewer_name_role", 158, 542, 390, 18, { borderColor: COLORS.line, backgroundColor: COLORS.white, fontSize: 9 });
-  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text("Signature", 55, 575); interactiveDoc.formText?.("signature", 158, 571, 390, 18, { borderColor: COLORS.line, backgroundColor: COLORS.white, fontSize: 9 });
-  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text("Date / time", 55, 604); interactiveDoc.formText?.("date_time", 158, 600, 390, 18, { borderColor: COLORS.line, backgroundColor: COLORS.white, fontSize: 9 });
-  doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text("Sign-off is intentionally blank. DRIFT does not fabricate approval, review, or customer testimony.", 38, 635, { width: 536 });
-  footer(doc);
-  doc.end();
-  return result;
+  // 4 — Mission and telemetry context
+  doc.addPage(); pageHeader(doc, "Mission context", 4); heading(doc, "Mission and capture context", "Operational metadata needed to interpret the findings without overstating what the scan proves."); const missionRows = [["MISSION ID", String(input.mission.id)], ["MISSION NAME", input.mission.name], ["MODE", titleCase(safeText(input.mission.mode, "inspection"))], ["STATUS", titleCase(safeText(input.mission.status, "completed"))], ["STARTED", formatDate(input.mission.startedAt)], ["COMPLETED", formatDate(input.mission.completedAt)], ["EVIDENCE LINKAGE", `${input.evidence.length} media records · ${input.defects.filter(d => d.evidenceId).length} findings with evidence IDs`], ["GPS LINKAGE", `${coordinateCount} findings with numeric coordinates`]]; missionRows.forEach(([label, value], index) => { const y = 150 + index * 43; doc.strokeColor(COLORS.line).moveTo(38, y + 27).lineTo(574, y + 27).stroke(); doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(8).text(label, 38, y + 8, { width: 150, characterSpacing: 0.7 }); doc.fillColor(COLORS.ink).font("Helvetica").fontSize(10).text(value, 205, y + 8, { width: 365, ellipsis: true }); }); doc.roundedRect(38, 530, 536, 120, 5).fill("#fff5df"); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(12).text("Interpretation limits", 58, 552); fitText(doc, "A coordinate is a location reference, not a survey boundary. A model confidence value is not a probability of structural failure. A simulator or public-reference image is not live drone evidence. These distinctions are carried into the evidence and provenance pages.", 58, 578, 470, 50, { fontSize: 9, fillColor: COLORS.slate }); footer(doc);
+
+  // 5 — Evidence register
+  doc.addPage(); pageHeader(doc, "Evidence register", 5); heading(doc, "Evidence register", `${input.evidence.length} persisted media record(s) linked to mission ${input.mission.id}.`); if (!input.evidence.length) { doc.fillColor(COLORS.slate).font("Helvetica").fontSize(10).text("No evidence records are available for this mission.", 38, 150); } input.evidence.slice(0, 4).forEach((item, index) => { const y = 145 + index * 125; doc.roundedRect(38, y, 536, 110, 4).fill("#eef1f2"); if (item.imageBuffer) { try { doc.image(item.imageBuffer, 50, y + 12, { fit: [104, 76], align: "center", valign: "center" }); } catch { doc.rect(50, y + 12, 104, 76).fill("#d2d9dd"); } } else { doc.rect(50, y + 12, 104, 76).fill(COLORS.navy); doc.fillColor("#9bb0c7").font("Helvetica-Bold").fontSize(8).text("MEDIA\nPREVIEW", 50, y + 39, { width: 104, align: "center", lineGap: 2 }); } doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(10).text(`#${item.id}  ${safeText(item.fileName)}`, 174, y + 14, { width: 380, ellipsis: true }); doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(`${titleCase(safeText(item.source, "unknown"))} · ${titleCase(safeText(item.captureZone, "unknown"))} · ${titleCase(safeText(item.qualityStatus, "unknown"))}`, 174, y + 33, { width: 380 }); doc.text(`GPS ${safeText(item.latitude)} / ${safeText(item.longitude)} · CAMERA ${safeText(item.cameraId)}`, 174, y + 51, { width: 380, ellipsis: true }); const provenance = item.provenance && typeof item.provenance === "object" ? item.provenance as Record<string, unknown> : {}; doc.text(`Provenance: ${safeText(provenance.kind, "unclassified")} · Aircraft: ${safeText(provenance.aircraftProfile, "not recorded")}`, 174, y + 69, { width: 380, ellipsis: true }); doc.text(item.storageUrl ? `Stored original: ${item.storageUrl}` : "Stored media URL not recorded", 174, y + 87, { width: 380, ellipsis: true }); }); if (input.evidence.length > 4) doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(`${input.evidence.length - 4} additional evidence record(s) are counted in the report but omitted from this compact register page.`, 38, 665); footer(doc);
+
+  // 6 — Findings register
+  doc.addPage(); pageHeader(doc, "Findings register", 6); heading(doc, "Findings register", "All candidate findings are shown as advisory model outputs until an engineer records a decision."); if (!input.defects.length) doc.fillColor(COLORS.slate).font("Helvetica").fontSize(10).text("No findings were recorded. This report does not invent findings.", 38, 150); input.defects.slice(0, 9).forEach((defect, index) => { const y = 145 + index * 57; doc.strokeColor(COLORS.line).moveTo(38, y + 45).lineTo(574, y + 45).stroke(); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(9).text(`#${defect.id} · ${defect.label}`, 38, y + 7, { width: 300, ellipsis: true }); pill(doc, defect.severity, 350, y + 4, 70); doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(`${titleCase(defect.defectType)} · ${safeText(defect.inspectionDomain, "domain pending")} · ${safeText(defect.confidencePercent, "0")}% confidence`, 38, y + 26, { width: 360, ellipsis: true }); doc.text(`${campusFor(defect.latitude)} · ${safeText(defect.latitude)} / ${safeText(defect.longitude)}`, 425, y + 26, { width: 149, ellipsis: true }); }); if (input.defects.length > 9) doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text(`${input.defects.length - 9} additional findings are counted but omitted from this compact register page.`, 38, 680); footer(doc);
+
+  // 7 — Highest-risk review
+  doc.addPage(); pageHeader(doc, "Risk review", 7); heading(doc, "Highest-risk review", "The two highest-severity candidate findings receive explicit review context; lower severities remain in the register."); const priority = [...input.defects].sort((a, b) => ["critical", "high", "medium", "low"].indexOf(a.severity) - ["critical", "high", "medium", "low"].indexOf(b.severity)).slice(0, 2); if (!priority.length) doc.fillColor(COLORS.slate).font("Helvetica").fontSize(10).text("No candidate findings require detailed risk review.", 38, 150); priority.forEach((defect, index) => { const y = 145 + index * 270; doc.roundedRect(38, y, 536, 230, 5).fill(index === 0 ? "#fff1ed" : "#fff5df"); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(14).text(`Finding ${defect.id} · ${defect.label}`, 58, y + 20, { width: 390 }); pill(doc, defect.severity, 455, y + 19, 95); metric(doc, "Confidence", `${safeText(defect.confidencePercent, "0")}%`, 58, y + 62, 110); metric(doc, "Coverage", `${safeText(defect.coveragePercent, "0")}%`, 190, y + 62, 110); metric(doc, "ZeroError score", safeText(defect.zeroErrorScore, "0"), 322, y + 62, 130); doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(8).text("MODEL EXPLANATION", 58, y + 113); fitText(doc, listText(defect.explanation, "No model explanation was recorded."), 58, y + 132, 470, 35, { fontSize: 9, fillColor: COLORS.slate }); doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(8).text("REQUIRED NEXT ACTION", 58, y + 177); fitText(doc, defect.severity === "critical" ? "Isolate risk and dispatch an engineer within 4 hours; verify on original media and at site." : "Engineer review within 24 hours; verify location, evidence quality, and repair scope before scheduling.", 58, y + 194, 470, 25, { fontSize: 8.5, fillColor: COLORS.slate }); }); footer(doc);
+
+  // 8 — Maintenance plan
+  doc.addPage(); pageHeader(doc, "Maintenance plan", 8); heading(doc, "Maintenance planning", "Recommended actions are triage guidance only. No completion or contractor acceptance is asserted."); const actions = [["01", "Validate asset identity", "Match each coordinate to the mission log, campus context, and the original capture before opening a work order."], ["02", "Perform engineer review", "Review critical and high findings with full-resolution media, model explanation, quality state, and uncertainty."], ["03", "Define repair scope", `Use the stored estimate of ₹${Math.round(input.repairTotalCents / 100).toLocaleString("en-IN")} as a planning input, not an approved budget.`], ["04", "Schedule site verification", "Required when evidence is uncertain, low quality, obstructed, simulator-derived, or not tied to live capture provenance."], ["05", "Record closure evidence", "Only an authorised engineer or approved workflow may record a decision, work order, repair proof, or closure state."]]; actions.forEach(([number, title, body], index) => { const y = 145 + index * 82; doc.circle(58, y + 20, 15).fill(index < 2 ? COLORS.high : COLORS.cyan); doc.fillColor(COLORS.white).font("Helvetica-Bold").fontSize(9).text(number, 48, y + 17, { width: 20, align: "center" }); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(11).text(title, 90, y + 4); fitText(doc, body, 90, y + 24, 450, 40, { fontSize: 9, fillColor: COLORS.slate }); }); if (input.contractorRoute) { doc.roundedRect(38, 590, 536, 70, 5).fill(input.contractorRoute.ragStatus === "green" ? "#e8f5ee" : input.contractorRoute.ragStatus === "amber" ? "#fff5df" : "#ffeded"); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(9).text(`RAG HANDOFF CANDIDATE · ${input.contractorRoute.ragStatus.toUpperCase()}`, 58, 607); fitText(doc, `${input.contractorRoute.contractorName} · ${input.contractorRoute.workProfile} · ${input.contractorRoute.disclaimer}`, 58, 626, 470, 24, { fontSize: 8, fillColor: COLORS.slate }); } footer(doc);
+
+  // 9 — Provenance and method
+  doc.addPage(); pageHeader(doc, "Provenance and method", 9); heading(doc, "Provenance and method", "A compact audit trail for understanding what is known, what is inferred, and what remains unverified."); const provenanceRows = [["KNOWN FROM RECORDS", "Mission identifiers, persisted evidence IDs, file names, coordinates when present, model scores, review states, and stored explanations."], ["INFERRED FOR TRIAGE", "Severity ordering, recommended urgency, relative coordinate plotting, campus association by latitude, and repair exposure display."], ["NOT CLAIMED", "Structural failure, survey completeness, actual repair completion, public-system delivery, contractor acceptance, or engineer approval."], ["PUBLIC SOURCES", "IGDTUW official website: https://www.igdtuw.ac.in/\nIIIT-Delhi official website: https://iiitd.ac.in/"], ["REPORT FORMAT", "Application/pdf · selectable text and vector graphics · ten fixed pages · blank engineer sign-off fields on page 10."]]; provenanceRows.forEach(([label, value], index) => { const y = 150 + index * 86; doc.fillColor(COLORS.slate).font("Helvetica-Bold").fontSize(8).text(label, 38, y, { width: 170, characterSpacing: 0.6 }); fitText(doc, value, 220, y, 350, 58, { fontSize: 9, fillColor: COLORS.ink }); doc.strokeColor(COLORS.line).moveTo(38, y + 66).lineTo(574, y + 66).stroke(); }); doc.roundedRect(38, 610, 536, 55, 5).fill("#e8eef3"); fitText(doc, "Accuracy policy: institution facts are sourced separately from mission findings; demo/reference media are labelled and do not become site-specific findings without persisted mission linkage.", 58, 626, 470, 28, { fontSize: 8.5, fillColor: COLORS.slate }); footer(doc);
+
+  // 10 — Release gate and sign-off
+  doc.addPage(); pageHeader(doc, "Release gate", 10); heading(doc, "Release gate", "Required controls before a maintenance or public-safety decision is released."); const steps = ["Confirm coordinate context and asset identity against the operator mission log.", "Review every critical and high finding with original media and model provenance.", "Resolve failed or review-state evidence gates before creating a work order.", "Perform site verification for uncertain, low-quality, obstructed, or under-structure captures.", "Record engineer decision, priority override, and sign-off in the DRIFT audit trail."]; steps.forEach((step, index) => { const y = 150 + index * 50; doc.roundedRect(38, y, 536, 34, 4).fill(index < 2 ? "#fff1ed" : "#eef3f4"); doc.circle(58, y + 17, 10).fill(index < 2 ? COLORS.high : COLORS.cyan); doc.fillColor(COLORS.white).font("Helvetica-Bold").fontSize(8).text(String(index + 1), 54, y + 14, { width: 8, align: "center" }); doc.fillColor(COLORS.ink).font("Helvetica").fontSize(9).text(step, 82, y + 11, { width: 470 }); }); doc.fillColor(COLORS.ink).font("Helvetica-Bold").fontSize(13).text("Engineer sign-off", 38, 445); doc.roundedRect(38, 474, 536, 122, 4).strokeColor(COLORS.line).stroke(); doc.fillColor(COLORS.slate).font("Helvetica").fontSize(9).text("Decision", 55, 492); const interactiveDoc = doc as unknown as { formCheckbox?: (name: string, x: number, y: number, width: number, height: number, options?: Record<string, unknown>) => void; formText?: (name: string, x: number, y: number, width: number, height: number, options?: Record<string, unknown>) => void }; ["Approve", "Override", "Site visit required", "Reject"].forEach((label, index) => { const x = 55 + index * 116; interactiveDoc.formCheckbox?.(`decision_${label.replaceAll(" ", "_")}`, x, 512, 11, 11, { size: 11, borderColor: COLORS.slate, fillColor: COLORS.white, textColor: COLORS.ink }); doc.fillColor(COLORS.ink).font("Helvetica").fontSize(8).text(label, x + 16, 514); }); doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text("Reviewer name / role", 55, 546); interactiveDoc.formText?.("reviewer_name_role", 158, 542, 390, 18, { borderColor: COLORS.line, backgroundColor: COLORS.white, fontSize: 9 }); doc.text("Signature", 55, 575); interactiveDoc.formText?.("signature", 158, 571, 390, 18, { borderColor: COLORS.line, backgroundColor: COLORS.white, fontSize: 9 }); doc.text("Date / time", 55, 604); interactiveDoc.formText?.("date_time", 158, 600, 390, 18, { borderColor: COLORS.line, backgroundColor: COLORS.white, fontSize: 9 }); doc.fillColor(COLORS.slate).font("Helvetica").fontSize(8).text("Sign-off is intentionally blank. DRIFT does not fabricate approval, review, or customer testimony.", 38, 635, { width: 536 }); footer(doc);
+  doc.end(); return result;
 }
