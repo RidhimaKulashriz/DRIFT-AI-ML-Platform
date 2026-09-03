@@ -77,35 +77,40 @@ def yolo_detect(image_bytes, model_name, onnx_path, class_names, conf_thresh=0.2
         if tensor is None:
             return []
 
-        out = sess.run(None, {sess.get_inputs()[0].name: tensor})[0]  # [1, features, N]
-        preds = out[0]  # [features, N]
-
-        num_features = preds.shape[0]
-        num_dets = preds.shape[1]
+        out = sess.run(None, {sess.get_inputs()[0].name: tensor})[0]
+        raw = out[0]  # Remove batch dim → [features, N]
+        
+        num_features = raw.shape[0]
+        num_dets = raw.shape[1]
         num_classes = len(class_names)
-
+        
         # Box coords: first 4 rows
-        boxes = preds[:4, :]  # [4, N] — xc, yc, w, h
-
-        # Class scores: depends on model type
-        # CRACK (seg): 4 box + 32 mask_coeffs + 1 class = 37 features → class at index 36
-        # ROAD (detect): 4 box + 4 classes = 8 features → classes at indices 4-7
-        if num_classes == 1:
-            # Segmentation model — class score is last row
-            scores = preds[36:37, :]  # [1, N]
+        boxes = raw[:4, :]  # [4, N] — xc, yc, w, h
+        
+        # Class scores: varies by model type
+        if num_features <= 6:
+            # Standard detection: [4 box + num_classes]
+            scores = raw[4:4+num_classes, :]  # [num_classes, N]
         else:
-            # Detection model — class scores are rows 4 to 4+num_classes
-            scores = preds[4:4+num_classes, :]  # [num_classes, N]
-
-        class_ids = np.argmax(scores, axis=0)  # [N]
-        confidences = np.max(scores, axis=0)  # [N]
-
-        # Scale from 640→original
+            # Seg model: [4 box + 32 mask_coeffs + 1 class] = 37
+            # Class score at last row
+            scores = raw[num_features-1:num_features, :]  # [1, N]
+        
+        # Apply sigmoid if scores contain negatives (logits vs probabilities)
+        if scores.min() < -0.1:
+            scores = 1.0 / (1.0 + np.exp(-scores))
+        
+        class_ids = np.argmax(scores, axis=0)
+        confidences = np.max(scores, axis=0)
+        
         sx, sy = orig_w / 640, orig_h / 640
-
+        
+        # For seg models (many features), use higher threshold to avoid flooding
+        effective_thresh = max(conf_thresh, 0.5) if num_features > 10 else conf_thresh
+        
         dets = []
         for i in range(num_dets):
-            if confidences[i] < conf_thresh:
+            if confidences[i] < effective_thresh:
                 continue
             xc, yc, bw, bh = boxes[:, i]
             x1 = max(0, (xc - bw/2) * sx)
@@ -124,8 +129,11 @@ def yolo_detect(image_bytes, model_name, onnx_path, class_names, conf_thresh=0.2
                 "width": round(((x2 - x1) / orig_w) * 100, 1),
                 "height": round(((y2 - y1) / orig_h) * 100, 1),
             })
-
-        print(f"[ML] {model_name}: {len(dets)} detections (features={num_features}, dets={num_dets}, classes={num_classes})")
+        # Sort by confidence, keep top 10
+        dets.sort(key=lambda d: -d["confidence"])
+        dets = dets[:10]
+        
+        print(f"[ML] {model_name}: {len(dets)} detections (shape={out[0].shape}, features={num_features}, dets={num_dets})")
         return dets
     except Exception as e:
         print(f"[ML] {model_name} error: {e}")
