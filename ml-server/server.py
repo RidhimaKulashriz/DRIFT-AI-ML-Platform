@@ -201,6 +201,37 @@ def estimate_severity(conf, label):
     return "high" if conf >= 0.85 else "medium" if conf >= 0.60 else "low"
 
 
+@app.get("/test")
+async def test_detect():
+    """Test endpoint — run a tiny synthetic image through the models."""
+    import cv2
+    # Create small test image
+    img = np.zeros((640, 640, 3), dtype=np.uint8)
+    img[100:200, 100:500] = (100, 100, 100)  # gray bar
+    tensor = (img.astype(np.float32) / 255.0).transpose(2, 0, 1)[np.newaxis]
+    
+    results = {}
+    for name, path in [("CRACK", CRACK_ONNX), ("ROAD", ROAD_ONNX)]:
+        try:
+            sess = load_onnx(name, path)
+            if sess is None:
+                results[name] = {"error": "session_null"}
+                continue
+            out = sess.run(None, {sess.get_inputs()[0].name: tensor})[0]
+            raw = out[0]
+            results[name] = {
+                "output_shape": list(raw.shape),
+                "min": float(raw.min()),
+                "max": float(raw.max()),
+                "input_name": sess.get_inputs()[0].name,
+                "input_shape": sess.get_inputs()[0].shape,
+            }
+        except Exception as e:
+            import traceback
+            results[name] = {"error": str(e), "traceback": traceback.format_exc()[:500]}
+    return results
+
+
 @app.get("/health")
 async def health():
     return {
