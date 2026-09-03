@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
 
-const streamUrl = String(import.meta.env.VITE_DRIFT_LIVE_STREAM_URL ?? "").trim();
+const configuredStreamUrl = String(import.meta.env.VITE_DRIFT_LIVE_STREAM_URL ?? "").trim();
+const streamUrl = configuredStreamUrl || (import.meta.env.DEV ? "http://127.0.0.1:8888/drift-annotated/index.m3u8" : "");
+const isAnnotatedFeed = streamUrl.includes("drift-annotated") || streamUrl.includes("annotated");
 
 export function LiveStreamPanel() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -41,12 +43,16 @@ export function LiveStreamPanel() {
           <span className="eyebrow">DJI UAV · LIVE FEED</span>
           <h2>Live inspection stream</h2>
         </div>
-        <span className={`status-chip ${status === "live" ? "status-active" : ""}`}>
+                  <span className={`status-chip ${status === "live" ? "status-active" : ""}`}>
+
           {status === "live" ? "LIVE" : status === "not-configured" ? "LOCAL ONLY" : status.toUpperCase()}
         </span>
       </div>
       {streamUrl ? (
-        <video ref={videoRef} className="live-stream-video" controls autoPlay muted playsInline aria-label="Live DJI drone video" />
+        <>
+          <video ref={videoRef} className="live-stream-video" controls autoPlay muted playsInline aria-label={isAnnotatedFeed ? "Live DJI drone video with ML annotations" : "Live DJI drone video"} />
+          <p className="stream-caption">{isAnnotatedFeed ? "Browser feed: live DJI video with ML detection overlays" : "Browser feed: live DJI video"}</p>
+        </>
       ) : (
         <div className="empty-state live-stream-empty">
           <h3>Frontend stream URL is not configured</h3>
