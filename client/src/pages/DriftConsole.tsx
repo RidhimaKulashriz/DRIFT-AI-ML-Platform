@@ -52,7 +52,7 @@ type DefectType = "pothole" | "crack" | "structural" | "corrosion" | "spalling" 
 type Workspace = "operations" | "defects" | "evidence" | "reports" | "hardware" | "accountability" | "trains" | "contractors" | "traffic";
 type Role = "administrator" | "engineer" | "contractor" | "citizen";
 type EvidenceItem = { id: number; fileName: string; storageUrl: string; mediaKind: "photo" | "video" | "annotation" | "report"; source?: "hardware" | "upload" | "simulator" | "cctv" | "reference"; latitude: string | null; longitude: string | null; capturedAt?: Date | null; cameraId?: string | null; provenance?: unknown; captureZone?: string | null; qualityStatus?: string | null; imageQuality?: unknown };
-type TransientSimulatorRun = { name: string; startedAt: number; telemetry: Array<{ latitude: number; longitude: number; altitude: number; batteryPercent: number; speedMps: number; timestamp: number }>; findings: Array<{ title: string; label: string; confidence: number; latitude: number; longitude: number; score: { score: number; severity: Severity; explanation: string[] } }> };
+type TransientSimulatorRun = { name?: string; startedAt?: number; telemetry: Array<{ latitude: number; longitude: number; altitude: number; batteryPercent: number; speedMps: number; timestamp: number }>; findings: Array<{ title: string; label: string; confidence: number; latitude: number; longitude: number; score: { score: number; severity: Severity; explanation: string[] } }> };
 
 const navItems: Array<{ key: Workspace; label: string; icon: typeof Radar }> = [
   { key: "operations", label: "Operations", icon: Radar },

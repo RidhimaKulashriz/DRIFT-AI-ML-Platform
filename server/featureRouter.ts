@@ -179,26 +179,22 @@ export const featureRouter = router({
            input.sensorContribution,
          );
 
-         let trafficEnhanced = priority;
-         if (input.trafficEnabled) {
-           trafficEnhanced = enhancePriorityWithTraffic(
-             input.latitude,
-             input.longitude,
-             priority.overallScore,
-             input.defectType,
-           );
-         }
+        const trafficEnhancement = input.trafficEnabled
+          ? enhancePriorityWithTraffic(
+            input.latitude,
+            input.longitude,
+            priority.overallScore,
+            input.defectType,
+          )
+          : null;
 
-         return {
-           ...priority,
-           repairCostFormatted: formatRepairCost(priority.repairCostEstimateINR),
-           trafficEnhancement:
-             typeof trafficEnhanced === "object" && "trafficDensity" in trafficEnhanced
-               ? trafficEnhanced
-               : null,
-         };
-       }),
-   }),
+        return {
+          ...priority,
+          repairCostFormatted: formatRepairCost(priority.repairCostEstimateINR),
+          trafficEnhancement,
+        };
+      }),
+  }),
 
    /** Campus-based DEMO defect data with sample images (NOT real inspection detections) */
    campusDemoDefects: router({

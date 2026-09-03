@@ -23,7 +23,7 @@ export async function runDemoDetection(input: {
   if (!db) throw new Error("Database not connected. Set DATABASE_URL.");
 
   // 1. Find contractor by GPS
-  const geoMatch = findContractorByLocation(input.latitude, input.longitude, input.infrastructureType);
+  const geoMatch = findContractorByLocation(input.latitude, input.longitude);
   const geoContractor = geoMatch ?? getDefaultContractor(input.infrastructureType);
 
   // 2. Map to DB contractor

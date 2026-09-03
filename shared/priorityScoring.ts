@@ -92,7 +92,7 @@ export function calculateOverallPriority(
     case "high":
       recommendedDeadline = "Within 24 hours — Engineer review and contractor mobilization";
       break;
-    case "moderate":
+    case "medium":
       recommendedDeadline = "Within 7 days — Schedule repair in next maintenance cycle";
       break;
     default:

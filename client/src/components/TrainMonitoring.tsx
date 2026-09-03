@@ -510,7 +510,7 @@ export default function TrainMonitoring() {
                     ? `${meta.bg} ${meta.border} border-2 ring-2 ring-offset-1`
                     : "border-gray-200 bg-white hover:border-gray-300",
                 )}
-                style={isSelected ? { ringColor: meta.color } : {}}
+                style={isSelected ? { boxShadow: `0 0 0 2px ${meta.color}` } : undefined}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
