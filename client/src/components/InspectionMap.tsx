@@ -79,10 +79,9 @@ function loadGoogleMaps(apiKey: string) {
     const script = document.createElement("script");
     script.id = "drift-google-maps-sdk";
     // Use the script load event and constructor check as the single readiness path.
-    // `loading=async` is intentionally not used here because its callback can race cleanup.
-    // Do not pass a global callback: Google may invoke it after onload, which can
-    // race with cleanup during React remounts/HMR.
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&libraries=marker`;
+    // Use Google's recommended async loading mode, but omit the global callback.
+    // Readiness is driven by the script load event and constructor check below.
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async&libraries=marker`;
     script.async = true;
     script.defer = true;
     script.onload = onReady;
@@ -313,7 +312,7 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
       const isTransient = defect.isTransient === true || defect.id < 0;
       const selected = selectedId === defect.id;
       const marker = createMarker({ position: point, title: defect.label, label: isTransient ? String(index + 1) : defect.severity[0]!.toUpperCase(), color: colors[defect.severity], size: selected ? 30 : 20 });
-      marker.addListener("click", () => {
+      marker.addEventListener("gmp-click", () => {
         onSelect(defect.id);
         setStreetViewStatus("idle");
         infoWindow.setContent(`<div style="max-width:240px;font:13px Arial,sans-serif"><strong>${defect.label}</strong><br/>Severity: ${defect.severity}<br/>GPS: ${point.lat.toFixed(6)}, ${point.lng.toFixed(6)}<br/><em>Engineer review required.</em></div>`);
@@ -333,14 +332,14 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
 
     // Official campus reference points plus a clearly approximate context radius.
     const igdtuwMarker = createMarker({ position: { lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude }, title: CAMPUS_MAP_DATA.IGDTUW.name, label: "IGDTUW", color: CAMPUS_MAP_DATA.IGDTUW.color, size: 20 });
-    igdtuwMarker.addListener("click", () => { infoWindow.setContent(campusPopupHtml(CAMPUS_MAP_DATA.IGDTUW)); infoWindow.open({ map, anchor: igdtuwMarker }); });
+    igdtuwMarker.addEventListener("gmp-click", () => { infoWindow.setContent(campusPopupHtml(CAMPUS_MAP_DATA.IGDTUW)); infoWindow.open({ map, anchor: igdtuwMarker }); });
     projectOverlays.current.push(igdtuwMarker);
     const igdtuwCircle = new window.google.maps.Circle({ map, center: { lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude }, radius: CAMPUS_REFERENCE_RADIUS_METERS, strokeColor: CAMPUS_MAP_DATA.IGDTUW.color, strokeOpacity: 0.65, strokeWeight: 1, fillColor: CAMPUS_MAP_DATA.IGDTUW.color, fillOpacity: 0.08, clickable: false });
     projectOverlays.current.push(igdtuwCircle);
     bounds.extend({ lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude });
 
     const iiitdMarker = createMarker({ position: { lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude }, title: CAMPUS_MAP_DATA.IIIT_DELHI.name, label: "IIIT-D", color: CAMPUS_MAP_DATA.IIIT_DELHI.color, size: 20 });
-    iiitdMarker.addListener("click", () => { infoWindow.setContent(campusPopupHtml(CAMPUS_MAP_DATA.IIIT_DELHI)); infoWindow.open({ map, anchor: iiitdMarker }); });
+    iiitdMarker.addEventListener("gmp-click", () => { infoWindow.setContent(campusPopupHtml(CAMPUS_MAP_DATA.IIIT_DELHI)); infoWindow.open({ map, anchor: iiitdMarker }); });
     projectOverlays.current.push(iiitdMarker);
     const iiitdCircle = new window.google.maps.Circle({ map, center: { lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude }, radius: CAMPUS_REFERENCE_RADIUS_METERS, strokeColor: CAMPUS_MAP_DATA.IIIT_DELHI.color, strokeOpacity: 0.65, strokeWeight: 1, fillColor: CAMPUS_MAP_DATA.IIIT_DELHI.color, fillOpacity: 0.08, clickable: false });
     projectOverlays.current.push(iiitdCircle);

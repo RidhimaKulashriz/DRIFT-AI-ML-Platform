@@ -71,8 +71,26 @@ const PUBLIC_DATASET_IMAGE_URL = "https://raw.githubusercontent.com/biankatpas/C
 const PUBLIC_DATASET_CRACK_MASK_URL = "https://raw.githubusercontent.com/biankatpas/Cracks-and-Potholes-in-Road-Images-Dataset/master/PreviewImages/1097248_DF_070_070BDF0010_04158_CRACK.png";
 const BACKEND_ORIGIN = (import.meta.env.VITE_BACKEND_URL || "https://drift-node-api.onrender.com").replace(/\/$/, "");
 
+function encodeBase64Url(value: string) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = "";
+  bytes.forEach(byte => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
 function resolveBackendAssetUrl(url?: string | null) {
   if (!url) return undefined;
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const marker = "/storage/v1/object/sign/";
+    const markerIndex = parsed.pathname.indexOf(marker);
+    if (markerIndex >= 0) {
+      const storagePath = parsed.pathname.slice(markerIndex + marker.length).split("/").map(decodeURIComponent).join("/");
+      return `${BACKEND_ORIGIN}/api/drift/evidence-media/${encodeBase64Url(`supabase://${storagePath}`)}`;
+    }
+  } catch {
+    // Preserve non-URL storage paths for the backend-origin fallback below.
+  }
   return /^https?:\/\//i.test(url) ? url : `${BACKEND_ORIGIN}${url.startsWith("/") ? url : `/${url}`}`;
 }
 
