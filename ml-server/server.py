@@ -215,7 +215,7 @@ async def detect_base64(request_body: dict):
     except Exception as e:
         errors.append(f"onnx_init: {e}")
 
-    # CRACK YOLO
+    # CRACK YOLO (local ONNX)
     try:
         dets = yolo_detect(image_bytes, "CRACK", {0: "crack"}, confidence)
         all_detections.extend(dets)
@@ -224,7 +224,7 @@ async def detect_base64(request_body: dict):
     except Exception as e:
         errors.append(f"crack: {e}")
 
-    # ROAD YOLO
+    # ROAD YOLO (local ONNX)
     try:
         dets = yolo_detect(image_bytes, "ROAD", {0: "Longitudinal Crack", 1: "Transverse Crack", 2: "Alligator Crack", 3: "Potholes"}, confidence)
         all_detections.extend(dets)
@@ -232,6 +232,16 @@ async def detect_base64(request_body: dict):
             models_used.append("ROAD-YOLO")
     except Exception as e:
         errors.append(f"road: {e}")
+
+    # CRACK Roboflow (cloud backup if ONNX not available)
+    if not any(d["model"].startswith("CRACK") or d["model"].startswith("ROAD") for d in all_detections):
+        try:
+            dets = roboflow_detect(image_bytes, "road-crack-detection-v1/1", "CRACK-CLOUD", confidence)
+            all_detections.extend(dets)
+            if dets:
+                models_used.append("CRACK-CLOUD")
+        except Exception as e:
+            errors.append(f"crack-cloud: {e}")
 
     # RAILWAY Roboflow
     try:
