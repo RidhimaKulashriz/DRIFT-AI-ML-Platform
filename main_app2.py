@@ -38,8 +38,34 @@ from types import SimpleNamespace
 import cv2
 import requests
 
-# visual.py is the user's supplied integrated model application.
-from visual import annotate_frame, create_roboflow_client, load_local_models, run_all_models
+# visual.py is the user's supplied integrated model application. Some local
+# copies contain the model functions but not the optional annotation helper.
+import visual
+
+load_local_models = visual.load_local_models
+run_all_models = visual.run_all_models
+create_roboflow_client = getattr(visual, "create_roboflow_client", None)
+
+
+def annotate_frame(frame, detections, frame_number=None):
+    """Use visual.py's annotator when present, otherwise draw basic boxes."""
+    supplied = getattr(visual, "annotate_frame", None)
+    if supplied is not None:
+        return supplied(frame, detections, frame_number=frame_number)
+
+    output = frame.copy()
+    colors = {"CRACK": (0, 0, 255), "ROAD": (255, 0, 0), "RAILWAY": (0, 255, 255), "RUST": (0, 255, 0)}
+    for detection in detections or []:
+        bbox = detection.get("bbox", [0, 0, 0, 0])
+        x1, y1, x2, y2 = [max(0, int(value)) for value in bbox]
+        model = str(detection.get("model", "MODEL"))
+        label = str(detection.get("label", "detection"))
+        confidence = float(detection.get("confidence", 0.0))
+        color = colors.get(model, (255, 255, 255))
+        cv2.rectangle(output, (x1, y1), (x2, y2), color, 2)
+        cv2.putText(output, f"{model} | {label} | {confidence:.2f}", (x1, max(20, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 2, cv2.LINE_AA)
+    cv2.putText(output, f"DRIFT LIVE | {len(detections or [])} detections", (18, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (0, 255, 0), 2, cv2.LINE_AA)
+    return output
 
 
 DEFAULT_SOURCE = "rtsp://127.0.0.1:8554/drift"
@@ -166,6 +192,8 @@ def main() -> int:
     roboflow_client = None
     if args.roboflow:
         try:
+            if create_roboflow_client is None:
+                raise RuntimeError("This visual.py does not provide create_roboflow_client")
             roboflow_client = create_roboflow_client()
             print("[DRIFT] Roboflow Railway/Rust models enabled")
         except Exception as exc:
