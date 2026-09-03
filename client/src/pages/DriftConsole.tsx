@@ -251,8 +251,10 @@ export default function DriftConsole() {
   const contractorWorkPersistence = contractorAssignedWork.data?.persistence;
   const accountabilityReady = accountabilityPersistence?.available === true && persistenceAvailable;
   const missionIdForEvidence = Number(missions[0]?.id ?? 0);
-  const missionEvidence = trpc.drift.evidence.list.useQuery({ missionId: missionIdForEvidence }, { enabled: missionIdForEvidence > 0, refetchInterval: 10000 });
-  const demoEvidence = trpc.drift.evidence.demoList.useQuery({ missionId: missionIdForEvidence }, { enabled: workspace === "evidence" && missionIdForEvidence > 0 });
+  const canReadEvidence = isAuthenticated && ["admin", "engineer", "user"].includes(workspaceAccess.data?.role ?? "");
+  const evidenceQueryEnabled = canReadEvidence && missionIdForEvidence > 0;
+  const missionEvidence = trpc.drift.evidence.list.useQuery({ missionId: missionIdForEvidence }, { enabled: evidenceQueryEnabled, refetchInterval: evidenceQueryEnabled ? 10000 : false, retry: false });
+  const demoEvidence = trpc.drift.evidence.demoList.useQuery({ missionId: missionIdForEvidence }, { enabled: workspace === "evidence" && evidenceQueryEnabled, retry: false });
   const evidenceItems: EvidenceItem[] = (missionEvidence.data?.length ? missionEvidence.data : demoEvidence.data ?? []).filter(item => {
     const provenance = item.provenance;
     return !(provenance && typeof provenance === "object" && (provenance as Record<string, unknown>).kind === "reference-image");
