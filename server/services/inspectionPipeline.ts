@@ -384,43 +384,118 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
     boundingBox: null,
   };
 
-  // Priority 1: Hitakshi's ML pipeline (CRACK + ROAD + RAILWAY + RUST YOLO models)
-  const mlEndpoint = process.env.ML_INFERENCE_URL?.trim() || "https://drift-ml.onrender.com/detect-base64";
-  if (mlEndpoint) {
-    try {
-      const mlResponse = await fetch(mlEndpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({ imageBase64: buffer.toString("base64"), fileName: input.fileName, confidence: 0.25, imgsz: 640 }),
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (mlResponse.ok) {
-        const mlData = await mlResponse.json() as any;
-        if (mlData?.success && Array.isArray(mlData.detections) && mlData.detections.length > 0) {
-          const best = mlData.detections.sort((a: any, b: any) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
-          const validTypes = new Set(["pothole", "crack", "structural", "corrosion", "spalling", "exposed_rebar", "water_intrusion", "settlement", "obstruction", "lighting_failure"]);
-          const defectType = validTypes.has(best.label) ? best.label : "crack";
-          mlResult = {
-            source: "hitakshi-ml",
-            model: mlData.model || best.model || "hitakshi-multi-model",
-            confidence: typeof best.confidence === "number" ? best.confidence : 0.5,
-            defectType,
-            severity: best.severity || "medium",
-            boundingBox: best.boundingBox || null,
-          };
-          console.log(`[InspectionPipeline] Hitakshi ML detected: ${defectType} (${(mlResult.confidence * 100).toFixed(1)}%) using ${mlResult.model}`);
+  let frameDetections: Array<{ frameIndex: number; detection: any }> = [];
+  let detectionIds: number[] = [];
+
+  // For videos, process each frame individually
+  if (isVideo && videoFrames.length > 0) {
+    console.log(`[InspectionPipeline] Running ML detection on ${videoFrames.length} video frames...`);
+    
+    for (let i = 0; i < videoFrames.length; i++) {
+      const frame = videoFrames[i];
+      const frameBase64 = frame.base64.replace(/^data:.*?;base64,/, "");
+      const frameBuffer = Buffer.from(frameBase64, "base64");
+      
+      let frameMlResult: any = {
+        source: "no-ml-configured",
+        model: "none",
+        confidence: 0,
+        defectType: null,
+        severity: null,
+        boundingBox: null,
+      };
+
+      // Try Hitakshi ML for this frame
+      const mlEndpoint = process.env.ML_INFERENCE_URL?.trim() || "https://drift-ml.onrender.com/detect-base64";
+      if (mlEndpoint) {
+        try {
+          const mlResponse = await fetch(mlEndpoint, {
+            method: "POST",
+            headers: { "content-type": "application/json", accept: "application/json" },
+            body: JSON.stringify({ imageBase64: frameBase64, fileName: `frame_${i}.jpg`, confidence: 0.25, imgsz: 640 }),
+            signal: AbortSignal.timeout(15_000),
+          });
+          if (mlResponse.ok) {
+            const mlData = await mlResponse.json() as any;
+            if (mlData?.success && Array.isArray(mlData.detections) && mlData.detections.length > 0) {
+              const best = mlData.detections.sort((a: any, b: any) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
+              const validTypes = new Set(["pothole", "crack", "structural", "corrosion", "spalling", "exposed_rebar", "water_intrusion", "settlement", "obstruction", "lighting_failure"]);
+              const defectType = validTypes.has(best.label) ? best.label : "crack";
+              frameMlResult = {
+                source: "hitakshi-ml",
+                model: mlData.model || best.model || "hitakshi-multi-model",
+                confidence: typeof best.confidence === "number" ? best.confidence : 0.5,
+                defectType,
+                severity: best.severity || "medium",
+                boundingBox: best.boundingBox || null,
+              };
+              console.log(`[InspectionPipeline] Frame ${i}: Hitakshi ML detected ${defectType} (${(frameMlResult.confidence * 100).toFixed(1)}%)`);
+            }
+          }
+        } catch (err) {
+          console.warn(`[InspectionPipeline] Frame ${i}: Hitakshi ML failed, trying Gemini`, err instanceof Error ? err.message : err);
+          
+          // Try Gemini fallback for this frame
+          const geminiResult = await callGeminiVision(frameBuffer, "image/jpeg");
+          if (geminiResult) {
+            frameMlResult = { source: "gemini", model: geminiResult.model, confidence: geminiResult.confidence, defectType: geminiResult.defectType, severity: geminiResult.severity, boundingBox: geminiResult.boundingBox };
+            console.log(`[InspectionPipeline] Frame ${i}: Gemini detected ${frameMlResult.defectType} (${(frameMlResult.confidence * 100).toFixed(1)}%)`);
+          }
         }
       }
-    } catch (err) {
-      console.warn("[InspectionPipeline] Hitakshi ML server failed, trying Gemini:", err instanceof Error ? err.message : err);
-    }
-  }
 
-  // Priority 2: Gemini fallback (if Hitakshi ML not available or failed)
-  if (!mlResult.defectType) {
-    const geminiResult = await callGeminiVision(buffer, input.mimeType);
-    if (geminiResult) {
-      mlResult = { source: "gemini", model: geminiResult.model, confidence: geminiResult.confidence, defectType: geminiResult.defectType, severity: geminiResult.severity, boundingBox: geminiResult.boundingBox };
+      // Store frame detection result
+      frameDetections.push({
+        frameIndex: i,
+        detection: frameMlResult,
+      });
+
+      // Use the best detection across all frames as the main result
+      if (frameMlResult.defectType && frameMlResult.confidence > mlResult.confidence) {
+        mlResult = frameMlResult;
+      }
+    }
+
+    console.log(`[InspectionPipeline] Video analysis complete: ${frameDetections.filter(f => f.detection.defectType).length} frames with defects`);
+  } else {
+    // Single image detection (original logic)
+    const mlEndpoint = process.env.ML_INFERENCE_URL?.trim() || "https://drift-ml.onrender.com/detect-base64";
+    if (mlEndpoint) {
+      try {
+        const mlResponse = await fetch(mlEndpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ imageBase64: workingBuffer.toString("base64"), fileName: input.fileName, confidence: 0.25, imgsz: 640 }),
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (mlResponse.ok) {
+          const mlData = await mlResponse.json() as any;
+          if (mlData?.success && Array.isArray(mlData.detections) && mlData.detections.length > 0) {
+            const best = mlData.detections.sort((a: any, b: any) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
+            const validTypes = new Set(["pothole", "crack", "structural", "corrosion", "spalling", "exposed_rebar", "water_intrusion", "settlement", "obstruction", "lighting_failure"]);
+            const defectType = validTypes.has(best.label) ? best.label : "crack";
+            mlResult = {
+              source: "hitakshi-ml",
+              model: mlData.model || best.model || "hitakshi-multi-model",
+              confidence: typeof best.confidence === "number" ? best.confidence : 0.5,
+              defectType,
+              severity: best.severity || "medium",
+              boundingBox: best.boundingBox || null,
+            };
+            console.log(`[InspectionPipeline] Hitakshi ML detected: ${defectType} (${(mlResult.confidence * 100).toFixed(1)}%) using ${mlResult.model}`);
+          }
+        }
+      } catch (err) {
+        console.warn("[InspectionPipeline] Hitakshi ML server failed, trying Gemini:", err instanceof Error ? err.message : err);
+      }
+    }
+
+    // Priority 2: Gemini fallback (if Hitakshi ML not available or failed)
+    if (!mlResult.defectType) {
+      const geminiResult = await callGeminiVision(workingBuffer, workingMimeType);
+      if (geminiResult) {
+        mlResult = { source: "gemini", model: geminiResult.model, confidence: geminiResult.confidence, defectType: geminiResult.defectType, severity: geminiResult.severity, boundingBox: geminiResult.boundingBox };
+      }
     }
   }
 
@@ -458,12 +533,68 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
           `ML model: ${mlResult.model}`,
           `Confidence: ${(mlResult.confidence * 100).toFixed(1)}%`,
           `Severity: ${mlResult.severity}`,
+          ...(isVideo ? [`Video frame: ${frameDetections.findIndex(f => f.detection.defectType === mlResult.defectType) + 1}/${videoFrames.length}`] : []),
         ],
         correlationKey: `inspection-${missionId ?? "0"}-evidence-${evidenceId}`,
       }).returning({ id: defects.id });
       detectionId = newDefect?.id ?? null;
+      detectionIds.push(detectionId);
     } catch (e) {
       console.warn("[InspectionPipeline] Detection persist failed:", e);
+    }
+  }
+
+  // For videos, also persist detections for each frame that has a defect
+  if (isVideo && frameDetections.length > 0 && db && evidenceId) {
+    try {
+      const { defects } = await import("../../drizzle/schema");
+      const severityMap: Record<string, number> = { pothole: 45, crack: 55, structural: 85, corrosion: 70, spalling: 75, exposed_rebar: 88, water_intrusion: 60, settlement: 90, rail_alignment: 82, obstruction: 40, lighting_failure: 50 };
+
+      for (const frameDetection of frameDetections) {
+        if (frameDetection.detection.defectType) {
+          const frameMlResult = frameDetection.detection;
+          const priority = calculateOverallPriority({
+            defectSeverity: severityMap[frameMlResult.defectType] ?? 50,
+            mlConfidence: frameMlResult.confidence,
+            trafficImpact: 0,
+            sensorAnomaly: 0,
+            infrastructureCriticality: input.assetCriticality,
+          }, frameMlResult.defectType);
+
+          const [newFrameDefect] = await db.insert(defects).values({
+            missionId: missionId ?? 0,
+            assetId: assetId ?? 1,
+            evidenceId: evidenceId,
+            defectType: frameMlResult.defectType as any,
+            label: frameMlResult.defectType.replace(/_/g, " "),
+            confidencePercent: Math.round(frameMlResult.confidence * 100),
+            zeroErrorScore: priority.overallScore,
+            severity: (frameMlResult.severity || priority.priorityLevel) as any,
+            status: "detected",
+            reviewState: "pending",
+            latitude: latitude !== null ? latitude.toFixed(6) : null,
+            longitude: longitude !== null ? longitude.toFixed(6) : null,
+            inspectionDomain: input.inspectionDomain ?? "infrastructure",
+            boundingBox: frameMlResult.boundingBox as any,
+            coveragePercent: 100,
+            explanation: [
+              `ML model: ${frameMlResult.model}`,
+              `Confidence: ${(frameMlResult.confidence * 100).toFixed(1)}%`,
+              `Severity: ${frameMlResult.severity}`,
+              `Video frame: ${frameDetection.frameIndex + 1}/${videoFrames.length} (${videoFrames[frameDetection.frameIndex].timestamp.toFixed(1)}s)`,
+            ],
+            correlationKey: `inspection-${missionId ?? "0"}-evidence-${evidenceId}-frame-${frameDetection.frameIndex}`,
+          }).returning({ id: defects.id });
+          
+          if (newFrameDefect?.id) {
+            detectionIds.push(newFrameDefect.id);
+          }
+        }
+      }
+      
+      console.log(`[InspectionPipeline] Persisted ${detectionIds.length} detection records for video frames`);
+    } catch (e) {
+      console.warn("[InspectionPipeline] Frame detection persist failed:", e);
     }
   }
 
@@ -492,7 +623,8 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
         cameraId: "user-upload",
         storageUrl: stored.url,
         provenance: { kind: "user-upload", inspectionDomain: input.inspectionDomain, originalCaptureRequired: true, notSimulator: true },
-        imageBuffer: buffer, // ACTUAL uploaded image
+        imageBuffer: workingBuffer, // ACTUAL uploaded image or first video frame
+        ...(isVideo && { mediaKind: "video", frameCount: videoFrames.length }),
       }],
       defects: mlResult.defectType && detectionId ? [{
         id: detectionId,
@@ -604,6 +736,7 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
     inspectionId: inspectionRecordId ?? undefined,
     evidenceId: evidenceId ?? undefined,
     detectionId,
+    detectionIds: detectionIds.length > 0 ? detectionIds : undefined,
     reportId,
     pdfBase64: pdfBase64 ?? undefined,
     pdfSizeBytes,
@@ -613,6 +746,8 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
     locationUsed,
     campusVerified,
     mlUsed: mlResult,
+    videoFrames: isVideo ? videoFrames : undefined,
+    frameDetections: isVideo ? frameDetections : undefined,
     durationMs: Date.now() - start,
   };
 }
