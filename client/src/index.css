@@ -281,3 +281,5 @@ button { cursor: pointer; }
 .pipeline-step.complete { border-color: #1e704b; color: #1e704b; background: #eef7f0; }
 .pipeline-step.complete b { background: #1e704b; color: #fff; }
 @media (max-width: 900px) { .pipeline-steps { grid-template-columns: 1fr 1fr; } }
+
+.live-stream-panel{margin:20px 34px 0;background:#111;color:#f5f5f2;border-color:#2d3b46;box-shadow:7px 7px 0 #8ca0ab}.live-stream-panel .panel-heading{border-bottom:1px solid #30424d}.live-stream-panel .panel-heading h2{color:#fff}.live-stream-panel .eyebrow{color:#91e5d2}.live-stream-video{display:block;width:100%;max-height:620px;min-height:300px;object-fit:contain;background:#050708}.live-stream-empty{min-height:260px;margin:20px;background:#18242b;border:1px solid #3e5965;color:#dae7e8}.live-stream-empty h3{color:#fff}.live-stream-empty code{color:#91e5d2}@media(max-width:760px){.live-stream-panel{margin-left:15px;margin-right:15px}.live-stream-video{min-height:220px}}

@@ -2,6 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { cn } from "@/lib/utils";
 import { InspectionMap } from "@/components/InspectionMap";
 import { LivePipelinePanel } from "@/components/LivePipelinePanel";
+import { LiveStreamPanel } from "@/components/LiveStreamPanel";
 import { AuthenticReferenceVisuals, ContractorReadinessBoard } from "@/components/ContractorReadinessBoard";
 import { requestedSeverityFilter } from "@/lib/driftInteractions";
 import { AIChatBox, type Message } from "@/components/AIChatBox";
@@ -250,7 +251,7 @@ export default function DriftConsole() {
   const contractorWorkPersistence = contractorAssignedWork.data?.persistence;
   const accountabilityReady = accountabilityPersistence?.available === true && persistenceAvailable;
   const missionIdForEvidence = Number(missions[0]?.id ?? 0);
-  const missionEvidence = trpc.drift.evidence.list.useQuery({ missionId: missionIdForEvidence }, { enabled: workspace === "evidence" && missionIdForEvidence > 0 });
+  const missionEvidence = trpc.drift.evidence.list.useQuery({ missionId: missionIdForEvidence }, { enabled: missionIdForEvidence > 0, refetchInterval: 10000 });
   const demoEvidence = trpc.drift.evidence.demoList.useQuery({ missionId: missionIdForEvidence }, { enabled: workspace === "evidence" && missionIdForEvidence > 0 });
   const evidenceItems: EvidenceItem[] = (missionEvidence.data?.length ? missionEvidence.data : demoEvidence.data ?? []).filter(item => {
     const provenance = item.provenance;
@@ -587,6 +588,7 @@ export default function DriftConsole() {
           <section className="proof-panel" aria-labelledby="proof-panel-title"><div className="proof-panel-heading"><div><span className="eyebrow">SYSTEM OVERVIEW</span><h2 id="proof-panel-title">DRIFT Inspection Pipeline</h2></div><BookOpenCheck /></div><div className="proof-grid"><div><span className="proof-label">STEP 1</span><strong>Drone Connects</strong><p>DJI Mini 3 Pro connects to laptop via phone. Media and GPS are streamed to the backend in real-time.</p></div><div><span className="proof-label">STEP 2</span><strong>ML Detection</strong><p>Backend sends images/video to ML inference. Defects are classified with confidence scores and GPS coordinates.</p></div><div><span className="proof-label">STEP 3</span><strong>Map & Contractor</strong><p>Defects are pinned on the geo-stationary map. Contractors are auto-assigned by campus location.</p></div><div><span className="proof-label">STEP 4</span><strong>Report & Email</strong><p>Full defect report with cost estimates is generated. Email is sent to the assigned contractor automatically.</p></div></div></section>
 
           <PublicDatasetVisualCard onPreview={() => setEvidencePreview(publicDatasetSamples[0]!)} onOpenEvidence={() => setWorkspace("evidence")} />
+          <LiveStreamPanel />
           <section className="operations-grid">
             <article ref={mapPanelRef} className="panel map-panel">
               <div className="panel-heading"><div><span className="eyebrow">GEO-SPATIAL WORKBENCH</span><h2>Live defect field</h2></div><button type="button" className="icon-button" onClick={() => setWorkspace("defects")} aria-label="Open defect filters" title="Open defect filters"><SlidersHorizontal /></button></div>
