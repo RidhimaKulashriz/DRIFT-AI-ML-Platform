@@ -162,7 +162,22 @@ async function callGeminiVision(buffer: Buffer, mimeType: string): Promise<{ def
     if (typeof parsed.confidence !== "number") return null;
     if (parsed.confidence < 0 || parsed.confidence > 1) return null;
     const validTypes = new Set(["pothole", "crack", "structural", "corrosion", "spalling", "exposed_rebar", "water_intrusion", "settlement", "obstruction", "lighting_failure"]);
-    if (!validTypes.has(parsed.defect)) return null;
+    // Normalize Gemini's free-form labels to our canonical types
+    const defectLower = String(parsed.defect).toLowerCase().trim();
+    let normalizedDefect: string | null = null;
+    if (defectLower.includes("crack") || defectLower.includes("fracture")) normalizedDefect = "crack";
+    else if (defectLower.includes("pothole") || defectLower.includes("potholes") || defectLower.includes("pit") || defectLower.includes("sinkhole")) normalizedDefect = "pothole";
+    else if (defectLower.includes("corrosion") || defectLower.includes("rust")) normalizedDefect = "corrosion";
+    else if (defectLower.includes("spall")) normalizedDefect = "spalling";
+    else if (defectLower.includes("rebar") || defectLower.includes("exposed")) normalizedDefect = "exposed_rebar";
+    else if (defectLower.includes("water") || defectLower.includes("leak") || defectLower.includes("seepage") || defectLower.includes("moisture")) normalizedDefect = "water_intrusion";
+    else if (defectLower.includes("settle") || defectLower.includes("settl")) normalizedDefect = "settlement";
+    else if (defectLower.includes("obstruct") || defectLower.includes("blockage") || defectLower.includes("debris")) normalizedDefect = "obstruction";
+    else if (defectLower.includes("light") || defectLower.includes("lamp")) normalizedDefect = "lighting_failure";
+    else if (defectLower.includes("structur") || defectLower.includes("beam") || defectLower.includes("column") || defectLower.includes("slab") || defectLower.includes("wall") || defectLower.includes("damage") || defectLower.includes("deterioration")) normalizedDefect = "structural";
+    else if (validTypes.has(defectLower)) normalizedDefect = defectLower;
+    else return null; // truly unknown type
+    parsed.defect = normalizedDefect;
     const validSeverity = new Set(["low", "medium", "high", "critical"]);
     if (!validSeverity.has(parsed.severity)) return null;
     return {
