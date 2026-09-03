@@ -15,6 +15,12 @@ Run with Render backend ML + database persistence:
         --token YOUR_DRIFT_INGEST_TOKEN --mission-id 123 \\
         --latitude 28.6647 --longitude 77.2325
 
+Run with a browser-visible annotated stream through MediaMTX:
+    python main_app2.py --annotated-rtmp rtmp://127.0.0.1:1935/drift-annotated
+
+Set the frontend VITE_DRIFT_LIVE_STREAM_URL to:
+    http://127.0.0.1:8888/drift-annotated/index.m3u8
+
 Each sampled frame is sent as authenticated photo evidence. Render stores it,
 executes its configured ML_INFERENCE_URL, persists the resulting defect, and
 the frontend overview/map polling can display the new GPS-linked finding.
@@ -31,6 +37,8 @@ from __future__ import annotations
 import argparse
 import base64
 import os
+import shutil
+import subprocess
 import sys
 import time
 from types import SimpleNamespace
@@ -100,6 +108,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--road-tile-size", type=int, default=640)
     parser.add_argument("--road-overlap", type=float, default=0.20)
     parser.add_argument("--no-display", action="store_true")
+    parser.add_argument("--annotated-rtmp", default=os.getenv("DRIFT_ANNOTATED_RTMP_URL", ""), help="Optional RTMP publish URL for browser-visible annotated frames")
     return parser.parse_args()
 
 
@@ -161,6 +170,50 @@ def upload_frame(args: argparse.Namespace, frame, frame_number: int) -> dict | N
     return response.json()
 
 
+def start_annotated_publisher(url: str, width: int, height: int, fps: float = 20.0):
+    if not url:
+        return None
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError("--annotated-rtmp requires ffmpeg in PATH")
+    command = [
+        "ffmpeg", "-hide_banner", "-loglevel", "warning", "-f", "rawvideo",
+        "-pix_fmt", "bgr24", "-s", f"{width}x{height}", "-r", f"{fps:.2f}", "-i", "-",
+        "-an", "-c:v", "libx264", "-preset", "veryfast", "-tune", "zerolatency",
+        "-pix_fmt", "yuv420p", "-f", "flv", url,
+    ]
+    print(f"[DRIFT] Publishing annotated browser stream to {url}")
+    return subprocess.Popen(command, stdin=subprocess.PIPE)
+
+
+def write_annotated_frame(publisher, frame):
+    if publisher is None or publisher.stdin is None:
+        return publisher
+    try:
+        publisher.stdin.write(frame.tobytes())
+        return publisher
+    except (BrokenPipeError, OSError):
+        print("[WARN] Annotated browser stream publisher stopped")
+        try:
+            publisher.kill()
+        except OSError:
+            pass
+        return None
+
+
+def stop_annotated_publisher(publisher):
+    if publisher is None:
+        return
+    try:
+        if publisher.stdin:
+            publisher.stdin.close()
+        publisher.wait(timeout=3)
+    except (BrokenPipeError, OSError, subprocess.TimeoutExpired):
+        try:
+            publisher.kill()
+        except OSError:
+            pass
+
+
 def open_capture(source: str):
     try:
         source_value = int(source)
@@ -219,6 +272,14 @@ def main() -> int:
         return 3
 
     window = "DRIFT Live Inference"
+    annotated_publisher = None
+    if args.annotated_rtmp:
+        try:
+            width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 1280)
+            height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 720)
+            annotated_publisher = start_annotated_publisher(args.annotated_rtmp, width, height)
+        except Exception as exc:
+            print(f"[WARN] Annotated browser stream disabled: {exc}")
     if not args.no_display:
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(window, 1280, 720)
@@ -275,12 +336,15 @@ def main() -> int:
                 cv2.LINE_AA,
             )
 
+            annotated_publisher = write_annotated_frame(annotated_publisher, annotated)
+
             if not args.no_display:
                 cv2.imshow(window, annotated)
                 key = cv2.waitKey(1) & 0xFF
                 if key in (ord("q"), ord("Q"), 27):
                     break
     finally:
+        stop_annotated_publisher(annotated_publisher)
         capture.release()
         if not args.no_display:
             cv2.destroyAllWindows()
