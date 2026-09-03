@@ -23,11 +23,11 @@ BASE_DIR = Path(__file__).parent
 CRACK_ONNX = str(BASE_DIR / "cracks" / "main_crack.onnx")
 ROAD_ONNX = str(BASE_DIR / "road-ml" / "main_road.onnx")
 
-_sessions = {"crack": None, "road": None}
+_sessions = {}
 
 
 def load_onnx(name, path):
-    if _sessions[name] is not None:
+    if _sessions.get(name) is not None:
         return _sessions[name]
     if not os.path.exists(path):
         print(f"[ML] ONNX not found: {path}")
