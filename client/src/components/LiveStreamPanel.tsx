@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
 
 const configuredStreamUrl = String(import.meta.env.VITE_DRIFT_LIVE_STREAM_URL ?? "").trim();
-const streamUrl = configuredStreamUrl || (import.meta.env.DEV ? "http://127.0.0.1:8888/drift-annotated/index.m3u8" : "");
+const streamUrl = configuredStreamUrl;
 const uploadedDemoVideoUrl = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663855346163/OqjPCGreoHnnniLg.mp4";
 const isAnnotatedFeed = streamUrl.includes("drift-annotated") || streamUrl.includes("annotated");
 
