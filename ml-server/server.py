@@ -224,6 +224,26 @@ def estimate_severity(conf, label):
     return "high" if conf >= 0.85 else "medium" if conf >= 0.60 else "low"
 
 
+@app.get("/debug")
+async def debug():
+    """Debug endpoint to test ONNX model loading."""
+    import traceback as tb
+    results = {}
+    for name, path in [("CRACK", CRACK_ONNX), ("ROAD", ROAD_ONNX)]:
+        try:
+            if os.path.exists(path):
+                import onnxruntime as ort
+                sess = ort.InferenceSession(path, providers=["CPUExecutionProvider"])
+                inp = sess.get_inputs()[0]
+                out = sess.get_outputs()[0]
+                results[name] = {"status": "loaded", "input": inp.shape, "output": out.shape, "input_name": inp.name}
+            else:
+                results[name] = {"status": "file_missing", "path": path}
+        except Exception as e:
+            results[name] = {"status": "error", "error": str(e), "traceback": tb.format_exc()[:500]}
+    return results
+
+
 @app.get("/health")
 async def health():
     crack_onnx = os.path.exists(CRACK_ONNX)
