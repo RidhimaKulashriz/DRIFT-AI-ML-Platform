@@ -78,9 +78,11 @@ function loadGoogleMaps(apiKey: string) {
 
     const script = document.createElement("script");
     script.id = "drift-google-maps-sdk";
-    // `loading=async` completes the script element before the API namespace is
-    // guaranteed to be ready, so use the callback and constructor check below.
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async&libraries=marker&callback=__driftGoogleMapsReady`;
+    // Use the script load event and constructor check as the single readiness path.
+    // `loading=async` is intentionally not used here because its callback can race cleanup.
+    // Do not pass a global callback: Google may invoke it after onload, which can
+    // race with cleanup during React remounts/HMR.
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&libraries=marker`;
     script.async = true;
     script.defer = true;
     script.onload = onReady;
@@ -233,7 +235,7 @@ function LeafletFallbackMap({ defects, telemetry, selectedId, onSelect }: {
 export function InspectionMap({ defects, telemetry, selectedId, streetViewRequest = 0, onSelect, className }: InspectionMapProps) {
   const mapElement = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
-  const projectOverlays = useRef<Array<{ setMap: (map: google.maps.Map | null) => void }>>([]);
+  const projectOverlays = useRef<Array<{ setMap: (map: google.maps.Map | null) => void } | { map?: google.maps.Map | null }>>([]);
   const completedStreetViewRequest = useRef(0);
   const [mapState, setMapState] = useState<"loading" | "ready" | "missing-key" | "error">("loading");
   const [streetViewStatus, setStreetViewStatus] = useState<"idle" | "checking" | "open" | "unavailable">("idle");
@@ -268,7 +270,7 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
       const center = validDefects[0]?.point ?? { lat: 28.6139, lng: 77.209 };
       // Detect billing-not-enabled or any other Maps runtime error and fall back to Leaflet.
       try {
-        mapRef.current = new window.google.maps.Map(mapElement.current, { center, zoom: validDefects.length ? 13 : 11, mapTypeControl: true, streetViewControl: true, fullscreenControl: true, clickableIcons: false, gestureHandling: "cooperative" });
+        mapRef.current = new window.google.maps.Map(mapElement.current, { center, zoom: validDefects.length ? 13 : 11, mapId: "DEMO_MAP_ID", mapTypeControl: true, streetViewControl: true, fullscreenControl: true, clickableIcons: false, gestureHandling: "cooperative" });
         setMapState("ready");
       } catch (err) {
         console.warn("[InspectionMap] Google Maps failed to initialize, falling back to Leaflet:", err);
@@ -289,22 +291,28 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
   useEffect(() => {
     const map = mapRef.current;
     if (!map || mapState !== "ready" || !window.google?.maps) return;
-    projectOverlays.current.forEach(overlay => overlay.setMap(null));
+    projectOverlays.current.forEach(overlay => { if ("setMap" in overlay) overlay.setMap(null); else overlay.map = null; });
     projectOverlays.current = [];
     const bounds = new window.google.maps.LatLngBounds();
     const infoWindow = new window.google.maps.InfoWindow();
 
+    const createMarker = (options: { position: google.maps.LatLngLiteral; title?: string; label?: string; color: string; size: number; opacity?: number }) => {
+      const content = document.createElement("div");
+      content.textContent = options.label ?? "";
+      Object.assign(content.style, {
+        width: `${options.size}px`, height: `${options.size}px`, borderRadius: "50%",
+        display: "grid", placeItems: "center", boxSizing: "border-box",
+        background: options.color, opacity: String(options.opacity ?? 1),
+        border: "2px solid #ffffff", color: "#ffffff", font: "700 10px Arial, sans-serif",
+        textAlign: "center", whiteSpace: "nowrap", transform: "translate(-50%, -50%)",
+      });
+      return new window.google.maps.marker.AdvancedMarkerElement({ map, position: options.position, title: options.title, content });
+    };
+
     validDefects.forEach(({ defect, point }, index) => {
       const isTransient = defect.isTransient === true || defect.id < 0;
       const selected = selectedId === defect.id;
-      const marker = new window.google.maps.Marker({
-        map,
-        position: point,
-        title: defect.label,
-        zIndex: selected ? 10_000 : 1_000 + index,
-        label: { text: isTransient ? String(index + 1) : defect.severity[0]!.toUpperCase(), color: "#ffffff", fontWeight: "700", fontSize: isTransient ? "10px" : "12px" },
-        icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: colors[defect.severity], fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: selected ? 4 : 2, scale: selected ? 15 : 10 },
-      });
+      const marker = createMarker({ position: point, title: defect.label, label: isTransient ? String(index + 1) : defect.severity[0]!.toUpperCase(), color: colors[defect.severity], size: selected ? 30 : 20 });
       marker.addListener("click", () => {
         onSelect(defect.id);
         setStreetViewStatus("idle");
@@ -317,21 +325,21 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
 
     if (shouldShowTelemetry) {
       validTelemetry.forEach(point => {
-        const marker = new window.google.maps.Marker({ map, position: point, clickable: false, zIndex: 50, icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: "#16b7d4", fillOpacity: .42, strokeColor: "#ffffff", strokeWeight: .75, scale: 1.5 } });
+        const marker = createMarker({ position: point, color: "#16b7d4", size: 8, opacity: .55 });
         projectOverlays.current.push(marker);
         if (!validDefects.length) bounds.extend(point);
       });
     }
 
     // Official campus reference points plus a clearly approximate context radius.
-    const igdtuwMarker = new window.google.maps.Marker({ map, position: { lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude }, title: CAMPUS_MAP_DATA.IGDTUW.name, label: { text: "IGDTUW", color: "#ffffff", fontSize: "10px", fontWeight: "700" }, icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: CAMPUS_MAP_DATA.IGDTUW.color, fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 10 } });
+    const igdtuwMarker = createMarker({ position: { lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude }, title: CAMPUS_MAP_DATA.IGDTUW.name, label: "IGDTUW", color: CAMPUS_MAP_DATA.IGDTUW.color, size: 20 });
     igdtuwMarker.addListener("click", () => { infoWindow.setContent(campusPopupHtml(CAMPUS_MAP_DATA.IGDTUW)); infoWindow.open({ map, anchor: igdtuwMarker }); });
     projectOverlays.current.push(igdtuwMarker);
     const igdtuwCircle = new window.google.maps.Circle({ map, center: { lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude }, radius: CAMPUS_REFERENCE_RADIUS_METERS, strokeColor: CAMPUS_MAP_DATA.IGDTUW.color, strokeOpacity: 0.65, strokeWeight: 1, fillColor: CAMPUS_MAP_DATA.IGDTUW.color, fillOpacity: 0.08, clickable: false });
     projectOverlays.current.push(igdtuwCircle);
     bounds.extend({ lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude });
 
-    const iiitdMarker = new window.google.maps.Marker({ map, position: { lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude }, title: CAMPUS_MAP_DATA.IIIT_DELHI.name, label: { text: "IIIT-D", color: "#ffffff", fontSize: "10px", fontWeight: "700" }, icon: { path: window.google.maps.SymbolPath.CIRCLE, fillColor: CAMPUS_MAP_DATA.IIIT_DELHI.color, fillOpacity: 1, strokeColor: "#ffffff", strokeWeight: 2, scale: 10 } });
+    const iiitdMarker = createMarker({ position: { lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude }, title: CAMPUS_MAP_DATA.IIIT_DELHI.name, label: "IIIT-D", color: CAMPUS_MAP_DATA.IIIT_DELHI.color, size: 20 });
     iiitdMarker.addListener("click", () => { infoWindow.setContent(campusPopupHtml(CAMPUS_MAP_DATA.IIIT_DELHI)); infoWindow.open({ map, anchor: iiitdMarker }); });
     projectOverlays.current.push(iiitdMarker);
     const iiitdCircle = new window.google.maps.Circle({ map, center: { lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude }, radius: CAMPUS_REFERENCE_RADIUS_METERS, strokeColor: CAMPUS_MAP_DATA.IIIT_DELHI.color, strokeOpacity: 0.65, strokeWeight: 1, fillColor: CAMPUS_MAP_DATA.IIIT_DELHI.color, fillOpacity: 0.08, clickable: false });

@@ -6,7 +6,7 @@ import { ENV } from "./_core/env";
 import { resolveReviewState } from "./services/reviewState";
 import { summarizeSeverity, toMapMarker } from "./services/reportPresentation";
 import { storageGetSignedUrl, storagePutWithFallback } from "./storage";
-import { supabasePortableStorageConfigured } from "./services/supabaseStorage";
+import { getSupabaseEvidenceSignedUrl, isSupabaseStorageKey, supabasePortableStorageConfigured } from "./services/supabaseStorage";
 import { renderInspectionPdf } from "./services/reportPdf";
 import { rankApprovedKnowledge, type KnowledgeCitation } from "./services/rag";
 import type { InferenceResult } from "./services/mlInference";
@@ -492,14 +492,31 @@ export async function generateMissionReport(input: { missionId: number; generate
   return { reportId: insertId(result), title, storageUrl: stored.url, evidenceCount: evidenceRows.length, defectCount: defectRows.length, body, format: "application/pdf", severityCounts };
 }
 
-export async function listMissionEvidence(missionId: number) { const db = await getDb(); return db ? db.select(evidenceListColumns).from(evidence).where(eq(evidence.missionId, missionId)).orderBy(desc(evidence.createdAt)) : []; }
+async function refreshEvidenceUrls<T extends { storageKey: string; storageUrl: string }>(rows: T[]) {
+  return Promise.all(rows.map(async row => {
+    if (!isSupabaseStorageKey(row.storageKey)) return row;
+    try {
+      return { ...row, storageUrl: await getSupabaseEvidenceSignedUrl(row.storageKey) };
+    } catch (error) {
+      // Keep the record visible if the object was deleted or storage is temporarily unavailable.
+      console.warn(`[DRIFT Storage] Could not refresh evidence ${row.storageKey}:`, error instanceof Error ? error.message : error);
+      return row;
+    }
+  }));
+}
+
+export async function listMissionEvidence(missionId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return refreshEvidenceUrls(await db.select(evidenceListColumns).from(evidence).where(eq(evidence.missionId, missionId)).orderBy(desc(evidence.createdAt)));
+}
 export async function listDemoEvidence(missionId: number) {
   const db = await getDb();
   if (!db) return [];
   const mission = (await db.select().from(missions).where(eq(missions.id, missionId)).limit(1))[0];
   if (!mission || mission.mode !== "demo") return [];
   const rows = await db.select(evidenceListColumns).from(evidence).where(eq(evidence.missionId, missionId)).orderBy(desc(evidence.createdAt));
-  return rows.filter(item => item.source === "simulator");
+  return refreshEvidenceUrls(rows.filter(item => item.source === "simulator"));
 }
 
 export async function addTelemetryRecord(input: { missionId: number; latitude: number; longitude: number; altitude: number; speedMps: number; batteryPercent: number; timestamp: number }) {
