@@ -6,7 +6,7 @@ import { ENV } from "./_core/env";
 import { resolveReviewState } from "./services/reviewState";
 import { summarizeSeverity, toMapMarker } from "./services/reportPresentation";
 import { storageGetSignedUrl, storagePutWithFallback } from "./storage";
-import { getSupabaseEvidenceSignedUrl, isSupabaseStorageKey, supabasePortableStorageConfigured } from "./services/supabaseStorage";
+import { browserStorageUrl, isSupabaseStorageKey, supabasePortableStorageConfigured } from "./services/supabaseStorage";
 import { renderInspectionPdf } from "./services/reportPdf";
 import { rankApprovedKnowledge, type KnowledgeCitation } from "./services/rag";
 import type { InferenceResult } from "./services/mlInference";
@@ -398,7 +398,7 @@ export async function createDemoMissionRecord(input: { name: string; createdBy?:
     try {
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="100%" height="100%" fill="#343434"/><path d="M0 600 L420 210 L860 720" stroke="#cfcfc8" stroke-width="92" fill="none"/><rect x="${460 + index * 55}" y="${240 + index * 35}" width="230" height="150" fill="none" stroke="#ffffff" stroke-width="6"/><text x="60" y="72" fill="#ffffff" font-size="30" font-family="Arial" letter-spacing="6">DRIFT / SIMULATED EVIDENCE</text><text x="60" y="670" fill="#ffffff" font-size="24" font-family="Arial">${finding.title.toUpperCase()} · ${Math.round(finding.confidence * 100)}% CONFIDENCE</text></svg>`;
       const stored = await storagePutWithFallback(`drift/system/missions/${missionId}/simulated-evidence-${index + 1}.svg`, svg, "image/svg+xml");
-      const evidenceResult = await db.insert(evidence).values({ missionId, fileName: `${finding.title.replace(/\s+/g, "-")}.svg`, mimeType: "image/svg+xml", storageKey: stored.key, storageUrl: stored.url, mediaKind: "annotation", source: "simulator", latitude: finding.latitude.toFixed(6), longitude: finding.longitude.toFixed(6), playbackSeconds: finding.captureOffsetSeconds, captureZone: finding.label === "structural" ? "under-bridge" : "oblique", qualityStatus: "review", imageQuality: { source: "simulator", singleFrame: true, requiresEngineerReview: true }, provenance: { kind: "generated-simulator", generator: "DRIFT simulator", note: "Synthetic annotation generated for repeatable demo workflow; not a live inspection.", inspectionDomain: finding.label === "pothole" ? "roads" : "bridges" }, attachmentData: stored.attachmentData }).returning({ id: evidence.id });
+      const evidenceResult = await db.insert(evidence).values({ missionId, fileName: `${finding.title.replace(/\s+/g, "-")}.svg`, mimeType: "image/svg+xml", storageKey: stored.key, storageUrl: browserStorageUrl(stored.key, stored.url), mediaKind: "annotation", source: "simulator", latitude: finding.latitude.toFixed(6), longitude: finding.longitude.toFixed(6), playbackSeconds: finding.captureOffsetSeconds, captureZone: finding.label === "structural" ? "under-bridge" : "oblique", qualityStatus: "review", imageQuality: { source: "simulator", singleFrame: true, requiresEngineerReview: true }, provenance: { kind: "generated-simulator", generator: "DRIFT simulator", note: "Synthetic annotation generated for repeatable demo workflow; not a live inspection.", inspectionDomain: finding.label === "pothole" ? "roads" : "bridges" }, attachmentData: stored.attachmentData }).returning({ id: evidence.id });
       evidenceId = insertId(evidenceResult);
     } catch (error) {
       console.warn("[DRIFT Storage] Simulator evidence record could not be persisted:", error);
@@ -496,7 +496,7 @@ async function refreshEvidenceUrls<T extends { storageKey: string; storageUrl: s
   return Promise.all(rows.map(async row => {
     if (!isSupabaseStorageKey(row.storageKey)) return row;
     try {
-      return { ...row, storageUrl: await getSupabaseEvidenceSignedUrl(row.storageKey) };
+      return { ...row, storageUrl: browserStorageUrl(row.storageKey, row.storageUrl) };
     } catch (error) {
       // Keep the record visible if the object was deleted or storage is temporarily unavailable.
       console.warn(`[DRIFT Storage] Could not refresh evidence ${row.storageKey}:`, error instanceof Error ? error.message : error);

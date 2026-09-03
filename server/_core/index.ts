@@ -10,6 +10,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { addTelemetryRecord, createEvidenceRecord, getDatabaseAttachment, persistInferenceDefect, ensureCampusSchema } from "../db";
 import { storagePutWithFallback } from "../storage";
+import { browserStorageUrl, getSupabaseEvidenceSignedUrl, isSupabaseStorageKey } from "../services/supabaseStorage";
 import { authorizeBridgeToken, validateTelemetryPayload } from "../services/hardwareAdapter";
 import { runVisionInference } from "../services/mlInference";
 import { createCorsMiddleware } from "../services/cors";
@@ -111,7 +112,7 @@ async function startServer() {
     try {
       const safeName = String(body.fileName).replace(/[^a-zA-Z0-9._-]/g, "_");
       const stored = await storagePutWithFallback(`drift/bridge/missions/${Number(body.missionId)}/${Date.now()}-${safeName}`, bytes, String(body.mimeType));
-      const result = await createEvidenceRecord({ missionId: Number(body.missionId), fileName: String(body.fileName), mimeType: String(body.mimeType), storageKey: stored.key, storageUrl: stored.url, attachmentData: stored.attachmentData, mediaKind: body.mediaKind as "photo" | "video", source: "hardware", latitude: typeof body.latitude === "number" ? body.latitude.toFixed(6) : undefined, longitude: typeof body.longitude === "number" ? body.longitude.toFixed(6) : undefined, playbackSeconds: typeof body.playbackSeconds === "number" ? Math.max(0, Math.floor(body.playbackSeconds)) : undefined, cameraId: typeof body.cameraId === "string" ? body.cameraId : undefined, captureZone: typeof body.captureZone === "string" ? body.captureZone : undefined, headingDegrees: typeof body.headingDegrees === "number" ? body.headingDegrees : undefined, provenance: { kind: "operator-uav-capture", inspectionDomain: typeof body.inspectionDomain === "string" ? body.inspectionDomain : undefined, correlationKey: typeof body.correlationKey === "string" ? body.correlationKey : undefined, aircraftProfile: typeof body.aircraftProfile === "string" ? body.aircraftProfile : "operator bridge profile not reported", originalCaptureRequired: true, notSimulator: true } });
+      const result = await createEvidenceRecord({ missionId: Number(body.missionId), fileName: String(body.fileName), mimeType: String(body.mimeType), storageKey: stored.key, storageUrl: browserStorageUrl(stored.key, stored.url), attachmentData: stored.attachmentData, mediaKind: body.mediaKind as "photo" | "video", source: "hardware", latitude: typeof body.latitude === "number" ? body.latitude.toFixed(6) : undefined, longitude: typeof body.longitude === "number" ? body.longitude.toFixed(6) : undefined, playbackSeconds: typeof body.playbackSeconds === "number" ? Math.max(0, Math.floor(body.playbackSeconds)) : undefined, cameraId: typeof body.cameraId === "string" ? body.cameraId : undefined, captureZone: typeof body.captureZone === "string" ? body.captureZone : undefined, headingDegrees: typeof body.headingDegrees === "number" ? body.headingDegrees : undefined, provenance: { kind: "operator-uav-capture", inspectionDomain: typeof body.inspectionDomain === "string" ? body.inspectionDomain : undefined, correlationKey: typeof body.correlationKey === "string" ? body.correlationKey : undefined, aircraftProfile: typeof body.aircraftProfile === "string" ? body.aircraftProfile : "operator bridge profile not reported", originalCaptureRequired: true, notSimulator: true } });
       if (body.runInference === true && body.mediaKind === "photo" && typeof body.assetId === "number" && typeof body.assetCriticality === "number" && typeof body.latitude === "number" && typeof body.longitude === "number") {
         const inference = await runVisionInference({ fileName: String(body.fileName), imageBase64: base64Payload, latitude: body.latitude, longitude: body.longitude, assetCriticality: body.assetCriticality, priorOpenDefects: typeof body.priorOpenDefects === "number" ? body.priorOpenDefects : 0, inspectionDomain: typeof body.inspectionDomain === "string" ? body.inspectionDomain : undefined, captureZone: typeof body.captureZone === "string" ? body.captureZone : undefined });
         const defect = await persistInferenceDefect({ missionId: Number(body.missionId), assetId: body.assetId, evidenceId: result.id, latitude: body.latitude, longitude: body.longitude, inference, inspectionDomain: typeof body.inspectionDomain === "string" ? body.inspectionDomain : undefined, correlationKey: typeof body.correlationKey === "string" ? body.correlationKey : undefined });
@@ -121,6 +122,20 @@ async function startServer() {
     } catch (error) {
       console.error("[DRIFT] Evidence ingestion failed", error);
       return res.status(503).json({ error: "Evidence could not be stored." });
+    }
+  });
+
+  app.get("/api/drift/evidence-media/:encodedKey", async (req, res) => {
+    const encodedKey = String((req.params as Record<string, string>).encodedKey ?? "");
+    try {
+      const storageKey = Buffer.from(encodedKey, "base64url").toString("utf8");
+      if (!isSupabaseStorageKey(storageKey)) return res.status(404).send("Evidence not found");
+      const signedUrl = await getSupabaseEvidenceSignedUrl(storageKey);
+      res.set("Cache-Control", "private, no-store");
+      return res.redirect(307, signedUrl);
+    } catch (error) {
+      console.error("[DRIFT] Supabase evidence media proxy failed", error);
+      return res.status(404).send("Evidence unavailable");
     }
   });
 

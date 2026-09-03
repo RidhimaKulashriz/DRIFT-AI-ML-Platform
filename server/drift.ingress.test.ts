@@ -13,7 +13,7 @@ vi.mock("./db", async () => {
 });
 
 vi.mock("./storage", () => ({ storagePut, storagePutWithFallback: storagePut }));
-vi.mock("./services/supabaseStorage", () => ({ supabasePortableStorageConfigured }));
+vi.mock("./services/supabaseStorage", () => ({ supabasePortableStorageConfigured, browserStorageUrl: (_key: string, fallback: string) => fallback }));
 
 const { appRouter } = await import("./routers");
 
