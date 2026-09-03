@@ -40,7 +40,15 @@ import requests
 
 # visual.py is the user's supplied integrated model application. Some local
 # copies contain the model functions but not the optional annotation helper.
-import visual
+try:
+    import visual_full as visual
+    print("[DRIFT] Using visual_full.py integrated model pipeline")
+except ImportError:
+    import visual
+    print("[DRIFT] Using visual.py model pipeline")
+
+if not hasattr(visual, "load_local_models") or not hasattr(visual, "run_all_models"):
+    raise ImportError("The selected model file must define load_local_models and run_all_models. Pull visual_full.py from the repository.")
 
 load_local_models = visual.load_local_models
 run_all_models = visual.run_all_models
