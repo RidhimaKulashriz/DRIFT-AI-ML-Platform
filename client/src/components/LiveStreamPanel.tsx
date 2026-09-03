@@ -4,6 +4,7 @@ import Hls from "hls.js";
 const configuredStreamUrl = String(import.meta.env.VITE_DRIFT_LIVE_STREAM_URL ?? "").trim();
 const streamUrl = configuredStreamUrl;
 const uploadedDemoVideoUrl = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663855346163/OqjPCGreoHnnniLg.mp4";
+const uploadedDemoPosterUrl = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663855346163/KxynhPEtQoLZhrFd.jpg";
 const isAnnotatedFeed = streamUrl.includes("drift-annotated") || streamUrl.includes("annotated");
 
 export function LiveStreamPanel() {
@@ -57,7 +58,7 @@ export function LiveStreamPanel() {
         </>
       ) : (
         <>
-          <video className="live-stream-video" controls autoPlay muted loop playsInline preload="metadata" src={uploadedDemoVideoUrl} aria-label="Uploaded DJI inspection video preview" />
+          <video className="live-stream-video" controls autoPlay muted loop playsInline preload="metadata" poster={uploadedDemoPosterUrl} src={uploadedDemoVideoUrl} aria-label="Uploaded DJI inspection video preview" />
           <p className="stream-caption">Uploaded inspection video preview. This is recorded footage, not a live camera feed; configure <code>VITE_DRIFT_LIVE_STREAM_URL</code> to switch to HLS livestreaming.</p>
         </>
       )}
@@ -65,4 +66,4 @@ export function LiveStreamPanel() {
   );
 }
 
-export { uploadedDemoVideoUrl };
+export { uploadedDemoPosterUrl, uploadedDemoVideoUrl };
