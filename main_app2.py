@@ -109,6 +109,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--road-overlap", type=float, default=0.20)
     parser.add_argument("--no-display", action="store_true")
     parser.add_argument("--annotated-rtmp", default=os.getenv("DRIFT_ANNOTATED_RTMP_URL", ""), help="Optional RTMP publish URL for browser-visible annotated frames")
+    parser.add_argument("--reconnect-attempts", type=int, default=5, help="Reconnect attempts after a live stream frame drop")
     return parser.parse_args()
 
 
@@ -160,14 +161,25 @@ def upload_frame(args: argparse.Namespace, frame, frame_number: int) -> dict | N
         "runInference": True,
         "correlationKey": f"dji-live:{args.mission_id}:{frame_number}",
     }
-    response = requests.post(
-        f"{args.backend.rstrip('/')}/api/drift/evidence",
-        headers={"Authorization": f"Bearer {args.token}"},
-        json=payload,
-        timeout=120,
-    )
-    response.raise_for_status()
-    return response.json()
+    endpoint = f"{args.backend.rstrip('/')}/api/drift/evidence"
+    last_response = None
+    for attempt in range(3):
+        response = requests.post(
+            endpoint,
+            headers={"Authorization": f"Bearer {args.token}"},
+            json=payload,
+            timeout=120,
+        )
+        last_response = response
+        if response.status_code not in (502, 503, 504) or attempt == 2:
+            response.raise_for_status()
+            return response.json()
+        wait_seconds = 3 * (attempt + 1)
+        print(f"[WARN] Render returned HTTP {response.status_code}; retrying in {wait_seconds}s")
+        time.sleep(wait_seconds)
+    if last_response is not None:
+        last_response.raise_for_status()
+    return None
 
 
 def start_annotated_publisher(url: str, width: int, height: int, fps: float = 20.0):
@@ -229,8 +241,8 @@ def open_capture(source: str):
 
 def main() -> int:
     args = parse_args()
-    if args.every_nth_frame < 1 or args.upload_every < 1:
-        raise SystemExit("--every-nth-frame and --upload-every must be at least 1")
+    if args.every_nth_frame < 1 or args.upload_every < 1 or args.reconnect_attempts < 0:
+        raise SystemExit("--every-nth-frame, --upload-every, and --reconnect-attempts must be valid positive values")
     if args.backend and (not args.token or args.mission_id <= 0):
         raise SystemExit("Backend mode requires --token and a positive --mission-id")
     if args.backend and (args.latitude is None or args.longitude is None):
@@ -288,14 +300,23 @@ def main() -> int:
     inference_count = 0
     latest_detections = []
     started = time.time()
+    reconnect_count = 0
 
     try:
         while True:
             ok, frame = capture.read()
             if not ok or frame is None:
-                print("[WARN] No frame received. Restart DJI Fly livestream and try again.")
-                break
+                reconnect_count += 1
+                if reconnect_count > args.reconnect_attempts:
+                    print("[ERROR] Stream reconnect limit reached. Restart DJI Fly livestream and try again.")
+                    break
+                print(f"[WARN] No frame received; reconnecting to MediaMTX ({reconnect_count}/{args.reconnect_attempts})")
+                capture.release()
+                time.sleep(min(2 * reconnect_count, 10))
+                capture = open_capture(args.source)
+                continue
 
+            reconnect_count = 0
             frame_number += 1
             if frame_number == 1 or frame_number % args.every_nth_frame == 0:
                 try:
