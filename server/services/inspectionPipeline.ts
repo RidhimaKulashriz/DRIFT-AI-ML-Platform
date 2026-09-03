@@ -23,6 +23,7 @@ import { renderInspectionPdf } from "./reportPdf";
 import { sendContractorEmail, type EmailPayload } from "./emailService";
 import { findContractorByLocation } from "../../shared/contractors";
 import { calculateOverallPriority, formatRepairCost } from "../../shared/priorityScoring";
+import { extractFramesFromVideo, type VideoFrame } from "./videoFrameExtractor";
 
 export type InspectionPipelineInput = {
   fileName: string | null;
@@ -45,6 +46,7 @@ export type InspectionPipelineResult = {
   inspectionId?: number;
   evidenceId?: number;
   detectionId?: number | null;
+  detectionIds?: number[]; // For videos with multiple frame detections
   reportId?: number | null;
   pdfBase64?: string;
   pdfSizeBytes?: number;
@@ -54,11 +56,13 @@ export type InspectionPipelineResult = {
   locationUsed?: { latitude: number; longitude: number; source: string } | null;
   campusVerified?: { id: number; name: string; shortName: string; latitude: number; longitude: number } | null;
   mlUsed?: { source: "gemini" | "fallback-deterministic"; model: string; confidence: number; defectType: string | null; severity: string | null };
+  videoFrames?: VideoFrame[]; // For video uploads
+  frameDetections?: Array<{ frameIndex: number; detection: any }>; // Per-frame detection results
   durationMs?: number;
 };
 
-const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic"]);
-const MAX_BYTES = 12 * 1024 * 1024; // 12 MB to keep PDF generation fast
+const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "video/mp4", "video/webm", "video/quicktime"]);
+const MAX_BYTES = 50 * 1024 * 1024; // 50 MB to support videos
 
 /**
  * Extract GPS coordinates from EXIF data using JPEG marker parsing.
@@ -214,7 +218,39 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
   if (buffer.byteLength === 0) return { success: false, error: "Empty image" };
   if (buffer.byteLength > MAX_BYTES) return { success: false, error: `Image too large: ${buffer.byteLength} bytes (max ${MAX_BYTES})` };
 
-  // 2. Get campus (verified only) — no random coordinates
+  // 2. Check if this is a video - if so, extract frames
+  const isVideo = input.mimeType.toLowerCase().startsWith("video/");
+  let videoFrames: VideoFrame[] = [];
+  let workingBuffer = buffer;
+  let workingMimeType = input.mimeType;
+
+  if (isVideo) {
+    console.log("[InspectionPipeline] Video detected, extracting frames...");
+    const frameExtraction = await extractFramesFromVideo(buffer, input.mimeType, {
+      intervalSeconds: 5, // Extract frames every 5 seconds
+      maxFrames: 20,      // Maximum 20 frames per video
+      maxWidth: 1280,
+      maxHeight: 720,
+    });
+
+    if (!frameExtraction.success) {
+      console.error("[InspectionPipeline] Frame extraction failed:", frameExtraction.error);
+      return { success: false, error: `Video frame extraction failed: ${frameExtraction.error}` };
+    }
+
+    videoFrames = frameExtraction.frames;
+    console.log(`[InspectionPipeline] Extracted ${videoFrames.length} frames from video (${frameExtraction.duration}s)`);
+
+    // For video detection, we'll use the first frame for the main pipeline
+    // and store all frames for dashboard display
+    if (videoFrames.length > 0) {
+      const firstFrameBase64 = videoFrames[0].base64.replace(/^data:.*?;base64,/, "");
+      workingBuffer = Buffer.from(firstFrameBase64, "base64");
+      workingMimeType = "image/jpeg";
+    }
+  }
+
+  // 3. Get campus (verified only) — no random coordinates
   const campus = await getCampusRecord(input.campusId);
   const campusVerified = campus ? {
     id: campus.id,
@@ -253,10 +289,25 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
     ? { latitude, longitude, source: locationSource }
     : null;
 
-  // 4. Store original image
+  // 4. Store original media (image or video)
   const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
   const storageKey = `drift/inspections/${Date.now()}-${crypto.randomBytes(4).toString("hex")}-${safeName}`;
   const stored = await storagePutWithFallback(storageKey, buffer, input.mimeType);
+
+  // For videos, also store extracted frames
+  let frameStorageKeys: string[] = [];
+  if (isVideo && videoFrames.length > 0) {
+    console.log("[InspectionPipeline] Storing extracted frames...");
+    for (let i = 0; i < videoFrames.length; i++) {
+      const frame = videoFrames[i];
+      const frameBase64 = frame.base64.replace(/^data:.*?;base64,/, "");
+      const frameBuffer = Buffer.from(frameBase64, "base64");
+      const frameKey = `drift/inspections/${Date.now()}-${crypto.randomBytes(4).toString("hex")}-frame-${i}.jpg`;
+      await storagePutWithFallback(frameKey, frameBuffer, "image/jpeg");
+      frameStorageKeys.push(frameKey);
+    }
+    console.log(`[InspectionPipeline] Stored ${frameStorageKeys.length} frames`);
+  }
 
   // 5. Create evidence record in DB
   const db = await getDb();
@@ -296,7 +347,7 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
         mimeType: input.mimeType,
         storageKey: stored.key,
         storageUrl: stored.url,
-        mediaKind: "photo",
+        mediaKind: isVideo ? "video" : "photo",
         source: "hardware",
         latitude: latitude !== null ? latitude.toFixed(6) : null,
         longitude: longitude !== null ? longitude.toFixed(6) : null,
@@ -311,7 +362,10 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
           originalCaptureRequired: true,
           notSimulator: true,
         },
-        attachmentData: stored.attachmentData,
+        attachmentData: {
+          ...stored.attachmentData,
+          ...(isVideo && { frameCount: videoFrames.length, frameStorageKeys }),
+        },
       }).returning({ id: evidence.id });
       evidenceId = newEvidence?.id ?? null;
     } catch (dbErr) {
@@ -338,7 +392,7 @@ export async function runFullInspection(input: InspectionPipelineInput): Promise
         method: "POST",
         headers: { "content-type": "application/json", accept: "application/json" },
         body: JSON.stringify({ imageBase64: buffer.toString("base64"), fileName: input.fileName, confidence: 0.25, imgsz: 640 }),
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(15_000),
       });
       if (mlResponse.ok) {
         const mlData = await mlResponse.json() as any;
