@@ -3,11 +3,12 @@ import Hls from "hls.js";
 
 const configuredStreamUrl = String(import.meta.env.VITE_DRIFT_LIVE_STREAM_URL ?? "").trim();
 const streamUrl = configuredStreamUrl || (import.meta.env.DEV ? "http://127.0.0.1:8888/drift-annotated/index.m3u8" : "");
+const uploadedDemoVideoUrl = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663855346163/OqjPCGreoHnnniLg.mp4";
 const isAnnotatedFeed = streamUrl.includes("drift-annotated") || streamUrl.includes("annotated");
 
 export function LiveStreamPanel() {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [status, setStatus] = useState(streamUrl ? "connecting" : "not-configured");
+  const [status, setStatus] = useState(streamUrl ? "connecting" : "demo");
 
   useEffect(() => {
     const video = videoRef.current;
@@ -36,29 +37,32 @@ export function LiveStreamPanel() {
     };
   }, []);
 
+  const hasLiveFeed = Boolean(streamUrl);
+
   return (
     <section className="panel live-stream-panel" aria-label="Live drone stream">
       <div className="panel-heading">
         <div>
-          <span className="eyebrow">DJI UAV · LIVE FEED</span>
-          <h2>Live inspection stream</h2>
+          <span className="eyebrow">DJI UAV · {hasLiveFeed ? "LIVE FEED" : "UPLOADED VIDEO"}</span>
+          <h2>{hasLiveFeed ? "Live inspection stream" : "Inspection livestream preview"}</h2>
         </div>
-                  <span className={`status-chip ${status === "live" ? "status-active" : ""}`}>
-
-          {status === "live" ? "LIVE" : status === "not-configured" ? "LOCAL ONLY" : status.toUpperCase()}
+        <span className={`status-chip ${status === "live" ? "status-active" : ""}`}>
+          {status === "live" ? "LIVE" : status === "demo" ? "VIDEO PREVIEW" : status === "not-configured" ? "LOCAL ONLY" : status.toUpperCase()}
         </span>
       </div>
-      {streamUrl ? (
+      {hasLiveFeed ? (
         <>
           <video ref={videoRef} className="live-stream-video" controls autoPlay muted playsInline aria-label={isAnnotatedFeed ? "Live DJI drone video with ML annotations" : "Live DJI drone video"} />
           <p className="stream-caption">{isAnnotatedFeed ? "Browser feed: live DJI video with ML detection overlays" : "Browser feed: live DJI video"}</p>
         </>
       ) : (
-        <div className="empty-state live-stream-empty">
-          <h3>Frontend stream URL is not configured</h3>
-          <p>Set <code>VITE_DRIFT_LIVE_STREAM_URL</code> to a public HLS URL from MediaMTX or your streaming provider. The local laptop URL cannot be reached by Vercel.</p>
-        </div>
+        <>
+          <video className="live-stream-video" controls autoPlay muted loop playsInline preload="metadata" src={uploadedDemoVideoUrl} aria-label="Uploaded DJI inspection video preview" />
+          <p className="stream-caption">Uploaded inspection video preview. This is recorded footage, not a live camera feed; configure <code>VITE_DRIFT_LIVE_STREAM_URL</code> to switch to HLS livestreaming.</p>
+        </>
       )}
     </section>
   );
 }
+
+export { uploadedDemoVideoUrl };
