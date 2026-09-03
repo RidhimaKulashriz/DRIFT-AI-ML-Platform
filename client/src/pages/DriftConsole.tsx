@@ -245,6 +245,20 @@ export default function DriftConsole() {
     },
     onError: error => toast.error(`Scan failed: ${error.message}`),
   });
+  const demoPdfReport = trpc.drift.reports.demoPdf.useMutation({
+    onSuccess: result => {
+      const binary = atob(result.base64);
+      const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: result.contentType }));
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = result.filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      toast.success("Real ten-page PDF downloaded with findings and evidence context");
+    },
+    onError: error => toast.error(`PDF generation failed: ${error.message}`),
+  });
   const createHardwareCaptureMission = trpc.drift.createHardwareCaptureMission.useMutation({
     onSuccess: data => {
       toast.success(`UAV capture mission ${data.missionId} is in preflight. Upload original camera media next.`);
@@ -460,13 +474,8 @@ export default function DriftConsole() {
     setWorkspace("reports");
   };
   const downloadTransientBriefing = () => {
-    if (!transientBriefing) return;
-    const url = URL.createObjectURL(new Blob([transientBriefing], { type: "text/markdown;charset=utf-8" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "drift-transient-simulator-briefing.md";
-    anchor.click();
-    URL.revokeObjectURL(url);
+    if (!transientSimulatorRun) return;
+    demoPdfReport.mutate({ name: transientSimulatorRun.name ?? "DRIFT campus inspection" });
   };
   const startUavCaptureMission = () => {
     if (!isAuthenticated) { toast.error("Sign in as an engineer or administrator to create a persisted UAV capture mission."); return; }

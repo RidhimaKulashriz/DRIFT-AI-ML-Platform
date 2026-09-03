@@ -411,15 +411,22 @@ export async function createDemoMissionRecord(input: { name: string; createdBy?:
   }
 
   const reportTitle = `${input.name} · ZeroError inspection report`;
-  const reportNarrative = "Demo report generated from simulated telemetry and explainable ML inference. Evidence references, capture coverage, uncertainty, and next-inspection actions are included; engineering sign-off is required before release.";
+  const reportNarrative = "PDF report generated from simulated telemetry and explainable ML inference. Simulator evidence is clearly labelled as synthetic and is not a live inspection claim; engineering sign-off is required before release.";
   let reportStorage: { key?: string; url?: string; attachmentData?: Buffer } = {};
   try {
-    const body = `# ${reportTitle}\n\n${reportNarrative}\n\n## Inspection scope\n\nDomains: roads, bridges. Capture zones: oblique, under-bridge. Mode: simulator.\n\n## Findings\n\n${input.simulator.findings.map((finding, index) => `- ${finding.title}: ${finding.score.severity} priority, ${finding.score.score}/100 ZeroError score, ${Math.round(finding.confidence * 100)}% raw confidence, evidence reference simulator:${missionId}:${index}. Coverage is simulator-generated and not a site-survey measurement. Uncertainty: single-pass simulated evidence. Next action: engineer review and site verification before work-order release.`).join("\n")}\n\n## Control boundary\n\nAutomated findings are advisory. An authorised engineer must verify, override, or reject every repair priority before release. Sign-off status: PENDING.\n`;
-    reportStorage = await storagePutWithFallback(`drift/system/missions/${missionId}/zeroerror-report.md`, body, "text/markdown");
+    const [reportEvidence, reportDefects] = await Promise.all([
+      db.select().from(evidence).where(eq(evidence.missionId, missionId)).orderBy(desc(evidence.createdAt)),
+      db.select().from(defects).where(eq(defects.missionId, missionId)).orderBy(desc(defects.zeroErrorScore)),
+    ]);
+    const reportEstimates = reportDefects.length
+      ? await db.select().from(repairEstimates).where(inArray(repairEstimates.defectId, reportDefects.map(row => row.id)))
+      : [];
+    const pdf = await renderInspectionPdf({ mission: { id: missionId, name: input.name, mode: "demo", status: "completed", startedAt: new Date(input.simulator.startedAt), completedAt: new Date() }, evidence: reportEvidence, defects: reportDefects, repairTotalCents: reportEstimates.reduce((sum, row) => sum + Number(row.estimateCents ?? 0), 0) });
+    reportStorage = await storagePutWithFallback(`drift/system/missions/${missionId}/zeroerror-report-${Date.now()}.pdf`, pdf, "application/pdf");
   } catch (error) {
-    console.warn("[DRIFT Storage] Report record created without a downloadable attachment:", error);
+    console.warn("[DRIFT Storage] PDF report could not be generated:", error);
   }
-  await db.insert(reports).values({ missionId, title: reportTitle, narrative: reportNarrative, storageKey: reportStorage.key, storageUrl: reportStorage.url, status: "ready", generatedBy: "zeroerror-demo", inspectionScope: { domains: ["roads", "bridges"], captureZones: ["oblique", "under-bridge"], mode: "simulator" }, signoff: { required: true, status: "pending", note: "Engineer sign-off required before release." }, attachmentData: reportStorage.attachmentData });
+  await db.insert(reports).values({ missionId, title: reportTitle, narrative: reportNarrative, storageKey: reportStorage.key, storageUrl: reportStorage.url, status: "ready", generatedBy: "zeroerror-demo", inspectionScope: { domains: ["roads", "bridges"], captureZones: ["oblique", "under-bridge"], mode: "simulator", format: "application/pdf" }, signoff: { required: true, status: "pending", note: "Engineer sign-off required before release." }, attachmentData: reportStorage.attachmentData });
   await db.insert(auditEvents).values({ missionId, actorId: input.createdBy ?? null, action: "simulator.mission_created", details: { findings: input.simulator.findings.length, mode: "demo" } });
   return { missionId, assetId };
 }

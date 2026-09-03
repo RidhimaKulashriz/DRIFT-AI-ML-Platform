@@ -146,9 +146,22 @@ export const appRouter = router({
           if (label === "structural" || label === "spalling" || label === "exposed_rebar") return { contractorName: "Afcons Infrastructure Limited", ragStatus: "amber" as const, workProfile: "transport and bridge infrastructure works", sourceLabel: "Public company profile candidate", sourceUrl: "https://www.afcons.com/", disclaimer: "Candidate only; not assigned, vetted, or endorsed by DRIFT." };
           return { contractorName: "Larsen & Toubro Limited", ragStatus: "amber" as const, workProfile: "transport, civil, and infrastructure works", sourceLabel: "Public company profile candidate", sourceUrl: "https://www.larsentoubro.com/", disclaimer: "Candidate only; not assigned, vetted, or endorsed by DRIFT." };
         })();
+        const demoEvidence = selectedFindings.map((finding, index) => ({
+          id: index + 1,
+          fileName: `simulated-detection-${index + 1}.svg`,
+          source: "simulator" as const,
+          captureZone: finding.label === "structural" ? "under-bridge" : "oblique",
+          qualityStatus: "review",
+          latitude: String(finding.latitude),
+          longitude: String(finding.longitude),
+          cameraId: "DRIFT simulator",
+          storageUrl: "synthetic://simulator-evidence",
+          provenance: { kind: "generated-simulator", note: "Synthetic visual for repeatable demo only; not live drone evidence." },
+          imageBuffer: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="100%" height="100%" fill="#18232e"/><path d="M0 600 L420 210 L860 720" stroke="#778692" stroke-width="92" fill="none"/><rect x="460" y="240" width="230" height="150" fill="none" stroke="#15b8c9" stroke-width="6"/><text x="60" y="72" fill="#ffffff" font-size="30" font-family="Arial" letter-spacing="6">DRIFT / SIMULATED DETECTION</text><text x="60" y="670" fill="#ffffff" font-size="24" font-family="Arial">${finding.title.toUpperCase()} · ${Math.round(finding.confidence * 100)}% CONFIDENCE</text></svg>`),
+        }));
         const pdf = await renderInspectionPdf({
           mission: { id: 0, name: simulator.name, startedAt: new Date(simulator.startedAt), completedAt: new Date(), mode: "stateless_demo", status: "completed" },
-          evidence: [],
+          evidence: demoEvidence,
           defects: selectedFindings.map((finding, index) => ({
             id: index + 1,
             label: finding.title,
