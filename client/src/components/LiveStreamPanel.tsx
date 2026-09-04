@@ -26,6 +26,9 @@ function defectColor(label = "") {
   if (value.includes("corrosion") || value.includes("rust")) return "corrosion";
   return "other";
 }
+function isValidLiveDetection(detection: Detection) {
+  return Number(detection.confidence ?? 0) >= 0.6 && Boolean(boxStyle(detection.boundingBox));
+}
 export function LiveStreamPanel({ missionId }: { missionId?: number }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState(streamUrl ? "connecting" : "demo");

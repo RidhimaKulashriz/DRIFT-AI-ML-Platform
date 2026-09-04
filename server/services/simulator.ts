@@ -57,6 +57,7 @@ export async function buildSimulatorMission(name = "Campus infrastructure inspec
         priorOpenDefects: index % 4,
         demo: true,
       });
+      if (!inference) throw new Error("Simulator inference unexpectedly unavailable");
       return {
         ...inference,
         title: `SIMULATED DEMO · ${det.campus} — ${det.label.replace(/_/g, " ").toUpperCase()}`,

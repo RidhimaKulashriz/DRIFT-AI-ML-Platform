@@ -11,6 +11,7 @@ export type InferenceInput = {
   imageBase64?: string;
   inspectionDomain?: string;
   captureZone?: string;
+  productionOnly?: boolean;
 };
 
 export type InferenceResult = {
@@ -119,9 +120,9 @@ function mapDefectLabel(label: string): DefectKind {
   return map[l] || "crack";
 }
 
-export async function runVisionInference(input: InferenceInput): Promise<InferenceResult> {
+export async function runVisionInference(input: InferenceInput): Promise<InferenceResult | null> {
   const production = await callProductionCv(input);
-  if (!production) return fallbackInference(input);
+  if (!production) return input.productionOnly ? null : fallbackInference(input);
   const calibratedConfidence = calibrateConfidence(production.confidence, input);
   const score = scoreZeroError({ defectType: production.label, confidence: calibratedConfidence, latitude: input.latitude, longitude: input.longitude, assetCriticality: input.assetCriticality, priorOpenDefects: input.priorOpenDefects, observationCount: 1 });
   return { ...production, confidence: calibratedConfidence, coveragePercent: production.coveragePercent ?? 72, uncertainty: production.uncertainty ?? { reason: "Model response omitted uncertainty metadata; server calibration applied", requiresHumanReview: true }, calibrationVersion: production.calibrationVersion ?? "DRIFT-calibration-v1", severityInput: { confidence: calibratedConfidence, assetCriticality: input.assetCriticality, priorOpenDefects: input.priorOpenDefects }, score, annotationNote: `Detected ${production.label} candidate using ${production.model}; ZeroError prioritization is advisory and requires human review.`, source: "production-cv" };

@@ -113,6 +113,7 @@ export const appRouter = router({
         const qualityGate = input.qualityStatus === "fail" ? { status: "fail", action: "blocked-from-inference" } : input.qualityStatus === "review" ? { status: "review", action: "engineer-review-required" } : { status: input.qualityStatus ?? "pending", action: "review-policy-applies" };
         if (input.qualityStatus === "fail" || input.mediaKind !== "photo" || !input.runInference || !input.assetId || !input.assetCriticality || !input.latitude || !input.longitude) return { ...evidenceRecord, inference: null, qualityGate };
         const inference = await runVisionInference({ fileName: input.fileName, imageBase64: input.base64, latitude: Number(input.latitude), longitude: Number(input.longitude), assetCriticality: input.assetCriticality, priorOpenDefects: input.priorOpenDefects ?? 0 });
+        if (!inference) return { ...evidenceRecord, inference: null, qualityGate: { status: "review", action: "production-inference-unavailable" } };
         const persisted = await persistInferenceDefect({ missionId: input.missionId, assetId: input.assetId, evidenceId: evidenceRecord.id, latitude: Number(input.latitude), longitude: Number(input.longitude), inference, inspectionDomain: input.inspectionDomain, correlationKey: input.correlationKey, createdBy: ctx.user.id });
         return { ...evidenceRecord, inference: persisted };
       }),
