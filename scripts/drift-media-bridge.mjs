@@ -80,6 +80,9 @@ async function scan() {
 console.log(`DRIFT media bridge watching ${mediaDir}`);
 await scan();
 const watcher = (await import("node:fs")).watch(mediaDir, { persistent: true });
-for await (const event of watcher) {
-  if (event.filename) await upload(path.join(mediaDir, event.filename)).catch(error => console.error(`FAILED ${event.filename}: ${error.message}`));
-}
+watcher.on("error", error => console.error(`WATCHER ERROR: ${error.message}`));
+watcher.on("change", (_eventType, fileName) => {
+  if (!fileName) return;
+  const name = fileName.toString();
+  upload(path.join(mediaDir, name)).catch(error => console.error(`FAILED ${name}: ${error.message}`));
+});
