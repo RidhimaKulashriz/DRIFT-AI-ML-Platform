@@ -5,6 +5,11 @@ type LiveEvent = { type: string; fileName?: string; imageUrl?: string; frameId?:
 
 const backendOrigin = (import.meta.env.VITE_BACKEND_URL || "https://drift-node-api.onrender.com").replace(/\/$/, "");
 
+function resolveImageUrl(url?: string) {
+  if (!url) return undefined;
+  return /^https?:\/\//i.test(url) ? url : `${backendOrigin}${url.startsWith("/") ? url : `/${url}`}`;
+}
+
 export function LiveDetectionPanel({ missionId }: { missionId: number }) {
   const [event, setEvent] = useState<LiveEvent | null>(null);
   const [status, setStatus] = useState<"waiting" | "live" | "error">("waiting");
@@ -31,7 +36,7 @@ export function LiveDetectionPanel({ missionId }: { missionId: number }) {
 
   return <article className="panel live-detection-panel" aria-live="polite">
     <div className="panel-heading"><div><span className="eyebrow">ROBOFLOW · LIVE RESULTS</span><h2>Latest analyzed frame</h2></div><span className={`hardware-status ${status === "live" ? "connected" : "disconnected"}`}>{statusLabel}</span></div>
-    {event?.imageUrl ? <div className="live-detection-image-wrap"><img src={event.imageUrl} alt={event.fileName ? `Analyzed ${event.fileName}` : "Latest analyzed Media X frame"} /><div className="live-detection-badges">{detections.map((detection, index) => <span key={`${detection.label}-${index}`} className="live-detection-badge">{detection.label ?? "defect"} · {Math.round((detection.confidence ?? 0) * 100)}%</span>)}</div></div> : <div className="live-detection-empty"><strong>Start Media X to receive frames</strong><span>The backend will store each frame, run the road-damage model, and publish the result here.</span></div>}
+    {event?.imageUrl ? <div className="live-detection-image-wrap"><img src={resolveImageUrl(event.imageUrl)} alt={event.fileName ? `Analyzed ${event.fileName}` : "Latest analyzed Media X frame"} /><div className="live-detection-badges">{detections.map((detection, index) => <span key={`${detection.label}-${index}`} className="live-detection-badge">{detection.label ?? "defect"} · {Math.round((detection.confidence ?? 0) * 100)}%</span>)}</div></div> : <div className="live-detection-empty"><strong>Start Media X to receive frames</strong><span>The backend will store each frame, run the road-damage model, and publish the result here.</span></div>}
     <div className="live-detection-meta"><span>{event?.fileName ?? "No frame received"}</span><span>{coordinates}</span><span>{detections.length} detection{detections.length === 1 ? "" : "s"}</span></div>
     {event?.error && <p className="access-note">Last processing error: {event.error}</p>}
   </article>;
