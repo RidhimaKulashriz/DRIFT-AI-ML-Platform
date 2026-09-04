@@ -86,3 +86,6 @@ watcher.on("change", (_eventType, fileName) => {
   const name = fileName.toString();
   upload(path.join(mediaDir, name)).catch(error => console.error(`FAILED ${name}: ${error.message}`));
 });
+
+// Keep the process alive consistently across Windows Node.js versions.
+setInterval(() => {}, 60_000);
