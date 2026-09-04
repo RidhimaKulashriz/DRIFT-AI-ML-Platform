@@ -102,6 +102,10 @@ function asCoordinates(value: { latitude: string | number; longitude: string | n
   return Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 ? { lat, lng } : null;
 }
 
+function isNearCampus(point: { lat: number; lng: number }, campus: { latitude: number; longitude: number }) {
+  return Math.abs(point.lat - campus.latitude) <= 0.02 && Math.abs(point.lng - campus.longitude) <= 0.02;
+}
+
 /* ─── Leaflet fallback map (no Google Maps key required) ─── */
 
 function loadLeafletCSS() {
@@ -210,8 +214,12 @@ function LeafletFallbackMap({ defects, telemetry, selectedId, onSelect }: {
       bounds.push([point.lat, point.lng]);
     });
 
-    // Add campus reference points to bounds (campus markers themselves are created in init effect)
-    bounds.push([VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude], [VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude]);
+    // Do not always fit both Delhi campuses; that zooms out and hides a real
+    // IGDTUW defect at campus level.
+    const relevantCampuses = defects.length
+      ? [VERIFIED_CAMPUS_COORDINATES.IGDTUW, VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI].filter(campus => defects.some(({ point }) => isNearCampus(point, campus)))
+      : [VERIFIED_CAMPUS_COORDINATES.IGDTUW, VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI];
+    relevantCampuses.forEach(point => bounds.push([point.latitude, point.longitude]));
 
     if (bounds.length > 0) {
       map.fitBounds(bounds, { padding: [40, 40] });
@@ -295,7 +303,7 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     const bounds = new window.google.maps.LatLngBounds();
     const infoWindow = new window.google.maps.InfoWindow();
 
-    const createMarker = (options: { position: google.maps.LatLngLiteral; title?: string; label?: string; color: string; size: number; opacity?: number }) => {
+    const createMarker = (options: { position: google.maps.LatLngLiteral; title?: string; label?: string; color: string; size: number; opacity?: number; zIndex?: number }) => {
       const content = document.createElement("div");
       content.textContent = options.label ?? "";
       Object.assign(content.style, {
@@ -305,13 +313,13 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
         border: "2px solid #ffffff", color: "#ffffff", font: "700 10px Arial, sans-serif",
         textAlign: "center", whiteSpace: "nowrap", transform: "translate(-50%, -50%)",
       });
-      return new window.google.maps.marker.AdvancedMarkerElement({ map, position: options.position, title: options.title, content });
+      return new window.google.maps.marker.AdvancedMarkerElement({ map, position: options.position, title: options.title, content, zIndex: options.zIndex });
     };
 
     validDefects.forEach(({ defect, point }, index) => {
       const isTransient = defect.isTransient === true || defect.id < 0;
       const selected = selectedId === defect.id;
-      const marker = createMarker({ position: point, title: defect.label, label: isTransient ? String(index + 1) : defect.severity[0]!.toUpperCase(), color: colors[defect.severity], size: selected ? 30 : 20 });
+      const marker = createMarker({ position: point, title: defect.label, label: isTransient ? String(index + 1) : defect.severity[0]!.toUpperCase(), color: colors[defect.severity], size: selected ? 30 : 20, zIndex: selected ? 1100 : 1000 });
       marker.addEventListener("gmp-click", () => {
         onSelect(defect.id);
         setStreetViewStatus("idle");
@@ -331,19 +339,19 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     }
 
     // Official campus reference points plus a clearly approximate context radius.
-    const igdtuwMarker = createMarker({ position: { lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude }, title: CAMPUS_MAP_DATA.IGDTUW.name, label: "IGDTUW", color: CAMPUS_MAP_DATA.IGDTUW.color, size: 20 });
+    const igdtuwMarker = createMarker({ position: { lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude }, title: CAMPUS_MAP_DATA.IGDTUW.name, label: "IGDTUW", color: CAMPUS_MAP_DATA.IGDTUW.color, size: 20, zIndex: 100 });
     igdtuwMarker.addEventListener("gmp-click", () => { infoWindow.setContent(campusPopupHtml(CAMPUS_MAP_DATA.IGDTUW)); infoWindow.open({ map, anchor: igdtuwMarker }); });
     projectOverlays.current.push(igdtuwMarker);
     const igdtuwCircle = new window.google.maps.Circle({ map, center: { lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude }, radius: CAMPUS_REFERENCE_RADIUS_METERS, strokeColor: CAMPUS_MAP_DATA.IGDTUW.color, strokeOpacity: 0.65, strokeWeight: 1, fillColor: CAMPUS_MAP_DATA.IGDTUW.color, fillOpacity: 0.08, clickable: false });
     projectOverlays.current.push(igdtuwCircle);
-    bounds.extend({ lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude });
+    if (!validDefects.length || validDefects.some(({ point }) => isNearCampus(point, VERIFIED_CAMPUS_COORDINATES.IGDTUW))) bounds.extend({ lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude });
 
-    const iiitdMarker = createMarker({ position: { lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude }, title: CAMPUS_MAP_DATA.IIIT_DELHI.name, label: "IIIT-D", color: CAMPUS_MAP_DATA.IIIT_DELHI.color, size: 20 });
+    const iiitdMarker = createMarker({ position: { lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude }, title: CAMPUS_MAP_DATA.IIIT_DELHI.name, label: "IIIT-D", color: CAMPUS_MAP_DATA.IIIT_DELHI.color, size: 20, zIndex: 100 });
     iiitdMarker.addEventListener("gmp-click", () => { infoWindow.setContent(campusPopupHtml(CAMPUS_MAP_DATA.IIIT_DELHI)); infoWindow.open({ map, anchor: iiitdMarker }); });
     projectOverlays.current.push(iiitdMarker);
     const iiitdCircle = new window.google.maps.Circle({ map, center: { lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude }, radius: CAMPUS_REFERENCE_RADIUS_METERS, strokeColor: CAMPUS_MAP_DATA.IIIT_DELHI.color, strokeOpacity: 0.65, strokeWeight: 1, fillColor: CAMPUS_MAP_DATA.IIIT_DELHI.color, fillOpacity: 0.08, clickable: false });
     projectOverlays.current.push(iiitdCircle);
-    bounds.extend({ lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude });
+    if (!validDefects.length || validDefects.some(({ point }) => isNearCampus(point, VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI))) bounds.extend({ lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude });
 
     if (validDefects.length || (shouldShowTelemetry && validTelemetry.length)) map.fitBounds(bounds, 54);
   }, [mapState, onSelect, selectedId, shouldShowTelemetry, validDefects, validTelemetry]);
