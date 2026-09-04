@@ -52,7 +52,10 @@ function fallbackInference(input: InferenceInput): InferenceResult {
 }
 
 async function callProductionCv(input: InferenceInput): Promise<z.infer<typeof cvResponseSchema> | null> {
-  const endpoint = process.env.ML_INFERENCE_URL || "https://drift-ml.onrender.com/detect-base64";
+  // Never contact an implicit or stale deployment. Production CV is opt-in through
+  // an explicitly configured endpoint; otherwise the deterministic fallback is
+  // immediate and remains available for local tests, demos, and offline operation.
+  const endpoint = process.env.ML_INFERENCE_URL?.trim();
   if (!endpoint || !input.imageBase64 || input.demo) return null;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120_000);
