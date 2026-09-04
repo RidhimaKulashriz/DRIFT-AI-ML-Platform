@@ -67,7 +67,14 @@ async function upload(filePath) {
   const body = await response.text();
   if (!response.ok) throw new Error(`${response.status}: ${body.slice(0, 300)}`);
   sent.add(filePath);
-  console.log(`UPLOADED ${path.basename(filePath)} → ${baseUrl}/api/drift/evidence`);
+  let result = "stored";
+  try {
+    const parsed = JSON.parse(body);
+    result = parsed?.inference ? `inference=${parsed.inference.label ?? parsed.inference.defectType ?? "completed"}` : "inference=none";
+  } catch {
+    result = "response=non-json";
+  }
+  console.log(`UPLOADED ${path.basename(filePath)} → ${baseUrl}/api/drift/evidence (${result})`);
 }
 
 async function scan() {
