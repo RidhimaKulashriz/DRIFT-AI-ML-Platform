@@ -199,9 +199,12 @@ describe("external deployment artifacts", () => {
     expect(djiGuide).toContain("Run Transient Demo");
     expect(uploader).toContain("/api/drift/evidence");
     expect(uploader).toContain("DRIFT_INGEST_TOKEN");
-    expect(uploader).toContain("aircraftProfile: \"DJI Mini 3 Pro\"");
-    expect(uploader).not.toContain("arm");
-    expect(uploader).not.toContain("takeoff");
+    expect(uploader).toContain("aircraftProfile: options.aircraftProfile ?? \"DJI Mini 3 Pro\"");
+    expect(uploader).toContain("Token: configured from DRIFT_INGEST_TOKEN (value not displayed)");
+    expect(uploader).not.toContain("DEFAULT_TOKEN");
+    expect(uploader).not.toContain("--token <token>");
+    expect(uploader).not.toContain('option("--arm');
+    expect(uploader).not.toContain("/api/drift/command");
   });
 
   it("keeps public walkthroughs transient even when production persistence is available", () => {
