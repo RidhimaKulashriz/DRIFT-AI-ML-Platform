@@ -14,6 +14,8 @@ export type ContractorReportDelivery = {
   recommendedDeadline: string;
   reportUrl?: string;
   evidenceUrl?: string;
+  reportBase64?: string;
+  reportFileName?: string;
 };
 
 /**
@@ -71,7 +73,7 @@ export async function deliverContractorReport(payload: ContractorReportDelivery)
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ to: route.email, recipientName: route.name, matchedBy: route.matchedBy, subject: payload.subject, report, generatedAt: new Date().toISOString(), disclaimer: "DRIFT AI findings are advisory and require engineer review before action." }),
+      body: JSON.stringify({ to: route.email, recipientName: route.name, matchedBy: route.matchedBy, subject: payload.subject, report, attachment: payload.reportBase64 ? { fileName: payload.reportFileName ?? `DRIFT-${payload.ticketId ?? "report"}.pdf`, contentType: "application/pdf", base64: payload.reportBase64 } : null, generatedAt: new Date().toISOString(), disclaimer: "DRIFT AI findings are advisory and require engineer review before action." }),
     }).catch(() => null);
     if (response?.ok) return { sent: true as const, recipient: route.email, matchedBy: route.matchedBy, delivery: "confirmed-by-relay" as const };
   }
@@ -85,7 +87,7 @@ export async function deliverContractorReport(payload: ContractorReportDelivery)
       const smtpHost = process.env.DRIFT_SMTP_HOST?.trim() || "smtp.gmail.com";
       const smtpPort = Number(process.env.DRIFT_SMTP_PORT ?? 465);
       const transporter = nodemailer.createTransport({ host: smtpHost, port: smtpPort, secure: process.env.DRIFT_SMTP_SECURE !== "false", auth: { user: smtpUser, pass: smtpPass } });
-      await transporter.sendMail({ from: smtpUser, to: route.email, subject: payload.subject, text, html: `<h2>DRIFT Infrastructure Inspection Report</h2><p>${text.replaceAll("\n", "<br>")}</p>` });
+      await transporter.sendMail({ from: smtpUser, to: route.email, subject: payload.subject, text, html: `<h2>DRIFT Infrastructure Inspection Report</h2><p>${text.replaceAll("\n", "<br>")}</p>`, attachments: payload.reportBase64 ? [{ filename: payload.reportFileName ?? `DRIFT-${payload.ticketId ?? "report"}.pdf`, content: Buffer.from(payload.reportBase64, "base64"), contentType: "application/pdf" }] : undefined });
       return { sent: true as const, recipient: route.email, matchedBy: route.matchedBy, delivery: "confirmed-by-smtp" as const };
     } catch (error) {
       console.error("[DRIFT EMAIL] SMTP delivery failed:", error instanceof Error ? error.message : error);

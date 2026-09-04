@@ -1,5 +1,6 @@
 import { startLogin } from "@/const";
 import { trpc } from "@/lib/trpc";
+import { onSupabaseAuthStateChange } from "@/lib/supabase";
 import { TRPCClientError } from "@trpc/client";
 import { useCallback, useEffect, useMemo } from "react";
 
@@ -68,6 +69,13 @@ export function useAuth(options?: UseAuthOptions) {
     logoutMutation.error,
     logoutMutation.isPending,
   ]);
+
+  useEffect(() => {
+    const unsubscribe = onSupabaseAuthStateChange(() => {
+      void utils.auth.me.invalidate();
+    });
+    return unsubscribe;
+  }, [utils]);
 
   useEffect(() => {
     if (!redirectOnUnauthenticated) return;

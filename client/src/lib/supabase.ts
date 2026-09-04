@@ -93,6 +93,13 @@ export async function requestSupabaseMagicLink(email: string) {
   if (error) throw error;
 }
 
+export function onSupabaseAuthStateChange(callback: (event: string) => void) {
+  const client = getBrowserClient();
+  if (!client) return () => undefined;
+  const { data } = client.auth.onAuthStateChange((event) => callback(event));
+  return () => data.subscription.unsubscribe();
+}
+
 export async function signOutOfSupabase() {
   const client = getBrowserClient();
   if (!client) return;

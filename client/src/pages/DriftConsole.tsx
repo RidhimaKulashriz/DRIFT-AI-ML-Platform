@@ -594,7 +594,7 @@ export default function DriftConsole() {
             <p className="eyebrow">{roleCopy[role].eyebrow}</p>
             <h1>{roleCopy[role].title}</h1>
           </div>
-          <p>{roleCopy[role].note}</p>
+          <p>{roleCopy[role].note}{isAuthenticated && user ? <><br /><strong className="signed-in-welcome">Welcome, {user.name || user.email || "engineer"}. Your authenticated session is active.</strong></> : null}</p>
           <div className="identity-code"><span>SYSTEM STATUS</span><strong>• {connectedStatus.toUpperCase()}</strong></div>
         </section>
 
