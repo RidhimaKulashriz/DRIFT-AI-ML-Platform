@@ -36,3 +36,10 @@
 .live-detection-box { position: absolute; border: 3px solid #ffb000; box-shadow: 0 0 0 1px #171a18, 0 0 14px rgba(255,176,0,.75); pointer-events: none; }
 .live-detection-history-card small { display: block; color: #b9c7c2; font-size: 10px; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 760px) { .live-detection-history { grid-template-columns: 1fr; } }
+
+.live-video-overlay-stage { position: relative; background: #050606; }
+.live-video-overlay-stage > .live-stream-video { display: block; }
+.live-video-detection-box { position: absolute; border: 3px solid #ffd000; box-shadow: 0 0 0 1px #111, 0 0 16px rgba(255,208,0,.9); pointer-events: none; z-index: 3; }
+.live-video-detection-box b { position: absolute; left: -3px; top: -28px; background: #ffd000; color: #111; padding: 5px 8px; font: 800 11px/1 Arial, sans-serif; text-transform: uppercase; white-space: nowrap; }
+.live-video-detection-strip { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap; z-index: 4; }
+.live-video-detection-strip span { background: rgba(8,12,12,.88); color: #ffd000; border: 1px solid #ffd000; padding: 6px 9px; font: 800 11px/1 Arial, sans-serif; text-transform: uppercase; }
