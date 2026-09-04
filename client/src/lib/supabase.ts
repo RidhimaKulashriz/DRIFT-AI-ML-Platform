@@ -7,6 +7,7 @@ const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const isSupabaseAuthConfigured = Boolean(supabaseUrl && supabasePublishableKey);
 
 let browserClient: SupabaseClient | null = null;
+let refreshInFlight: Promise<string | null> | null = null;
 
 function getBrowserClient() {
   if (!isSupabaseAuthConfigured) return null;
@@ -31,7 +32,11 @@ export function isSupabaseTokenUsable(token: string, leewaySeconds = 60) {
 }
 
 async function clearExpiredSession(client: SupabaseClient) {
-  await client.auth.signOut().catch(() => undefined);
+  // Do not call signOut here. Supabase emits SIGNED_OUT for signOut(), and the
+  // auth hook responds by invalidating auth.me. Calling it while auth.me is
+  // already being fetched creates an invalidation/request loop when no session
+  // or an expired session is present. The next explicit sign-in or sign-out
+  // operation can still update Supabase's session state normally.
   try {
     sessionStorage.removeItem("manus-cookie");
   } catch {
@@ -42,12 +47,25 @@ async function clearExpiredSession(client: SupabaseClient) {
 export async function refreshSupabaseSession() {
   const client = getBrowserClient();
   if (!client) return null;
-  const refreshed = await client.auth.refreshSession();
-  if (refreshed.error || !refreshed.data.session?.access_token || !isSupabaseTokenUsable(refreshed.data.session.access_token)) {
-    await clearExpiredSession(client);
-    return null;
-  }
-  return refreshed.data.session.access_token;
+  if (refreshInFlight) return refreshInFlight;
+
+  refreshInFlight = (async () => {
+    // Avoid calling refreshSession when there is no session. In addition to
+    // being unnecessary, Supabase may emit an auth event for that call.
+    const current = await client.auth.getSession();
+    if (!current.data.session?.refresh_token) return null;
+
+    const refreshed = await client.auth.refreshSession();
+    if (refreshed.error || !refreshed.data.session?.access_token || !isSupabaseTokenUsable(refreshed.data.session.access_token)) {
+      await clearExpiredSession(client);
+      return null;
+    }
+    return refreshed.data.session.access_token;
+  })().finally(() => {
+    refreshInFlight = null;
+  });
+
+  return refreshInFlight;
 }
 
 export function magicLinkErrorMessage(error: unknown) {
