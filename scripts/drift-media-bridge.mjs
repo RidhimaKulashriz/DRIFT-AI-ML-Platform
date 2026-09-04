@@ -10,6 +10,7 @@ const token = process.env.DRIFT_INGEST_TOKEN;
 const missionId = Number(process.env.DRIFT_MISSION_ID);
 const defaultAssetId = Number(process.env.DRIFT_ASSET_ID ?? 0);
 const defaultAssetCriticality = Number(process.env.DRIFT_ASSET_CRITICALITY ?? 3);
+const sessionStartedAt = Date.now();
 const allowed = new Map([[".jpg", "image/jpeg"], [".jpeg", "image/jpeg"], [".png", "image/png"], [".webp", "image/webp"], [".heic", "image/heic"], [".mp4", "video/mp4"], [".webm", "video/webm"], [".mov", "video/quicktime"]]);
 const sent = new Set();
 
@@ -32,6 +33,8 @@ async function upload(filePath) {
   if (!mimeType || sent.has(filePath)) return;
   const stat = await fs.stat(filePath).catch(() => null);
   if (!stat || !stat.isFile() || stat.size === 0 || stat.size > 38 * 1024 * 1024) return;
+  // Never replay files left in the inbox by an earlier live session.
+  if (stat.mtimeMs < sessionStartedAt) return;
   const metadata = await readSidecar(filePath);
   if (typeof metadata.latitude !== "number" || typeof metadata.longitude !== "number") {
     fs.access(`${filePath}.json`).then(() => setTimeout(() => upload(filePath).catch(error => console.error(`FAILED ${path.basename(filePath)}: ${error.message}`)), 750)).catch(() => {});

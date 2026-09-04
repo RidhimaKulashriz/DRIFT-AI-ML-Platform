@@ -19,6 +19,8 @@ export function LiveDetectionPanel({ missionId }: { missionId: number }) {
   const [status, setStatus] = useState<"waiting" | "live" | "error">("waiting");
   useEffect(() => {
     if (!missionId) return;
+    setEvents([]);
+    setStatus("waiting");
     const source = new EventSource(`${backendOrigin}/api/drift/live/events?missionId=${encodeURIComponent(missionId)}`);
     source.onopen = () => setStatus("live");
     source.onmessage = message => { try { const next = JSON.parse(message.data) as LiveEvent; if (next.imageUrl) setEvents(previous => [next, ...previous.filter(item => item.frameId !== next.frameId)].slice(0, 6)); setStatus("live"); } catch { setStatus("error"); } };
