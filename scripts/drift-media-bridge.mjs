@@ -34,6 +34,7 @@ async function upload(filePath) {
   if (!stat || !stat.isFile() || stat.size === 0 || stat.size > 38 * 1024 * 1024) return;
   const metadata = await readSidecar(filePath);
   if (typeof metadata.latitude !== "number" || typeof metadata.longitude !== "number") {
+    fs.access(`${filePath}.json`).then(() => setTimeout(() => upload(filePath).catch(error => console.error(`FAILED ${path.basename(filePath)}: ${error.message}`)), 750)).catch(() => {});
     console.warn(`SKIP ${path.basename(filePath)}: sidecar GPS required at ${path.basename(filePath)}.json`);
     return;
   }
