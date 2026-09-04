@@ -1,262 +1,242 @@
-# DRIFT — Drone Based Reconnaissance & Infrastructure Fault Tracking
+# DRIFT — Infrastructure Inspection and Accountability Platform
 
-> **Public interactive demo:** [Open DRIFT](https://drift-ai-ml-platform.vercel.app/)
+DRIFT is a full-stack inspection platform for collecting infrastructure evidence, correlating findings with location and telemetry, prioritising defects, and producing reviewable maintenance reports. It supports simulator data, operator-approved UAV or hardware ingestion, live annotated frames, optional external ML inference, map-based review, engineer accountability, and contractor handoff workflows.
 
-DRIFT is an AI-assisted infrastructure-inspection platform for reviewing drone and operator-captured evidence, prioritising defects, correlating findings with coordinates and telemetry, generating audit-ready reports, and supporting accountable engineer review. The public demo is designed to be explored without sign-in.
+> **Safety boundary:** DRIFT does not arm, launch, or control an aircraft. The hardware integration is an authenticated ingestion boundary for telemetry and media supplied by an operator-approved bridge.
 
-## Interactive demo
+## Live deployment
 
-Use the links below to open each live workspace directly.
+The repository is configured for a split deployment:
 
-| Workspace | Open live demo |
+- **Frontend and application server:** [DRIFT production deployment](https://drift-ai-ml-platform.vercel.app/)
+- **Node/tRPC API:** [Render API](https://drift-node-api.onrender.com/)
+- **Repository:** [RidhimaKulashriz/DRIFT-AI-ML-Platform](https://github.com/RidhimaKulashriz/DRIFT-AI-ML-Platform)
+
+The frontend uses the Render API origin in production. The current frontend fallback is `https://drift-node-api.onrender.com`; set `VITE_BACKEND_URL` explicitly when deploying another environment.
+
+## What the application does
+
+The single-page DRIFT console provides the following workspaces:
+
+| Workspace | Purpose |
 | --- | --- |
-| Operations overview | [Open Operations](https://drift-ai-ml-platform.vercel.app/?workspace=operations) |
-| Defect control | [Open Defect Control](https://drift-ai-ml-platform.vercel.app/?workspace=defects) |
-| Evidence vault | [Open Evidence Vault](https://drift-ai-ml-platform.vercel.app/?workspace=evidence) |
-| Reports and PDF generation | [Open Reports](https://drift-ai-ml-platform.vercel.app/?workspace=reports) |
-| Hardware bridge boundary | [Open Hardware Bridge](https://drift-ai-ml-platform.vercel.app/?workspace=hardware) |
+| **Operations** | Mission overview, telemetry, alerts, simulator runs, and overall inspection status. |
+| **Defect control** | Filter and review findings by severity, type, domain, mission, asset, status, and engineer-review state. |
+| **Evidence vault** | Inspect stored photos, videos, provenance, coordinates, timestamps, quality state, and finding associations. |
+| **Reports** | Generate AI-assisted narratives and audit-oriented PDF reports with evidence and interpretation limits. |
+| **Contractors** | Review readiness, work profiles, RAG handoff candidates, and controlled maintenance workflows. |
+| **Rail monitoring** | Review rail-focused inspection context and track-fault findings. |
+| **Traffic data** | View traffic context used alongside inspection and prioritisation data. |
+| **Accountability** | Separate observed evidence, automated inference, engineer decisions, contractor actions, and closure evidence. |
+| **Hardware bridge** | Inspect bridge status and the operator-approved ingestion boundary. |
 
-### Recommended public demo flow
+The interface also includes live pipeline and live stream panels, detection overlays, an AI assistant, map views, public-reference imagery for demonstration, and a train-monitoring view.
 
-Open **Operations**, select **RUN DEMO**, and wait for the simulator mission to persist. The mission creates telemetry, evidence-linked findings, severity scores, repair estimates, and maintenance alerts. Open **Defect Control** to inspect findings and map markers, then use **Evidence Vault** to review stored media. Finally, open **Reports**, choose **AI NARRATIVE** or **GENERATE PDF REPORT**, and use **OPEN PDF** to view the generated report.
+## Typical demo flow
 
-The map uses Google Maps when the configured provider is available. If the provider is unavailable because of key restrictions or billing configuration, the dashboard automatically presents a visible OpenStreetMap fallback so coordinate context remains usable. Marker buttons remain available for selecting findings.
+1. Open the production frontend or start the local app.
+2. In **Operations**, run the simulator mission.
+3. Review telemetry, alerts, map markers, and generated findings in **Defect control**.
+4. Open **Evidence vault** to inspect media and provenance.
+5. Use **Reports** to generate a narrative or PDF report.
+6. Review accountability and contractor-readiness information before treating any recommendation as an operational action.
 
-## Verified production endpoints
+Simulator and public-dataset reference media are demonstrations only. They are not live UAV evidence, proof of damage, a safety determination, an approved work order, or an engineer’s conclusion.
 
-| Endpoint | Link |
-| --- | --- |
-| Frontend | [drift-ai-ml-platform.vercel.app](https://drift-ai-ml-platform.vercel.app/) |
-| Render backend | [drift-node-api.onrender.com](https://drift-node-api.onrender.com/) |
-| Live overview API | [Open overview response](https://drift-node-api.onrender.com/api/trpc/drift.overview) |
-| Latest verified PDF attachment | [Open verified report](https://drift-node-api.onrender.com/api/drift/attachments/db:1b2b3c0b-e1fa-44f5-9e18-6bb0382685ec) |
-| Google Maps credentials | [Open Google Cloud Maps credentials](https://console.cloud.google.com/google/maps-apis/credentials) |
+## Architecture
 
-The report endpoint above is a durable PostgreSQL-backed attachment URL served by the Node backend. It is included as a verification sample; newly generated reports expose their own backend URL in the Reports workspace.
+```text
+Operator / Engineer / Contractor
+             |
+             v
+React + TypeScript console (Vite)
+  Operations · Defects · Evidence · Reports
+  Accountability · Contractors · Rail · Traffic
+             |
+             | tRPC / HTTP / Server-Sent Events
+             v
+Express + tRPC Node server
+  Mission and finding workflows
+  Evidence and report generation
+  Auth, CORS, storage proxy, ingestion routes
+             |
+       +-----+------------------+------------------+
+       |                        |                  |
+       v                        v                  v
+PostgreSQL + Drizzle      ML adapters        Maps / geospatial context
+missions, findings,       local or external   Google Maps when configured,
+telemetry, evidence,      inference, Gemini   OpenStreetMap fallback
+reports, alerts           fallback
+       |
+       v
+Engineer review -> controlled contractor handoff -> audit-ready report
 
-## What is implemented
+Optional operator bridge -> authenticated telemetry and media ingestion
+Optional ML service (Python/FastAPI) -> /detect-base64 or /detect
+Optional MediaMTX/HLS -> browser live stream and annotated frames
+```
 
-The application includes a React dashboard, a Node.js/tRPC API, PostgreSQL-compatible Drizzle persistence, durable database-backed evidence and report attachments, simulator mode, a validated hardware-ingestion boundary, explainable defect-inference adapters, geospatial mission context, severity and repair rules, AI decision-support narratives, and engineer-review state.
+## Repository layout
 
-The public demo permits monitoring, simulator execution, report generation, map exploration, and report downloads without requiring sign-in. Authentication remains an integration boundary for protected operational actions such as engineer approvals, original-media uploads, and hardware-bridge operations.
+```text
+client/                 React application and dashboard components
+server/                 Express/tRPC API, services, persistence, tests
+shared/                 Shared types, demo data, scoring, maps, and domains
+ml-server/              Optional Python ML inference service and local YOLO models
+scripts/                Media bridge, upload, frame-source, and verification scripts
+tools/                  DJI export integration helper
+docs/                   Deployment, integration, security, and validation guides
+drizzle/                Database migrations and relations
+render.yaml             Render service definition
+vite.config.ts          Vite configuration
+```
 
-## Safety boundary
+## Requirements
 
-> DRIFT never arms, launches, or controls an aircraft.
-
-The hardware layer is an authenticated ingestion adapter for operator-approved telemetry and media bridges. Configure a compatible endpoint through `DRIFT_HARDWARE_ENDPOINT`, validate payloads through the integration route, and complete an on-site integration test before operational use. Simulator mode does not issue flight commands.
+- Node.js 20+ (Node.js 22 is recommended)
+- pnpm 10 (`corepack enable` can activate the project package manager)
+- PostgreSQL for persistent local development
+- Python 3.10+ only when running the optional ML service
+- Optional: Supabase, Google Maps, OpenAI/Gemini-compatible credentials, SMTP/webhook delivery, MediaMTX, or an operator hardware bridge
 
 ## Local development
 
 ```bash
+corepack enable
 pnpm install
+cp .env.example .env
+# Edit .env with at least a usable DATABASE_URL for persistent operation
 pnpm db:push
 pnpm dev
-pnpm check
-pnpm test
-pnpm build
 ```
 
-Copy `.env.example` only when operating an external hardware or computer-vision service. Do not commit environment files, API keys, database URLs, or provider credentials.
+The development server starts the Vite-powered frontend and Node API together. By default it looks for port `3000`; the server can select an available nearby port when necessary.
 
-## Integration configuration
+Useful commands:
 
-| Variable | Required | Purpose |
+```bash
+pnpm check       # TypeScript validation
+pnpm typecheck   # Alias for pnpm check
+pnpm test        # Vitest test suite
+pnpm build       # Vite frontend build plus bundled Node server
+pnpm start       # Start the production bundle
+pnpm test:bridge # Verify bridge routes without starting the full app
+pnpm bridge:media # Start the media bridge helper
+pnpm format      # Format the repository with Prettier
+```
+
+Run `pnpm check`, `pnpm test`, and `pnpm build` before pushing changes. The repository currently has no committed `.github/workflows` CI file, so these checks should be run locally or in the deployment pipeline.
+
+## Configuration
+
+Copying `.env.example` is the starting point; not every variable is required for every mode. Never commit `.env`, credentials, database URLs, tokens, or provider keys.
+
+| Variable | Used for |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection used by Drizzle and the persistence layer. |
+| `VITE_BACKEND_URL` | Browser-facing Node API origin; defaults in the frontend to the production Render API. |
+| `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Optional authentication and object-storage integration. Keep service-role credentials server-side. |
+| `ML_INFERENCE_URL` | Optional external inference endpoint. The Node service validates the response before creating a finding. |
+| `ML_INFERENCE_TOKEN` | Private token for the external inference service. |
+| `GEMINI_API_KEY`, `OPENAI_API_KEY` | Optional AI decision-support or inference fallback, depending on the configured adapter. |
+| `VITE_GOOGLE_MAPS_API_KEY` | Optional browser-restricted Google Maps key. The UI retains an OpenStreetMap fallback when Maps is unavailable. |
+| `DRIFT_INGEST_TOKEN` | Token required for telemetry and evidence bridge ingestion. Send it as a Bearer token or `x-drift-ingest-token`. |
+| `DRIFT_HARDWARE_ENDPOINT` | Optional operator-approved hardware or media bridge health endpoint. This does not enable flight control. |
+| `VITE_DRIFT_LIVE_STREAM_URL` | Optional browser-visible HLS stream URL for live viewing. |
+| `DRIFT_ANNOTATED_RTMP_URL` | Optional RTMP destination for publishing annotated frames to MediaMTX. |
+| `DRIFT_EMAIL_WEBHOOK_URL` or `DRIFT_SMTP_*` | Optional report and notification delivery. |
+
+For a complete deployment variable list, see [`docs/external_hosting.md`](docs/external_hosting.md) and [`docs/deployment.md`](docs/deployment.md).
+
+## Optional ML service
+
+`ml-server/` contains a Python HTTP service that can run the checked-in local YOLO models and optional Roboflow-backed models:
+
+| Model | Backend | Detection purpose |
 | --- | --- | --- |
-| `DRIFT_HARDWARE_ENDPOINT` | No | Operator-approved HTTP, MAVLink bridge, or RTSP media endpoint. |
-| `ML_INFERENCE_URL` | No | Optional external vision-service endpoint. |
-| `VITE_BACKEND_URL` | Production | Public Node API origin used by the frontend for tRPC and stored assets. |
-| `VITE_GOOGLE_MAPS_API_KEY` | Optional | Browser-restricted Google Maps JavaScript API key. OpenStreetMap fallback remains available. |
+| CRACK | Local YOLO (`ml-server/cracks/main_crack.pt`) | Crack detection |
+| ROAD | Local YOLO (`ml-server/road-ml/main_road.pt`) | Road damage and potholes |
+| RAILWAY | Roboflow API | Track fault detection |
+| RUST | Roboflow API | Corrosion detection |
 
-Configure production secrets through Vercel and Render environment settings rather than committing them to GitHub. Restrict browser map keys by allowed domains and API product before using them in production.
+Start it locally when the model dependencies and any required credentials are available:
+
+```bash
+cd ml-server
+python -m pip install -r requirements.txt
+python server.py
+```
+
+The service exposes:
+
+- `GET /health`
+- `POST /detect` for multipart file testing
+- `POST /detect-base64` for the DRIFT backend integration
+
+Example request:
+
+```bash
+curl -X POST http://localhost:8000/detect \
+  -F 'file=@/path/to/inspection.jpg'
+```
+
+Configure the Node service with `ML_INFERENCE_URL` pointing to the appropriate endpoint. DRIFT uses the external ML service when configured, then applies its configured fallback adapter; unavailable inference must be represented as unavailable and is not treated as a detection. See [`ml-server/README.md`](ml-server/README.md) for the model-specific setup and response contract.
+
+## Ingestion and live pipeline
+
+Authenticated operator bridges can submit telemetry and evidence to the Node API:
+
+- `POST /api/drift/telemetry` — validates and persists telemetry.
+- `POST /api/drift/evidence` — accepts supported image/video base64 payloads, persists evidence, and can run inference.
+- `GET /api/drift/live/events?missionId=<id>` — Server-Sent Events stream for live mission updates.
+- `GET /api/drift/evidence-media/<encoded-key>` — backend proxy for protected evidence media.
+- `POST /api/inspections` — runs the full inspection pipeline for an uploaded image, including metadata, inference, report, and optional email delivery.
+
+Bridge requests are rate-limited and require `DRIFT_INGEST_TOKEN`. Evidence payloads are size- and MIME-validated, and live detections are marked for engineer review rather than being treated as verified findings.
+
+The repository includes helpers for DJI exports, drone uploads, MediaMTX/HLS frame capture, annotated media bridging, and route verification. Review [`docs/hardware_adapter_contract.md`](docs/hardware_adapter_contract.md), [`docs/operator_uav_capture_guide.md`](docs/operator_uav_capture_guide.md), and [`docs/windows-live-workflow.md`](docs/windows-live-workflow.md) before connecting real equipment.
 
 ## Deployment
 
-The frontend is deployed on Vercel and the Node API is deployed on Render. GitHub pushes to `main` trigger the configured deployment pipelines.
+The included [`render.yaml`](render.yaml) defines the Node service on Render:
 
-- [GitHub repository](https://github.com/RidhimaKulashriz/DRIFT-AI-ML-Platform)
-- [Latest production fix commit](https://github.com/RidhimaKulashriz/DRIFT-AI-ML-Platform/commit/4197d6e)
-- [Render service definition](render.yaml)
-- [Deployment documentation](docs/deployment.md)
+```bash
+pnpm install --frozen-lockfile
+pnpm build
+pnpm drizzle-kit migrate && pnpm start
+```
 
-## Test coverage
+The documented external hosting path is:
 
-`pnpm test` covers ZeroError scoring, simulator-safe hardware fallback, telemetry validation, inference adapters, authentication boundaries, and report-generation behavior. Run `pnpm check` and `pnpm build` before pushing changes. The CI workflow is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
+1. Run validation locally: `pnpm check`, `pnpm test`, and `pnpm build`.
+2. Configure PostgreSQL and server-side secrets in Render.
+3. Set `VITE_BACKEND_URL` to the public Node API origin for the frontend build.
+4. Configure frontend origin, CORS, OAuth, storage, ML, and bridge settings.
+5. Deploy the frontend to Vercel and the Node API to Render.
+6. Verify login boundaries, database persistence, evidence storage, report generation, map fallback, and authenticated telemetry/evidence ingestion.
 
-See [`docs/hardware_adapter_contract.md`](docs/hardware_adapter_contract.md) for the authenticated telemetry payload contract, media-ingestion boundary, and safe operator integration-test sequence.
+Read [`docs/deployment.md`](docs/deployment.md), [`docs/external_hosting.md`](docs/external_hosting.md), and [`docs/security_lifecycle_audit.md`](docs/security_lifecycle_audit.md) before production deployment.
 
-## System Architecture
-                                             ┌──────────────────────────────┐
-                         │            USERS             │
-                         │  Engineer / Operator / Admin  │
-                         └──────────────┬───────────────┘
-                                        │
-                                        ▼
-                 ┌─────────────────────────────────────────┐
-                 │           DRIFT WEB DASHBOARD            │
-                 │              React + TypeScript          │
-                 │                                         │
-                 │ Operations │ Defects │ Evidence │ Maps  │
-                 │ Reports    │ Alerts  │ Hardware Bridge  │
-                 └────────────────────┬────────────────────┘
-                                      │
-                                 tRPC / HTTP
-                                      │
-                                      ▼
-        ┌──────────────────────────────────────────────────────────┐
-        │                  NODE.JS + tRPC BACKEND                   │
-        │                                                          │
-        │  ┌────────────┐ ┌────────────┐ ┌──────────────────────┐ │
-        │  │   Mission  │ │  Finding   │ │     Telemetry        │ │
-        │  │   Router   │ │   Router   │ │      Router          │ │
-        │  └────────────┘ └────────────┘ └──────────────────────┘ │
-        │                                                          │
-        │  ┌────────────┐ ┌────────────┐ ┌──────────────────────┐ │
-        │  │  Evidence  │ │   Report   │ │      Hardware        │ │
-        │  │   Router   │ │   Router   │ │       Router          │ │
-        │  └────────────┘ └────────────┘ └──────────────────────┘ │
-        │                                                          │
-        │         BUSINESS LOGIC / ORCHESTRATION                  │
-        │  Mission Management │ Finding Processing                │
-        │  Telemetry Validation │ Engineer Review                 │
-        │  Alert Generation │ Report Generation                   │
-        └───────────────┬──────────────┬───────────────┬───────────┘
-                        │              │               │
-                        ▼              ▼               ▼
-              ┌────────────────┐ ┌──────────────┐ ┌─────────────────┐
-              │    AI / ML     │ │   DRIZZLE    │ │  GEO-SPATIAL    │
-              │    ENGINE      │ │     ORM      │ │     ENGINE      │
-              │                │ │              │ │                 │
-              │ Computer       │ │ Data Access  │ │ GPS Correlation │
-              │ Vision         │ │ Queries      │ │ Coordinates     │
-              │                │ │ Persistence  │ │ Map Markers     │
-              │ Defect         │ │              │ │ Mission Routes  │
-              │ Detection      │ │              │ │                 │
-              │ Classification │ │              │ │ Google Maps /   │
-              │ Severity       │ │              │ │ OSM Fallback    │
-              └───────┬────────┘ └──────┬───────┘ └────────┬────────┘
-                      │                  │                  │
-                      ▼                  ▼                  │
-              ┌────────────────┐ ┌──────────────────┐      │
-              │    DECISION    │ │   POSTGRESQL     │      │
-              │     ENGINE     │ │     DATABASE     │      │
-              │                │ │                  │      │
-              │ Severity       │ │ Missions         │      │
-              │ Priority       │ │ Findings         │      │
-              │ Repair Estimate│ │ Telemetry        │      │
-              │ Maintenance    │ │ Evidence         │      │
-              │ Alerts         │ │ Reports          │      │
-              └───────┬────────┘ │ Alerts           │      │
-                      │          └──────────────────┘      │
-                      │                                    │
-                      └────────────────┬───────────────────┘
-                                       │
-                                       ▼
-                         ┌────────────────────────┐
-                         │     EVIDENCE VAULT     │
-                         │                        │
-                         │ Images / Video         │
-                         │ GPS + Timestamp        │
-                         │ Finding Association    │
-                         │ Mission Association    │
-                         └────────────┬───────────┘
-                                      │
-                                      ▼
-                         ┌────────────────────────┐
-                         │    ENGINEER REVIEW     │
-                         │                        │
-                         │ Evidence Verification  │
-                         │ Finding Validation     │
-                         │ Severity Review        │
-                         │ Approval / Review      │
-                         └────────────┬───────────┘
-                                      │
-                                      ▼
-                         ┌────────────────────────┐
-                         │    REPORTING ENGINE     │
-                         │                        │
-                         │ AI Narrative            │
-                         │ Inspection Summary      │
-                         │ Evidence References     │
-                         │ PDF Generation          │
-                         └────────────┬───────────┘
-                                      │
-                                      ▼
-                         ┌────────────────────────┐
-                         │   AUDIT-READY PDF      │
-                         │   INSPECTION REPORT    │
-                         └────────────┬───────────┘
-                                      │
-                                      ▼
-                         ┌────────────────────────┐
-                         │ MAINTENANCE DECISION   │
-                         │                        │
-                         │ Repair Recommendation  │
-                         │ Priority Action        │
-                         │ Maintenance Workflow   │
-                         └────────────────────────┘
+## Review and safety principles
 
+- A model confidence value is not a probability of structural failure.
+- A coordinate is a location reference, not a survey boundary.
+- Simulator output and public-reference imagery are not live inspection evidence.
+- Findings remain subject to evidence-quality checks and authorised engineer review.
+- Repair estimates and contractor matches are planning or handoff inputs, not approved budgets or completed work.
+- Hardware integration is ingestion only; DRIFT does not issue flight commands.
+- Keep API keys, ingest tokens, database credentials, and service-role secrets out of frontend code and version control.
 
-══════════════════════ EXTERNAL DATA ACQUISITION ══════════════════════
+## Further documentation
 
-        ┌─────────────────────────────────────────────────┐
-        │              DRONE / HARDWARE                   │
-        │                                                 │
-        │ Camera │ Images │ Video │ GPS │ Telemetry      │
-        │ HTTP │ RTSP │ MAVLink                          │
-        └───────────────────────┬─────────────────────────┘
-                                │
-                                ▼
-                 ┌──────────────────────────────┐
-                 │ AUTHENTICATED HARDWARE       │
-                 │      INGESTION ADAPTER       │
-                 │                              │
-                 │ Authentication              │
-                 │ Input Validation             │
-                 │ Telemetry Parsing            │
-                 │ Media Ingestion              │
-                 └──────────────┬───────────────┘
-                                │
-                                ▼
-                       NODE.JS + tRPC BACKEND
+- [`docs/deployment.md`](docs/deployment.md) — external hosting and deployment sequence
+- [`docs/external_hosting.md`](docs/external_hosting.md) — hosting variables and service configuration
+- [`docs/hardware_adapter_contract.md`](docs/hardware_adapter_contract.md) — authenticated telemetry/media contract
+- [`docs/operator_uav_capture_guide.md`](docs/operator_uav_capture_guide.md) — operator capture workflow
+- [`docs/industry_readiness_contract.md`](docs/industry_readiness_contract.md) — operational readiness boundaries
+- [`docs/security_lifecycle_audit.md`](docs/security_lifecycle_audit.md) — security and lifecycle controls
+- [`ml-server/README.md`](ml-server/README.md) — optional Python inference service
 
+## License
 
-════════════════════════════ AI INTEGRATION ═══════════════════════════
-
-                 ┌──────────────────────────────┐
-                 │ OPTIONAL EXTERNAL ML SERVICE │
-                 │                              │
-                 │   ML_INFERENCE_URL           │
-                 └──────────────┬───────────────┘
-                                │
-                                ▼
-                         AI / ML ENGINE
-
-
-════════════════════════════ DEPLOYMENT ══════════════════════════════
-
-       ┌──────────────┐          ┌──────────────┐
-       │   GITHUB     │─────────▶│   VERCEL     │
-       │ Source Code  │          │   Frontend   │
-       └──────┬───────┘          └──────┬───────┘
-              │                         │
-              │                         │ HTTPS
-              │                         ▼
-              │                  ┌──────────────┐
-              └─────────────────▶│    RENDER    │
-                                 │ Node.js API  │
-                                 └──────┬───────┘
-                                        │
-                          ┌─────────────┴─────────────┐
-                          ▼                           ▼
-                   ┌──────────────┐          ┌────────────────┐
-                   │ PostgreSQL   │          │ External ML    │
-                   │ + Drizzle    │          │ Service        │
-                   └──────────────┘          └────────────────┘
-
-## References
-
-[1]: https://drift-ai-ml-platform.vercel.app/ "DRIFT public interactive demo"
-[2]: https://drift-node-api.onrender.com/ "DRIFT Render Node API"
-[3]: https://github.com/RidhimaKulashriz/DRIFT-AI-ML-Platform "DRIFT GitHub repository"
-[4]: https://console.cloud.google.com/google/maps-apis/credentials "Google Cloud Maps credentials"
+This project is distributed under the MIT License. See [`package.json`](package.json) for the repository metadata.
