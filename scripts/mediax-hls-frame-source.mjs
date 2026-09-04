@@ -53,8 +53,9 @@ const sidecarTimer = setInterval(async () => {
   try {
     const stat = await fs.stat(framePath);
     if (stat.size > 0) {
-      if (nextSample % sampleEvery !== 0) { nextSample += 1; nextFrame += 1; continue; }
-      await fs.writeFile(`${framePath}.json`, JSON.stringify({ latitude, longitude, liveFrame: true, frameId: frameName, runInference: true, cameraId: "media-x-live", inspectionDomain: "roads" }, null, 2));
+      if (nextSample % sampleEvery === 0) {
+        await fs.writeFile(`${framePath}.json`, JSON.stringify({ latitude, longitude, liveFrame: true, frameId: frameName, runInference: true, cameraId: "media-x-live", inspectionDomain: "roads" }, null, 2));
+      }
       nextSample += 1;
       nextFrame += 1;
     }
