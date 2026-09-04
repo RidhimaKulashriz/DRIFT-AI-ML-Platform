@@ -31,7 +31,7 @@ $processes += Start-Process -FilePath "pnpm.cmd" -ArgumentList "dev" -WorkingDir
 
 Write-Host "Started process IDs: $($processes.Id -join ', ')" -ForegroundColor Green
 Write-Host "Open http://localhost:3000/?workspace=operations" -ForegroundColor Green
-Write-Host "Start Media X now and publish to rtmp://127.0.0.1:1935/mediax" -ForegroundColor Green
+Write-Host "Start the drone stream now and publish to rtmp://192.168.137.1:1935/drift" -ForegroundColor Green
 do {
   Start-Sleep -Seconds 2
   try { Invoke-WebRequest "http://127.0.0.1:8888/drift/index.m3u8" -UseBasicParsing -TimeoutSec 3 | Out-Null; $streamReady = $true }
