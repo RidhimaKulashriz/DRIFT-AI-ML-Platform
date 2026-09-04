@@ -28,3 +28,11 @@
 .live-detection-empty span { max-width: 24rem; font-size: .8rem; line-height: 1.4; }
 .live-detection-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; padding-top: .75rem; font-size: .7rem; color: #625b50; }
 @media (max-width: 900px) { .live-media-grid { grid-template-columns: 1fr; } }
+
+.live-detection-history { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 14px; max-height: 430px; overflow: auto; }
+.live-detection-history-card { min-width: 0; background: #101313; border: 1px solid #35403f; padding: 8px; }
+.live-detection-image-stage { position: relative; overflow: hidden; background: #050606; aspect-ratio: 16 / 9; }
+.live-detection-image-stage img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.live-detection-box { position: absolute; border: 3px solid #ffb000; box-shadow: 0 0 0 1px #171a18, 0 0 14px rgba(255,176,0,.75); pointer-events: none; }
+.live-detection-history-card small { display: block; color: #b9c7c2; font-size: 10px; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 760px) { .live-detection-history { grid-template-columns: 1fr; } }
