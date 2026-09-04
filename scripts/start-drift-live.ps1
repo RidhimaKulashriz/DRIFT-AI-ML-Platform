@@ -26,7 +26,7 @@ $processes = @()
 $processes += Start-Process -FilePath "mediamtx" -WorkingDirectory $HOME -PassThru
 Start-Sleep -Seconds 2
 $processes += Start-Process -FilePath "node" -ArgumentList ".\scripts\drift-media-bridge.mjs" -WorkingDirectory $repo -PassThru
-$processes += Start-Process -FilePath "pnpm" -ArgumentList "dev" -WorkingDirectory $repo -PassThru
+$processes += Start-Process -FilePath "pnpm.cmd" -ArgumentList "dev" -WorkingDirectory $repo -PassThru
 
 Write-Host "Started process IDs: $($processes.Id -join ', ')" -ForegroundColor Green
 Write-Host "Open http://localhost:3000/?workspace=operations" -ForegroundColor Green
