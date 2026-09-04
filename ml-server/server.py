@@ -75,20 +75,22 @@ def roboflow_infer(image_bytes, model_id, conf_thresh=0.25):
                 return []
             result = resp.json()
             preds = result.get("predictions", [])
+            frame = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
+            frame_h, frame_w = frame.shape[:2] if frame is not None else (1, 1)
             dets = []
             for p in preds:
                 conf = float(p.get("confidence", 0))
                 if conf < conf_thresh:
                     continue
                 label = p.get("class", "unknown")
-                x, y, w, h = float(p.get("x",0)), float(p.get("y",0)), float(p.get("width",0)), float(p.get("height",0))
+                x, y, box_w, box_h = float(p.get("x",0)), float(p.get("y",0)), float(p.get("width",0)), float(p.get("height",0))
                 dets.append({
                     "model": model_id.split("/")[0].upper(), "label": label,
                     "confidence": round(conf, 4),
-                    "x": round(max(0, min(100, ((x-w/2)/max(1,1))*100)), 1),
-                    "y": round(max(0, min(100, ((y-h/2)/max(1,1))*100)), 1),
-                    "width": round(max(1, min(100, (w/max(1,1))*100)), 1),
-                    "height": round(max(1, min(100, (h/max(1,1))*100)), 1),
+                    "x": round(max(0, min(100, ((x-box_w/2)/frame_w)*100)), 1),
+                    "y": round(max(0, min(100, ((y-box_h/2)/frame_h)*100)), 1),
+                    "width": round(max(1, min(100, (box_w/frame_w)*100)), 1),
+                    "height": round(max(1, min(100, (box_h/frame_h)*100)), 1),
                 })
             return dets
         except Exception as e:
@@ -118,8 +120,8 @@ async def detect_base64(request_body: dict):
 
     try:
         image_b64 = request_body.get("imageBase64", "")
-        confidence = float(request_body.get("confidence", 0.30))
-        imgsz = int(request_body.get("imgsz", 640))
+        confidence = max(0.45, float(request_body.get("confidence", 0.55)))
+        imgsz = max(640, min(1280, int(request_body.get("imgsz", 960))))
         if not image_b64:
             return {"success": True, "model": "none", "detections": [], "count": 0, "errors": ["no image"]}
         if "," in image_b64 and image_b64.startswith("data:"):
@@ -137,7 +139,7 @@ async def detect_base64(request_body: dict):
     # 1. CRACK (Hitakshi's exact code)
     if crack_model is not None:
         try:
-            results = crack_model.predict(source=frame, imgsz=imgsz, conf=confidence, iou=0.45, device="cpu", verbose=False)
+            results = crack_model.predict(source=frame, imgsz=imgsz, conf=max(0.60, confidence), iou=0.35, device="cpu", verbose=False)
             result = results[0]
             if result.boxes is not None and len(result.boxes) > 0:
                 for bbox, conf, cid in zip(result.boxes.xyxy.cpu().numpy(), result.boxes.conf.cpu().numpy(), result.boxes.cls.cpu().numpy().astype(int)):
@@ -161,7 +163,7 @@ async def detect_base64(request_body: dict):
     # 2. ROAD (Hitakshi's exact code)
     if road_model is not None:
         try:
-            results = road_model.predict(source=frame, device="cpu", conf=confidence, iou=0.45, imgsz=imgsz, verbose=False)
+            results = road_model.predict(source=frame, device="cpu", conf=max(0.50, confidence), iou=0.40, imgsz=imgsz, verbose=False)
             result = results[0]
             if result.boxes is not None and len(result.boxes) > 0:
                 for bbox, conf, cid in zip(result.boxes.xyxy.cpu().numpy(), result.boxes.conf.cpu().numpy(), result.boxes.cls.cpu().numpy().astype(int)):

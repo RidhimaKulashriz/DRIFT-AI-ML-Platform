@@ -8,7 +8,9 @@ const streamUrl = process.env.MEDIA_X_HLS_URL;
 const outputDir = path.resolve(process.env.DRIFT_MEDIA_DIR ?? "./drift-media-inbox");
 const latitude = Number(process.env.MEDIA_X_LATITUDE);
 const longitude = Number(process.env.MEDIA_X_LONGITUDE);
-const fps = Number(process.env.MEDIA_X_FRAME_RATE ?? 1);
+const captureFps = Number(process.env.MEDIA_X_CAPTURE_FPS ?? 2);
+const sampleEvery = Math.max(1, Math.floor(Number(process.env.MEDIA_X_SAMPLE_EVERY ?? 2)));
+const fps = captureFps / sampleEvery;
 
 if (!streamUrl) {
   console.error("Set MEDIA_X_HLS_URL to your Media X .m3u8 URL.");
@@ -18,18 +20,18 @@ if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
   console.error("Set MEDIA_X_LATITUDE and MEDIA_X_LONGITUDE so detections can be mapped.");
   process.exit(1);
 }
-if (!Number.isFinite(fps) || fps <= 0 || fps > 2) {
-  console.error("MEDIA_X_FRAME_RATE must be between 0 and 2 frames per second.");
+if (!Number.isFinite(captureFps) || captureFps <= 0 || captureFps > 10 || !Number.isFinite(sampleEvery)) {
+  console.error("MEDIA_X_CAPTURE_FPS must be between 0 and 10 and MEDIA_X_SAMPLE_EVERY must be a positive integer.");
   process.exit(1);
 }
 
 await fs.mkdir(outputDir, { recursive: true });
 console.log(`Reading Media X HLS: ${streamUrl}`);
-console.log(`Writing ${fps} frame(s)/second to ${outputDir}`);
+console.log(`Capturing at ${captureFps} fps; sending every ${sampleEvery} frame(s) (${fps} inference frame(s)/second) to ${outputDir}`);
 
 const ffmpeg = spawn("ffmpeg", [
   "-hide_banner", "-loglevel", "warning", "-i", streamUrl,
-  "-vf", `fps=${fps}`, "-q:v", "5", "-f", "image2",
+  "-vf", `fps=${captureFps}`, "-q:v", "2", "-f", "image2",
   path.join(outputDir, "mediax-%06d.jpg"),
 ], { stdio: ["ignore", "inherit", "inherit"] });
 
@@ -44,13 +46,16 @@ ffmpeg.on("close", code => {
 });
 
 let nextFrame = 1;
+let nextSample = 1;
 const sidecarTimer = setInterval(async () => {
   const frameName = `mediax-${String(nextFrame).padStart(6, "0")}.jpg`;
   const framePath = path.join(outputDir, frameName);
   try {
     const stat = await fs.stat(framePath);
     if (stat.size > 0) {
+      if (nextSample % sampleEvery !== 0) { nextSample += 1; nextFrame += 1; continue; }
       await fs.writeFile(`${framePath}.json`, JSON.stringify({ latitude, longitude, liveFrame: true, frameId: frameName, runInference: true, cameraId: "media-x-live", inspectionDomain: "roads" }, null, 2));
+      nextSample += 1;
       nextFrame += 1;
     }
   } catch {

@@ -43,3 +43,12 @@
 .live-video-detection-box b { position: absolute; left: -3px; top: -28px; background: #ffd000; color: #111; padding: 5px 8px; font: 800 11px/1 Arial, sans-serif; text-transform: uppercase; white-space: nowrap; }
 .live-video-detection-strip { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap; z-index: 4; }
 .live-video-detection-strip span { background: rgba(8,12,12,.88); color: #ffd000; border: 1px solid #ffd000; padding: 6px 9px; font: 800 11px/1 Arial, sans-serif; text-transform: uppercase; }
+
+.live-video-detection-box.detection-crack { border-color: #ff3030; box-shadow: 0 0 0 1px #111, 0 0 16px rgba(255,48,48,.9); }
+.live-video-detection-box.detection-crack b, .live-video-detection-strip .detection-crack { background: #ff3030; color: #fff; border-color: #ff3030; }
+.live-video-detection-box.detection-pothole { border-color: #168cff; box-shadow: 0 0 0 1px #111, 0 0 16px rgba(22,140,255,.9); }
+.live-video-detection-box.detection-pothole b, .live-video-detection-strip .detection-pothole { background: #168cff; color: #fff; border-color: #168cff; }
+.live-video-detection-box.detection-corrosion { border-color: #ff8a00; box-shadow: 0 0 0 1px #111, 0 0 16px rgba(255,138,0,.9); }
+.live-video-detection-box.detection-corrosion b, .live-video-detection-strip .detection-corrosion { background: #ff8a00; color: #111; border-color: #ff8a00; }
+.live-video-detection-box.detection-other { border-color: #44d17a; box-shadow: 0 0 0 1px #111, 0 0 16px rgba(68,209,122,.9); }
+.live-video-detection-box.detection-other b, .live-video-detection-strip .detection-other { background: #44d17a; color: #111; border-color: #44d17a; }

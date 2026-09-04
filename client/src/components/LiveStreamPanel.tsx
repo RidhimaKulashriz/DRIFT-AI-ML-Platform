@@ -19,6 +19,13 @@ function boxStyle(box: unknown): CSSProperties | null {
   const scale = Math.max(x, y, width, height) <= 1 ? 100 : 1;
   return { left: `${x * scale}%`, top: `${y * scale}%`, width: `${width * scale}%`, height: `${height * scale}%` };
 }
+function defectColor(label = "") {
+  const value = label.toLowerCase();
+  if (value.includes("crack")) return "crack";
+  if (value.includes("pothole")) return "pothole";
+  if (value.includes("corrosion") || value.includes("rust")) return "corrosion";
+  return "other";
+}
 export function LiveStreamPanel({ missionId }: { missionId?: number }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [status, setStatus] = useState(streamUrl ? "connecting" : "demo");
@@ -42,7 +49,7 @@ export function LiveStreamPanel({ missionId }: { missionId?: number }) {
   const hasLiveFeed = Boolean(streamUrl);
   return <section className="panel live-stream-panel" aria-label="Live drone stream">
     <div className="panel-heading"><div><span className="eyebrow">DJI UAV · {hasLiveFeed ? "LIVE FEED" : "UPLOADED VIDEO"}</span><h2>{hasLiveFeed ? "Live inspection stream" : "Inspection livestream preview"}</h2></div><span className={`status-chip ${status === "live" ? "status-active" : ""}`}>{status === "live" ? "LIVE" : status === "demo" ? "VIDEO PREVIEW" : status.toUpperCase()}</span></div>
-    {hasLiveFeed ? <><div className="live-video-overlay-stage"><video ref={videoRef} className="live-stream-video" controls autoPlay muted playsInline aria-label="Live DJI drone video with ML detection overlays" />{detections.map((detection, index) => { const style = boxStyle(detection.boundingBox); return style ? <span key={`${lastFile}-${index}`} className="live-video-detection-box" style={style}><b>{detection.label ?? "defect"} · {Math.round((detection.confidence ?? 0) * 100)}%</b></span> : null; })}<div className="live-video-detection-strip">{detections.length ? detections.map((detection, index) => <span key={`strip-${index}`}>{detection.label ?? "defect"} {Math.round((detection.confidence ?? 0) * 100)}%</span>) : <span>Waiting for live ML detections</span>}</div></div><p className="stream-caption">{isAnnotatedFeed ? "Browser feed: live DJI video with ML detection overlays" : "Live drone video · ML detections overlaid on the current feed"}</p></> : <><video className="live-stream-video" controls autoPlay muted loop playsInline preload="metadata" poster={uploadedDemoPosterUrl} src={uploadedDemoVideoUrl} aria-label="Uploaded DJI inspection video preview" /><p className="stream-caption">Uploaded inspection video preview. Configure VITE_DRIFT_LIVE_STREAM_URL for live drone streaming.</p></>}
+    {hasLiveFeed ? <><div className="live-video-overlay-stage"><video ref={videoRef} className="live-stream-video" controls autoPlay muted playsInline aria-label="Live DJI drone video with ML detection overlays" />{detections.map((detection, index) => { const style = boxStyle(detection.boundingBox); const color = defectColor(detection.label); return style ? <span key={`${lastFile}-${index}`} className={`live-video-detection-box detection-${color}`} style={style}><b>{detection.label ?? "defect"} · {Math.round((detection.confidence ?? 0) * 100)}%</b></span> : null; })}<div className="live-video-detection-strip">{detections.length ? detections.map((detection, index) => <span key={`strip-${index}`} className={`detection-${defectColor(detection.label)}`}>{detection.label ?? "defect"} {Math.round((detection.confidence ?? 0) * 100)}%</span>) : <span>Waiting for live ML detections</span>}</div></div><p className="stream-caption">{isAnnotatedFeed ? "Browser feed: live DJI video with ML detection overlays" : "Live drone video · ML detections overlaid on the current feed"}</p></> : <><video className="live-stream-video" controls autoPlay muted loop playsInline preload="metadata" poster={uploadedDemoPosterUrl} src={uploadedDemoVideoUrl} aria-label="Uploaded DJI inspection video preview" /><p className="stream-caption">Uploaded inspection video preview. Configure VITE_DRIFT_LIVE_STREAM_URL for live drone streaming.</p></>}
   </section>;
 }
 export { uploadedDemoPosterUrl, uploadedDemoVideoUrl };

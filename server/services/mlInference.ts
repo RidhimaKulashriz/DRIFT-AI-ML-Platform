@@ -64,7 +64,7 @@ async function callProductionCv(input: InferenceInput): Promise<z.infer<typeof c
       method: "POST",
       signal: controller.signal,
       headers: { "content-type": "application/json", accept: "application/json", ...(process.env.ML_INFERENCE_TOKEN ? { authorization: `Bearer ${process.env.ML_INFERENCE_TOKEN}` } : {}) },
-      body: JSON.stringify({ imageBase64: input.imageBase64, fileName: input.fileName, confidence: 0.25, imgsz: 640 }),
+      body: JSON.stringify({ imageBase64: input.imageBase64, fileName: input.fileName, confidence: 0.55, imgsz: 960 }),
     });
     if (!response.ok) {
       console.error("[ML] Production CV HTTP error:", response.status);
