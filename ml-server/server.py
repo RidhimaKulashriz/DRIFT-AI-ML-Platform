@@ -136,6 +136,10 @@ async def detect_base64(request_body: dict):
 
     h, w = frame.shape[:2]
 
+    # Road-damage detections require road context. This prevents the crack
+    # model from treating ceiling seams, cables, or indoor lines as road cracks.
+    road_context_detected = False
+
     # 1. CRACK (Hitakshi's exact code)
     if crack_model is not None:
         try:
@@ -169,6 +173,7 @@ async def detect_base64(request_body: dict):
                 for bbox, conf, cid in zip(result.boxes.xyxy.cpu().numpy(), result.boxes.conf.cpu().numpy(), result.boxes.cls.cpu().numpy().astype(int)):
                     x1, y1, x2, y2 = [float(v) for v in bbox]
                     label = result.names.get(int(cid), str(cid))
+                    road_context_detected = True
                     all_detections.append({
                         "model": "ROAD-YOLO", "label": label,
                         "confidence": round(float(conf), 4),
@@ -183,6 +188,12 @@ async def detect_base64(request_body: dict):
         except Exception as e:
             errors.append(f"road: {e}")
             print(f"[ML] ROAD error: {e}")
+
+    if not road_context_detected:
+        crack_count = sum(1 for detection in all_detections if detection.get("model") == "CRACK-YOLO")
+        if crack_count:
+            all_detections = [detection for detection in all_detections if detection.get("model") != "CRACK-YOLO"]
+            print(f"[ML] Rejected {crack_count} crack detection(s): no road context")
 
     # 3. RAILWAY (Roboflow via requests)
     try:
