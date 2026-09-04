@@ -13,14 +13,14 @@ if (-not (Test-Path ".env")) {
 }
 
 $envLines = Get-Content ".env" | Where-Object { $_ -notmatch "^(MEDIA_X_HLS_URL|VITE_DRIFT_LIVE_STREAM_URL|VITE_BACKEND_URL)=" }
-$envLines += "MEDIA_X_HLS_URL=http://127.0.0.1:8888/mediax/index.m3u8"
-$envLines += "VITE_DRIFT_LIVE_STREAM_URL=http://127.0.0.1:8888/mediax/index.m3u8"
+$envLines += "MEDIA_X_HLS_URL=http://127.0.0.1:8888/drift/index.m3u8"
+$envLines += "VITE_DRIFT_LIVE_STREAM_URL=http://127.0.0.1:8888/drift/index.m3u8"
 $envLines += "VITE_BACKEND_URL=https://drift-node-api.onrender.com"
 $envLines | Set-Content -Encoding UTF8 ".env"
 New-Item -ItemType Directory -Force ".\drift-media-inbox" | Out-Null
 
 Write-Host "Starting MediaMTX, DRIFT bridge, HLS frame extractor, and frontend..." -ForegroundColor Cyan
-Write-Host "Media X must publish the REAL camera stream to: rtmp://127.0.0.1:1935/mediax" -ForegroundColor Yellow
+Write-Host "The drone must publish the REAL camera stream to: rtmp://192.168.137.1:1935/drift" -ForegroundColor Yellow
 Write-Host "No synthetic test video is started by this script." -ForegroundColor Yellow
 
 $processes = @()
@@ -34,8 +34,8 @@ Write-Host "Open http://localhost:3000/?workspace=operations" -ForegroundColor G
 Write-Host "Start Media X now and publish to rtmp://127.0.0.1:1935/mediax" -ForegroundColor Green
 do {
   Start-Sleep -Seconds 2
-  try { Invoke-WebRequest "http://127.0.0.1:8888/mediax/index.m3u8" -UseBasicParsing -TimeoutSec 3 | Out-Null; $streamReady = $true }
-  catch { $streamReady = $false; Write-Host "Waiting for Media X stream at /mediax ..." -ForegroundColor DarkYellow }
+  try { Invoke-WebRequest "http://127.0.0.1:8888/drift/index.m3u8" -UseBasicParsing -TimeoutSec 3 | Out-Null; $streamReady = $true }
+  catch { $streamReady = $false; Write-Host "Waiting for drone stream at /drift ..." -ForegroundColor DarkYellow }
 } until ($streamReady)
 $processes += Start-Process -FilePath "node" -ArgumentList ".\scripts\mediax-hls-frame-source.mjs" -WorkingDirectory $repo -PassThru
 Write-Host "Media X stream detected; frame extraction started." -ForegroundColor Green
