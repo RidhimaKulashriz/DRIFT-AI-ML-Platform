@@ -198,10 +198,10 @@ class SDKServer {
   async verifySession(
     cookieValue: string | undefined | null
   ): Promise<{ openId: string; appId: string; name: string } | null> {
-    if (!cookieValue) {
-      console.warn("[Auth] Missing session cookie");
-      return null;
-    }
+    // Anonymous requests are valid for public procedures such as auth.me and
+    // the public dashboard. Do not log them as authentication failures; those
+    // requests are expected when the user has not signed in.
+    if (!cookieValue) return null;
 
     try {
       const secretKey = this.getSessionSecret();
