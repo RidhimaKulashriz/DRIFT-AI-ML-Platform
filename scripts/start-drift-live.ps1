@@ -12,9 +12,10 @@ if (-not (Test-Path ".env")) {
   throw "Missing .env in $repo. Create it first with DRIFT_BASE_URL, DRIFT_INGEST_TOKEN, DRIFT_MISSION_ID=83, DRIFT_ASSET_ID=4, and DRIFT_MEDIA_DIR=./drift-media-inbox."
 }
 
-$envLines = Get-Content ".env" | Where-Object { $_ -notmatch "^(MEDIA_X_HLS_URL|VITE_DRIFT_LIVE_STREAM_URL)=" }
+$envLines = Get-Content ".env" | Where-Object { $_ -notmatch "^(MEDIA_X_HLS_URL|VITE_DRIFT_LIVE_STREAM_URL|VITE_BACKEND_URL)=" }
 $envLines += "MEDIA_X_HLS_URL=http://127.0.0.1:8888/mediax/index.m3u8"
 $envLines += "VITE_DRIFT_LIVE_STREAM_URL=http://127.0.0.1:8888/mediax/index.m3u8"
+$envLines += "VITE_BACKEND_URL=https://drift-node-api.onrender.com"
 $envLines | Set-Content -Encoding UTF8 ".env"
 New-Item -ItemType Directory -Force ".\drift-media-inbox" | Out-Null
 
