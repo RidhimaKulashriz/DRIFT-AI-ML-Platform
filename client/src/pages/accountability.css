@@ -17,3 +17,14 @@
 .proof-grid p { margin: 8px 0 0; color: #b9c0bc; font-size: 10px; line-height: 1.5; }
 @media (max-width: 900px) { .proof-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 760px) { .proof-panel { margin-left: 16px; margin-right: 16px; padding: 18px; } .proof-grid { grid-template-columns: 1fr; } .proof-grid > div { min-height: auto; } }
+
+.live-media-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: stretch; }
+.live-detection-panel { min-width: 0; }
+.live-detection-image-wrap { position: relative; overflow: hidden; background: #101010; aspect-ratio: 16 / 9; }
+.live-detection-image-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.live-detection-badges { position: absolute; inset: auto .75rem .75rem; display: flex; flex-wrap: wrap; gap: .35rem; }
+.live-detection-badge { background: #f4c542; color: #17130a; padding: .3rem .45rem; font-size: .65rem; font-weight: 800; text-transform: uppercase; }
+.live-detection-empty { min-height: 13rem; display: grid; place-content: center; gap: .5rem; padding: 1.5rem; background: #eeeae2; color: #29251f; }
+.live-detection-empty span { max-width: 24rem; font-size: .8rem; line-height: 1.4; }
+.live-detection-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; padding-top: .75rem; font-size: .7rem; color: #625b50; }
+@media (max-width: 900px) { .live-media-grid { grid-template-columns: 1fr; } }

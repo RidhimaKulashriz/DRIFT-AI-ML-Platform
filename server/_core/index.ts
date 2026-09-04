@@ -15,6 +15,7 @@ import { authorizeBridgeToken, validateTelemetryPayload } from "../services/hard
 import { runVisionInference } from "../services/mlInference";
 import { createCorsMiddleware } from "../services/cors";
 import { runDemoDetection } from "../demoDetection";
+import { publishLiveMissionEvent, subscribeLiveMission } from "../liveEvents";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -123,8 +124,11 @@ async function startServer() {
       if (body.runInference === true && body.mediaKind === "photo" && typeof body.assetId === "number" && typeof body.assetCriticality === "number" && typeof body.latitude === "number" && typeof body.longitude === "number") {
         const inference = await runVisionInference({ fileName: String(body.fileName), imageBase64: base64Payload, latitude: body.latitude, longitude: body.longitude, assetCriticality: body.assetCriticality, priorOpenDefects: typeof body.priorOpenDefects === "number" ? body.priorOpenDefects : 0, inspectionDomain: typeof body.inspectionDomain === "string" ? body.inspectionDomain : undefined, captureZone: typeof body.captureZone === "string" ? body.captureZone : undefined });
         const defect = await persistInferenceDefect({ missionId: Number(body.missionId), assetId: body.assetId, evidenceId: result.id, latitude: body.latitude, longitude: body.longitude, inference, inspectionDomain: typeof body.inspectionDomain === "string" ? body.inspectionDomain : undefined, correlationKey: typeof body.correlationKey === "string" ? body.correlationKey : undefined });
-        return res.status(201).json({ ...result, inference: defect, qualityGate: { status: "review", action: "engineer-review-required" } });
+        const response = { ...result, inference: defect, qualityGate: { status: "review", action: "engineer-review-required" } };
+        if (body.liveFrame === true) publishLiveMissionEvent({ type: "detection.completed", missionId: Number(body.missionId), evidenceId: result.id, frameId: typeof body.frameId === "string" ? body.frameId : undefined, imageUrl: browserStorageUrl(stored.key, stored.url), fileName: String(body.fileName), latitude: body.latitude, longitude: body.longitude, detections: [{ defectId: defect.defectId, label: inference.label, confidence: inference.confidence, severity: inference.score.severity, boundingBox: inference.boundingBox }], occurredAt: new Date().toISOString() });
+        return res.status(201).json(response);
       }
+      if (body.liveFrame === true) publishLiveMissionEvent({ type: "frame.received", missionId: Number(body.missionId), evidenceId: result.id, frameId: typeof body.frameId === "string" ? body.frameId : undefined, imageUrl: browserStorageUrl(stored.key, stored.url), fileName: String(body.fileName), latitude: typeof body.latitude === "number" ? body.latitude : undefined, longitude: typeof body.longitude === "number" ? body.longitude : undefined, detections: [], occurredAt: new Date().toISOString() });
       return res.status(201).json({ ...result, inference: null });
     } catch (error) {
       console.error("[DRIFT] Evidence ingestion failed", error);
@@ -144,6 +148,17 @@ async function startServer() {
       console.error("[DRIFT] Supabase evidence media proxy failed", error);
       return res.status(404).send("Evidence unavailable");
     }
+  });
+
+  app.get("/api/drift/live/events", (req, res) => {
+    const missionId = Number(req.query.missionId);
+    if (!Number.isInteger(missionId) || missionId <= 0) return res.status(400).json({ error: "A valid missionId is required." });
+    res.status(200).set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" });
+    res.flushHeaders();
+    res.write(`: connected to mission ${missionId}\n\n`);
+    const unsubscribe = subscribeLiveMission(missionId, event => res.write(`data: ${JSON.stringify(event)}\n\n`));
+    const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 15_000);
+    req.on("close", () => { clearInterval(heartbeat); unsubscribe(); });
   });
 
   app.get("/api/drift/attachments/*", async (req, res) => {

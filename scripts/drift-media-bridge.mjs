@@ -7,6 +7,8 @@ const mediaDir = path.resolve(process.env.DRIFT_MEDIA_DIR ?? "./drift-media-inbo
 const baseUrl = (process.env.DRIFT_BASE_URL ?? "https://drift-node-api.onrender.com").replace(/\/$/, "");
 const token = process.env.DRIFT_INGEST_TOKEN;
 const missionId = Number(process.env.DRIFT_MISSION_ID);
+const defaultAssetId = Number(process.env.DRIFT_ASSET_ID ?? 0);
+const defaultAssetCriticality = Number(process.env.DRIFT_ASSET_CRITICALITY ?? 3);
 const allowed = new Map([[".jpg", "image/jpeg"], [".jpeg", "image/jpeg"], [".png", "image/png"], [".webp", "image/webp"], [".heic", "image/heic"], [".mp4", "video/mp4"], [".webm", "video/webm"], [".mov", "video/quicktime"]]);
 const sent = new Set();
 
@@ -52,9 +54,11 @@ async function upload(filePath) {
       inspectionDomain: metadata.inspectionDomain,
       correlationKey: metadata.correlationKey,
       playbackSeconds: metadata.playbackSeconds,
-      runInference: mimeType.startsWith("image/") && metadata.runInference === true,
-      assetId: metadata.assetId,
-      assetCriticality: metadata.assetCriticality,
+      liveFrame: mimeType.startsWith("image/") && metadata.liveFrame === true,
+      frameId: metadata.frameId ?? path.basename(filePath),
+      runInference: mimeType.startsWith("image/") && metadata.liveFrame === true && metadata.runInference !== false,
+      assetId: Number(metadata.assetId ?? defaultAssetId) || undefined,
+      assetCriticality: Number(metadata.assetCriticality ?? defaultAssetCriticality),
       priorOpenDefects: metadata.priorOpenDefects,
     }),
   });
