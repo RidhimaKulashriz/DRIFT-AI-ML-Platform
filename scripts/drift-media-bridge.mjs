@@ -34,11 +34,15 @@ async function upload(filePath) {
   const stat = await fs.stat(filePath).catch(() => null);
   if (!stat || !stat.isFile() || stat.size === 0 || stat.size > 38 * 1024 * 1024) return;
   // Never replay files left in the inbox by an earlier live session.
-  if (stat.mtimeMs < sessionStartedAt) return;
+  if (stat.mtimeMs < sessionStartedAt) {
+    console.log(`IGNORED OLD ${path.basename(filePath)}`);
+    return;
+  }
+  console.log(`FRAME READY ${path.basename(filePath)} (${Math.round(stat.size / 1024)} KB)`);
   const metadata = await readSidecar(filePath);
   if (typeof metadata.latitude !== "number" || typeof metadata.longitude !== "number") {
     fs.access(`${filePath}.json`).then(() => setTimeout(() => upload(filePath).catch(error => console.error(`FAILED ${path.basename(filePath)}: ${error.message}`)), 750)).catch(() => {});
-    console.warn(`SKIP ${path.basename(filePath)}: sidecar GPS required at ${path.basename(filePath)}.json`);
+    console.warn(`WAITING ${path.basename(filePath)}: sidecar GPS required at ${path.basename(filePath)}.json`);
     return;
   }
   const bytes = await fs.readFile(filePath);
@@ -95,8 +99,13 @@ watcher.on("error", error => console.error(`WATCHER ERROR: ${error.message}`));
 watcher.on("change", (_eventType, fileName) => {
   if (!fileName) return;
   const name = fileName.toString();
+  console.log(`FILE EVENT ${name}`);
   upload(path.join(mediaDir, name)).catch(error => console.error(`FAILED ${name}: ${error.message}`));
 });
 
 // Keep the process alive consistently across Windows Node.js versions.
-setInterval(() => {}, 60_000);
+setInterval(async () => {
+  const entries = await fs.readdir(mediaDir, { withFileTypes: true }).catch(() => []);
+  const frames = entries.filter(entry => entry.isFile() && allowed.has(path.extname(entry.name).toLowerCase()));
+  console.log(`HEARTBEAT: ${frames.length} media file(s) in inbox; uploaded this session: ${sent.size}`);
+}, 15_000);
