@@ -13,6 +13,7 @@ const defaultAssetCriticality = Number(process.env.DRIFT_ASSET_CRITICALITY ?? 3)
 const sessionStartedAt = Date.now();
 const allowed = new Map([[".jpg", "image/jpeg"], [".jpeg", "image/jpeg"], [".png", "image/png"], [".webp", "image/webp"], [".heic", "image/heic"], [".mp4", "video/mp4"], [".webm", "video/webm"], [".mov", "video/quicktime"]]);
 const sent = new Set();
+const inFlight = new Set();
 
 if (!token || !Number.isInteger(missionId) || missionId <= 0) {
   console.error("Set DRIFT_INGEST_TOKEN and a positive integer DRIFT_MISSION_ID before starting the bridge.");
@@ -30,7 +31,9 @@ async function readSidecar(filePath) {
 async function upload(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const mimeType = allowed.get(ext);
-  if (!mimeType || sent.has(filePath)) return;
+  if (!mimeType || sent.has(filePath) || inFlight.has(filePath)) return;
+  inFlight.add(filePath);
+  try {
   const stat = await fs.stat(filePath).catch(() => null);
   if (!stat || !stat.isFile() || stat.size === 0 || stat.size > 38 * 1024 * 1024) return;
   // Never replay files left in the inbox by an earlier live session.
@@ -82,6 +85,9 @@ async function upload(filePath) {
     result = "response=non-json";
   }
   console.log(`UPLOADED ${path.basename(filePath)} → ${baseUrl}/api/drift/evidence (${result})`);
+  } finally {
+    inFlight.delete(filePath);
+  }
 }
 
 async function scan() {
@@ -99,6 +105,13 @@ watcher.on("error", error => console.error(`WATCHER ERROR: ${error.message}`));
 watcher.on("change", (_eventType, fileName) => {
   if (!fileName) return;
   const name = fileName.toString();
+  if (name.endsWith(".json")) {
+    const imageName = name.slice(0, -5);
+    const imagePath = path.join(mediaDir, imageName);
+    upload(imagePath).catch(error => console.error(`FAILED ${imageName}: ${error.message}`));
+    return;
+  }
+  if (!allowed.has(path.extname(name).toLowerCase())) return;
   console.log(`FILE EVENT ${name}`);
   upload(path.join(mediaDir, name)).catch(error => console.error(`FAILED ${name}: ${error.message}`));
 });
