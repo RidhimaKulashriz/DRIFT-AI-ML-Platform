@@ -12,6 +12,7 @@ const longitude = Number(process.env.MEDIA_X_LONGITUDE);
 const captureFps = Number(process.env.MEDIA_X_CAPTURE_FPS ?? 2);
 const sampleEvery = Math.max(1, Math.floor(Number(process.env.MEDIA_X_SAMPLE_EVERY ?? 2)));
 const fps = captureFps / sampleEvery;
+const sessionId = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
 
 if (!hlsUrl && !captureUrl) {
   console.error("Set MEDIA_X_HLS_URL to your Media X .m3u8 URL.");
@@ -30,6 +31,7 @@ await fs.mkdir(outputDir, { recursive: true });
 console.log(`Reading capture source: ${captureUrl}`);
 if (captureUrl.startsWith("rtsp://")) console.log(`Browser playback remains HLS: ${hlsUrl ?? "not configured"}`);
 console.log(`Capturing at ${captureFps} fps; sending every ${sampleEvery} frame(s) (${fps} inference frame(s)/second) to ${outputDir}`);
+console.log(`Live session: ${sessionId}`);
 
 const inputArgs = captureUrl.startsWith("rtsp://")
   ? ["-rtsp_transport", "tcp", "-fflags", "+genpts", "-i", captureUrl]
@@ -37,7 +39,7 @@ const inputArgs = captureUrl.startsWith("rtsp://")
 const ffmpeg = spawn("ffmpeg", [
   "-hide_banner", "-loglevel", "warning", ...inputArgs,
   "-vf", `fps=${captureFps}`, "-q:v", "2", "-f", "image2",
-  path.join(outputDir, "mediax-%06d.jpg"),
+  path.join(outputDir, `mediax-${sessionId}-%06d.jpg`),
 ], { stdio: ["ignore", "inherit", "inherit"] });
 
 ffmpeg.on("error", error => {
@@ -53,7 +55,7 @@ ffmpeg.on("close", code => {
 let nextFrame = 1;
 let nextSample = 1;
 const sidecarTimer = setInterval(async () => {
-  const frameName = `mediax-${String(nextFrame).padStart(6, "0")}.jpg`;
+  const frameName = `mediax-${sessionId}-${String(nextFrame).padStart(6, "0")}.jpg`;
   const framePath = path.join(outputDir, frameName);
   try {
     const stat = await fs.stat(framePath);

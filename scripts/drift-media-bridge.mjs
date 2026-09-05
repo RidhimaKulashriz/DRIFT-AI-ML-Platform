@@ -107,7 +107,11 @@ async function scan() {
   await fs.mkdir(mediaDir, { recursive: true });
   const entries = await fs.readdir(mediaDir, { withFileTypes: true });
   for (const entry of entries) {
-    if (entry.isFile()) await upload(path.join(mediaDir, entry.name)).catch(error => console.error(`FAILED ${entry.name}: ${error.message}`));
+    if (!entry.isFile() || !allowed.has(path.extname(entry.name).toLowerCase())) continue;
+    const filePath = path.join(mediaDir, entry.name);
+    const stat = await fs.stat(filePath).catch(() => null);
+    if (!stat || stat.mtimeMs < sessionStartedAt) continue;
+    await upload(filePath).catch(error => console.error(`FAILED ${entry.name}: ${error.message}`));
   }
 }
 
