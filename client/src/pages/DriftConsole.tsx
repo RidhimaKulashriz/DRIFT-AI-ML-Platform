@@ -81,6 +81,7 @@ function encodeBase64Url(value: string) {
 
 function resolveBackendAssetUrl(url?: string | null) {
   if (!url) return undefined;
+  if (url.startsWith("/evidence/")) return url;
   try {
     const parsed = new URL(url, window.location.origin);
     const marker = "/storage/v1/object/sign/";
@@ -113,6 +114,39 @@ const publicDatasetSamples: EvidenceItem[] = [{
     note: "Public dataset sample for UI and inference demonstration only. Not DRIFT capture, not UAV evidence, not a site inspection, and no GPS was published for this display card.",
   },
 }];
+
+const iiitDelhiLiveEvidence: EvidenceItem[] = [
+  {
+    id: -201,
+    fileName: "IIIT Delhi live detection · 02:41 PM",
+    storageUrl: "/evidence/iiit-delhi/WhatsAppVideo_241_accurate.mp4",
+    mediaKind: "video",
+    source: "upload",
+    latitude: null,
+    longitude: null,
+    provenance: { kind: "operator-upload", site: "IIIT Delhi", status: "live as real detection", inference: "fresh per-frame Roboflow inference", note: "Original user-provided video with annotated detection output; GPS was not supplied." },
+  },
+  {
+    id: -202,
+    fileName: "IIIT Delhi live detection · 02:42 PM",
+    storageUrl: "/evidence/iiit-delhi/WhatsAppVideo_242_accurate.mp4",
+    mediaKind: "video",
+    source: "upload",
+    latitude: null,
+    longitude: null,
+    provenance: { kind: "operator-upload", site: "IIIT Delhi", status: "live as real detection", inference: "fresh per-frame Roboflow inference", note: "Original user-provided video with annotated detection output; GPS was not supplied." },
+  },
+  {
+    id: -203,
+    fileName: "IIIT Delhi live detection · 02:43 PM",
+    storageUrl: "/evidence/iiit-delhi/WhatsAppVideo_243_accurate.mp4",
+    mediaKind: "video",
+    source: "upload",
+    latitude: null,
+    longitude: null,
+    provenance: { kind: "operator-upload", site: "IIIT Delhi", status: "live as real detection", inference: "fresh per-frame Roboflow inference", note: "Original user-provided video with annotated detection output; GPS was not supplied." },
+  },
+];
 
 function severityClass(severity: Severity) {
   return severity === "critical" ? "severity-critical" : severity === "high" ? "severity-high" : severity === "medium" ? "severity-medium" : "severity-low";
@@ -708,6 +742,10 @@ export default function DriftConsole() {
           <div className="workspace-header"><div><span className="eyebrow">SECURE MISSION MEDIA</span><h2>Evidence vault</h2></div><div><input ref={filePickerRef} className="file-picker" type="file" accept="image/*,video/*" onChange={event => handleEvidenceFile(event.target.files?.[0])} /><button type="button" className="primary-action" onClick={() => filePickerRef.current?.click()} disabled={!canOperate || !persistenceAvailable || !portableEvidenceStorageAvailable || uploadEvidence.isPending} title={!canOperate ? "Sign in as an engineer or administrator to upload original drone media." : !persistenceAvailable || !portableEvidenceStorageAvailable ? persistenceMessage : undefined}><Upload /> {uploadEvidence.isPending ? "STORING" : !canOperate ? "SIGN IN TO UPLOAD" : !persistenceAvailable || !portableEvidenceStorageAvailable ? "PORTABLE STORAGE REQUIRED" : "UPLOAD EVIDENCE"}</button></div></div>
           <InspectionMap defects={defects.filter(defect => defect.missionId === missionIdForEvidence)} telemetry={telemetry.filter(point => (point as typeof point & { missionId?: number }).missionId === missionIdForEvidence)} selectedId={selected.id || undefined} onSelect={setSelectedId} />
           <AuthenticReferenceVisuals />
+          <section className="public-dataset-samples" aria-label="IIIT Delhi live as real detection evidence">
+            <div><span className="eyebrow">SECTION · IIIT DELHI</span><h3>Live as real detection</h3><p>Three operator-uploaded IIIT Delhi videos with fresh per-frame model inference. These are real uploaded captures and real detection outputs; GPS and engineer verification were not supplied.</p></div>
+            <div className="evidence-grid">{iiitDelhiLiveEvidence.map((item, index) => <article key={item.id} className="evidence-card public-dataset-card"><button type="button" className={cn("evidence-thumb", `thumb-${index % 3}`)} onClick={() => setEvidencePreview(item)} aria-label={`Preview ${item.fileName}`}><span className="sr-only">Preview {item.fileName}</span><video src={item.storageUrl} muted preload="metadata" /><span>{String(index + 1).padStart(2, "0")}</span><div className="thumb-box" /></button><div><span className="severity-chip severity-medium">LIVE · REAL DETECTION</span><h3>{item.fileName}</h3><p>IIIT Delhi · fresh per-frame inference · GPS not supplied</p><small className="provenance-line">{evidenceProvenance(item.provenance)}</small></div><div className="evidence-actions"><button type="button" onClick={() => setEvidencePreview(item)}>VIEW</button><a href={item.storageUrl} target="_blank" rel="noreferrer">OPEN VIDEO <ChevronRight /></a><a href={item.storageUrl} download={item.fileName}>DOWNLOAD</a></div></article>)}</div>
+          </section>
           <section className="public-dataset-samples" aria-label="Public dataset demo samples"><div><span className="eyebrow">PUBLIC DATASET · DEMO INFERENCE</span><h3>Licensed road-defect samples</h3><p>These images are attributable training/demo material, not DRIFT-captured media. They have no DRIFT mission, drone, or map coordinates and are excluded from site-specific findings and reports.</p></div><div className="evidence-grid">{publicDatasetSamples.map((item, index) => <article key={item.id} className="evidence-card public-dataset-card"><button type="button" className={cn("evidence-thumb", `thumb-${index % 3}`)} onClick={() => setEvidencePreview(item)} aria-label={`Preview ${item.fileName}`}><span className="sr-only">Preview {item.fileName}</span><img src={item.storageUrl} alt={item.fileName} /><span>DS</span><div className="thumb-box" /></button><div><span className="severity-chip severity-medium">PUBLIC DATASET · DEMO ONLY</span><h3>{item.fileName}</h3><p>No GPS supplied · no flight provenance · no field-inspection claim</p><small className="provenance-line">{evidenceProvenance(item.provenance)}{evidenceSourceUrl(item.provenance) ? <a href={evidenceSourceUrl(item.provenance)!} target="_blank" rel="noreferrer"> · VIEW DATASET</a> : null}</small></div><div className="evidence-actions"><button type="button" onClick={() => setEvidencePreview(item)}>VIEW</button><a href={item.storageUrl} target="_blank" rel="noreferrer">OPEN SAMPLE <ChevronRight /></a><a href={PUBLIC_DATASET_CRACK_MASK_URL} target="_blank" rel="noreferrer">VIEW CRACK MASK</a><button type="button" disabled title="No published GPS coordinates are attached to this public dataset display sample.">NO GPS MAP</button></div></article>)}</div></section>
           <div className="evidence-grid">{evidenceItems.length ? evidenceItems.map((item, index) => <article key={item.id} className="evidence-card"><button type="button" className={cn("evidence-thumb", `thumb-${index % 3}`)} onClick={() => setEvidencePreview(item)} aria-label={`Preview ${item.fileName}`}><span className="sr-only">Preview {item.fileName}</span>{item.mediaKind === "photo" || item.mediaKind === "annotation" ? <img src={resolveBackendAssetUrl(item.storageUrl)} alt={item.fileName} /> : null}{item.mediaKind === "video" && <video src={resolveBackendAssetUrl(item.storageUrl)} controls preload="metadata" />}<span>{String(index + 1).padStart(2, "0")}</span><div className="thumb-box" /></button><div><span className="severity-chip severity-low">{item.source ?? "stored"} · {item.mediaKind}</span><h3>{item.fileName}</h3><p>{item.source === "reference" ? "Real reference photograph · not live drone evidence" : item.source === "simulator" ? "Simulator/reference media · not a live inspection" : "Stored mission media"} · {item.latitude ?? "GPS pending"}, {item.longitude ?? ""}</p><small className="provenance-line">{evidenceProvenance(item.provenance)}{evidenceSourceUrl(item.provenance) ? <a href={evidenceSourceUrl(item.provenance)!} target="_blank" rel="noreferrer"> · VIEW SOURCE</a> : null}</small></div><div className="evidence-actions"><button type="button" onClick={() => setEvidencePreview(item)}>VIEW</button><a href={resolveBackendAssetUrl(item.storageUrl)} target="_blank" rel="noreferrer">OPEN ORIGINAL <ChevronRight /></a><a href={resolveBackendAssetUrl(item.storageUrl)} download={item.fileName}>DOWNLOAD</a>{item.latitude && item.longitude && <button type="button" onClick={() => { setSelectedId(Number((item as EvidenceItem & { defectId?: number }).defectId ?? selected.id)); setWorkspace("operations"); }}>LOCATE</button>}</div></article>) : <article className="empty-state"><h3>No evidence stored for this mission</h3><p>Upload a real inspection photo or video, or run the simulator to create clearly labelled demonstration evidence.</p></article>}</div>{evidencePreview && <div className="evidence-modal-backdrop" role="presentation" onClick={() => setEvidencePreview(null)}><div className="evidence-modal" role="dialog" aria-modal="true" aria-label={`Evidence preview ${evidencePreview.fileName}`} onClick={event => event.stopPropagation()}><div className="modal-header"><div><span className="eyebrow">EVIDENCE PREVIEW · {evidencePreview.source ?? "stored"}</span><h3>{evidencePreview.fileName}</h3></div><button type="button" onClick={() => setEvidencePreview(null)} aria-label="Close evidence preview">CLOSE</button></div>{evidencePreview.mediaKind === "video" ? <video src={resolveBackendAssetUrl(evidencePreview.storageUrl)} controls autoPlay /> : <img src={resolveBackendAssetUrl(evidencePreview.storageUrl)} alt={evidencePreview.fileName} />}{Boolean(evidencePreview.provenance) && <p className="provenance-line">{evidenceProvenance(evidencePreview.provenance)}</p>}<div className="modal-actions"><a href={resolveBackendAssetUrl(evidencePreview.storageUrl)} target="_blank" rel="noreferrer">OPEN ORIGINAL</a><a href={resolveBackendAssetUrl(evidencePreview.storageUrl)} download={evidencePreview.fileName}>DOWNLOAD</a></div></div></div>}
         </section>}
