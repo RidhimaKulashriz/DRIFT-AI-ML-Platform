@@ -28,6 +28,23 @@ async function readSidecar(filePath) {
   }
 }
 
+async function postEvidence(body) {
+  let lastError;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      return await fetch(`${baseUrl}/api/drift/evidence`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      lastError = error;
+      if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+    }
+  }
+  throw lastError;
+}
+
 async function upload(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const mimeType = allowed.get(ext);
@@ -49,10 +66,7 @@ async function upload(filePath) {
     return;
   }
   const bytes = await fs.readFile(filePath);
-  const response = await fetch(`${baseUrl}/api/drift/evidence`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-    body: JSON.stringify({
+  const response = await postEvidence({
       missionId,
       fileName: path.basename(filePath),
       mimeType,
@@ -72,7 +86,6 @@ async function upload(filePath) {
       assetId: Number(metadata.assetId ?? defaultAssetId) || undefined,
       assetCriticality: Number(metadata.assetCriticality ?? defaultAssetCriticality),
       priorOpenDefects: metadata.priorOpenDefects,
-    }),
   });
   const body = await response.text();
   if (!response.ok) throw new Error(`${response.status}: ${body.slice(0, 300)}`);
