@@ -24,6 +24,7 @@ import {
   Crosshair,
   FileText,
   Gauge,
+  Calculator,
   Layers3,
   MapPinned,
   Network,
@@ -35,6 +36,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   TriangleAlert,
+  TrendingUp,
   Upload,
   Video,
   Waypoints,
@@ -44,6 +46,7 @@ import {
 import { useMemo, useRef, useState } from "react";
 import { CAPTURE_ZONES, INSPECTION_DOMAINS } from "@shared/types";
 import TrainMonitoring from "@/components/TrainMonitoring";
+import CostScalabilityWorkspace from "@/components/CostScalabilityWorkspace";
 import { contractors as contractorData } from "@shared/contractors";
 import { calculateOverallPriority, formatRepairCost } from "@shared/priorityScoring";
 import { trafficSegments as trafficData } from "@shared/trafficData";
@@ -51,7 +54,7 @@ import "./accountability.css";
 
 type Severity = "low" | "medium" | "high" | "critical";
 type DefectType = "pothole" | "crack" | "structural" | "corrosion" | "spalling" | "exposed_rebar" | "water_intrusion" | "settlement" | "rail_alignment" | "obstruction" | "lighting_failure";
-type Workspace = "operations" | "defects" | "evidence" | "reports" | "hardware" | "accountability" | "trains" | "contractors" | "traffic";
+type Workspace = "operations" | "defects" | "evidence" | "reports" | "hardware" | "accountability" | "trains" | "contractors" | "traffic" | "cost" | "scalability";
 type Role = "administrator" | "engineer" | "contractor" | "citizen";
 type EvidenceItem = { id: number; fileName: string; storageUrl: string; mediaKind: "photo" | "video" | "annotation" | "report"; source?: "hardware" | "upload" | "simulator" | "cctv" | "reference"; latitude: string | null; longitude: string | null; capturedAt?: Date | null; cameraId?: string | null; provenance?: unknown; captureZone?: string | null; qualityStatus?: string | null; imageQuality?: unknown };
 type TransientSimulatorRun = { name?: string; startedAt?: number; telemetry: Array<{ latitude: number; longitude: number; altitude: number; batteryPercent: number; speedMps: number; timestamp: number }>; findings: Array<{ title: string; label: string; confidence: number; latitude: number; longitude: number; score: { score: number; severity: Severity; explanation: string[] } }> };
@@ -64,6 +67,8 @@ const navItems: Array<{ key: Workspace; label: string; icon: typeof Radar }> = [
   { key: "contractors", label: "Contractors", icon: Wrench },
   { key: "trains", label: "Rail monitoring", icon: Train },
   { key: "traffic", label: "Traffic data", icon: Gauge },
+  { key: "cost", label: "Cost efficient", icon: Calculator },
+  { key: "scalability", label: "Scalability", icon: TrendingUp },
   { key: "accountability", label: "Accountability", icon: Network },
   { key: "hardware", label: "Hardware bridge", icon: RadioTower },
 ];
@@ -822,6 +827,9 @@ export default function DriftConsole() {
         {workspace === "trains" && <section className="workspace-page">
           <TrainMonitoring />
         </section>}
+
+        {workspace === "cost" && <CostScalabilityWorkspace mode="cost" onOpenTrainMonitoring={() => setWorkspace("trains")} />}
+        {workspace === "scalability" && <CostScalabilityWorkspace mode="scale" onOpenTrainMonitoring={() => setWorkspace("trains")} />}
 
         {workspace === "contractors" && <section className="workspace-page">
           <div className="workspace-header"><div><span className="eyebrow">GEO-ASSIGNED CONTRACTORS</span><h2>Contractor Management</h2><p className="workspace-lede">Contractors are automatically assigned based on GPS coordinates of detected defects. Each campus has a designated responsible contractor.</p></div></div>
