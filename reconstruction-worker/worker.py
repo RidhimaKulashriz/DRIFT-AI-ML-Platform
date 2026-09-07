@@ -29,7 +29,8 @@ def process(conn, job):
     try:
         source = metadata.get("sourceUrl") or metadata.get("sourceStorageUrl")
         if not source:
-            raise RuntimeError("No sourceUrl/sourceStorageUrl is attached to this job. Configure direct object-storage upload before processing.")
+            update(conn, key, "awaiting_source", error="Attach an HTTPS sourceUrl or sourceStorageUrl before processing.")
+            return
         video = work / file_name
         run(["curl", "--fail", "--location", "--max-time", "1800", source, "--output", str(video)])
         stages = [{"stage": s, "order": i + 1, "status": "pending"} for i, s in enumerate(["ingest","metadata_validation","frame_sampling","visual_odometry","sparse_cloud","dense_cloud","mesh_texturing","semantic_layers","georeference","quality_gate","publish_artifacts"])]
