@@ -105,6 +105,14 @@ export async function ensureCampusSchema(): Promise<void> {
 
   // Always run reports column migration (separate from campus check)
   await ensureReportsColumns(db);
+  // Reconstruction was added after the original runtime bootstrap. Keep this
+  // idempotent guard here so existing Render/Postgres deployments do not need
+  // a manual migration before the public queue can accept its first job.
+  try {
+    await db.execute(sql.raw(RECONSTRUCTION_SCHEMA_SQL));
+  } catch (err) {
+    console.warn("[Database] Reconstruction schema migration failed:", err instanceof Error ? err.message : err);
+  }
 
   if (_campusMigrationApplied) return;
 
@@ -129,6 +137,32 @@ export async function ensureCampusSchema(): Promise<void> {
     console.error("[Database] Failed to apply campus migration:", err);
   }
 }
+const RECONSTRUCTION_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS "reconstruction_jobs" (
+  "id" serial PRIMARY KEY,
+  "jobKey" varchar(80) NOT NULL UNIQUE,
+  "name" varchar(220) NOT NULL,
+  "status" varchar(32) NOT NULL DEFAULT 'queued',
+  "inputFileName" varchar(260) NOT NULL,
+  "inputMimeType" varchar(120) NOT NULL,
+  "inputSizeBytes" integer NOT NULL,
+  "latitude" varchar(32) NOT NULL,
+  "longitude" varchar(32) NOT NULL,
+  "altitudeMeters" integer NOT NULL,
+  "inputMetadata" jsonb NOT NULL,
+  "qualityReport" jsonb NOT NULL,
+  "stages" jsonb NOT NULL,
+  "artifactManifest" jsonb,
+  "errorMessage" text,
+  "createdBy" integer,
+  "startedAt" timestamptz,
+  "completedAt" timestamptz,
+  "createdAt" timestamptz NOT NULL DEFAULT now(),
+  "updatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS reconstruction_jobs_status_idx ON "reconstruction_jobs"("status");
+CREATE INDEX IF NOT EXISTS reconstruction_jobs_created_at_idx ON "reconstruction_jobs"("createdAt");
+`;
 const CAMPUS_MIGRATION_SQL = `
 DO $$ BEGIN
   CREATE TYPE "public"."location_source" AS ENUM('image_exif', 'device_gps', 'verified_campus', 'user_selected', 'geocoded', 'unknown');
