@@ -5,7 +5,17 @@ import type { CSSProperties } from "react";
 type Detection = { label?: string; confidence?: number; severity?: string; boundingBox?: unknown };
 type LiveEvent = { detections?: Detection[]; fileName?: string; imageUrl?: string; occurredAt?: string };
 const configuredStreamUrl = String(import.meta.env.VITE_DRIFT_LIVE_STREAM_URL ?? "").trim();
-const streamUrl = configuredStreamUrl;
+const streamUrl = (() => {
+  if (!configuredStreamUrl) return "";
+  try {
+    const parsed = new URL(configuredStreamUrl);
+    const isLocalHost = ["127.0.0.1", "localhost", "::1"].includes(parsed.hostname);
+    if (window.location.protocol === "https:" && (parsed.protocol !== "https:" || isLocalHost)) return "";
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
+})();
 const backendOrigin = (import.meta.env.VITE_BACKEND_URL || "https://drift-node-api.onrender.com").replace(/\/$/, "");
 const uploadedDemoVideoUrl = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663855346163/OqjPCGreoHnnniLg.mp4";
 const uploadedDemoPosterUrl = "https://files.manuscdn.com/user_upload_by_module/session_file/310519663855346163/KxynhPEtQoLZhrFd.jpg";
