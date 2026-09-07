@@ -2,6 +2,8 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import path from "node:path";
+import fs from "node:fs";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
@@ -45,6 +47,15 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  app.get("/api/reconstruction/:jobKey/artifacts/:fileName", (req, res) => {
+    const jobKey = String(req.params.jobKey ?? "");
+    const fileName = path.basename(String(req.params.fileName ?? ""));
+    if (!/^[a-zA-Z0-9_-]{8,80}$/.test(jobKey) || !fileName || fileName !== path.basename(fileName)) return res.status(400).send("Invalid artifact path");
+    const root = process.env.RECONSTRUCTION_ARTIFACT_ROOT || "/var/lib/drift/reconstruction";
+    const artifactPath = path.join(root, jobKey, fileName);
+    if (!fs.existsSync(artifactPath)) return res.status(404).send("Artifact not available");
+    return res.sendFile(artifactPath);
+  });
 
   const bridgeRateWindows = new Map<string, { count: number; resetAt: number }>();
   const bridgeAuthorized = (req: express.Request) => {

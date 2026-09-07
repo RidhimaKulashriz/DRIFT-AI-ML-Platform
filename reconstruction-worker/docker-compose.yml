@@ -1,0 +1,15 @@
+services:
+  drift-reconstruction-worker:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      RECONSTRUCTION_ARTIFACT_ROOT: /var/lib/drift/reconstruction
+      RECONSTRUCTION_POLL_SECONDS: ${RECONSTRUCTION_POLL_SECONDS:-10}
+      ODM_IMAGE: ${ODM_IMAGE:-opendronemap/odm:latest}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - reconstruction-artifacts:/var/lib/drift/reconstruction
+
+volumes:
+  reconstruction-artifacts:
