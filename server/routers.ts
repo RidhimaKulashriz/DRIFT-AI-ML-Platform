@@ -18,6 +18,10 @@ import { deliverContractorReport } from "./services/contractorDelivery";
 import { featureRouter } from "./featureRouter";
 import { runDemoDetection } from "./demoDetection";
 import { CAPTURE_ZONES, INSPECTION_DOMAINS, QUALITY_STATUSES } from "@shared/types";
+import { getDb } from "./db";
+import { reconstructionJobs } from "../drizzle/schema";
+import { desc, eq } from "drizzle-orm";
+import { buildArtifactManifest, buildReconstructionPlan, validateCapture } from "./services/reconstruction";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -117,6 +121,12 @@ export const appRouter = router({
         const persisted = await persistInferenceDefect({ missionId: input.missionId, assetId: input.assetId, evidenceId: evidenceRecord.id, latitude: Number(input.latitude), longitude: Number(input.longitude), inference, inspectionDomain: input.inspectionDomain, correlationKey: input.correlationKey, createdBy: ctx.user.id });
         return { ...evidenceRecord, inference: persisted };
       }),
+    }),
+    reconstruction: router({
+      list: protectedProcedure.query(async ({ ctx }) => { requireDriftRole(ctx.user, ["admin", "engineer", "user"]); const db = await getDb(); if (!db) return []; return db.select().from(reconstructionJobs).orderBy(desc(reconstructionJobs.createdAt)).limit(25); }),
+      validate: publicProcedure.input(z.object({ fileName: z.string().min(1), mimeType: z.string(), sizeBytes: z.number().int().nonnegative(), latitude: z.number(), longitude: z.number(), altitudeMeters: z.number(), cameraModel: z.string().optional(), hasImu: z.boolean(), hasRtk: z.boolean(), hasBarometer: z.boolean(), hasIntrinsics: z.boolean(), durationSeconds: z.number(), resolution: z.enum(["1080p", "4k"]) })).query(({ input }) => ({ validation: validateCapture(input), plan: buildReconstructionPlan(input) })),
+      create: protectedProcedure.input(z.object({ name: z.string().min(3).max(220), fileName: z.string().min(1), mimeType: z.string(), sizeBytes: z.number().int().positive(), latitude: z.number(), longitude: z.number(), altitudeMeters: z.number().positive(), cameraModel: z.string().optional(), hasImu: z.boolean(), hasRtk: z.boolean(), hasBarometer: z.boolean(), hasIntrinsics: z.boolean(), durationSeconds: z.number().positive(), resolution: z.enum(["1080p", "4k"]) })).mutation(async ({ ctx, input }) => { requireDriftRole(ctx.user, ["admin", "engineer"]); const validation = validateCapture(input); if (!validation.valid) throw new Error(validation.errors.join(" ")); const plan = buildReconstructionPlan(input); const db = await getDb(); if (!db) throw new Error("DATABASE_URL is required to persist a reconstruction job."); const result = await db.insert(reconstructionJobs).values({ jobKey: plan.jobKey, name: input.name, status: "queued", inputFileName: input.fileName, inputMimeType: input.mimeType, inputSizeBytes: input.sizeBytes, latitude: String(input.latitude), longitude: String(input.longitude), altitudeMeters: Math.round(input.altitudeMeters), inputMetadata: input, qualityReport: plan.quality, stages: plan.stages, createdBy: ctx.user.id }).returning({ id: reconstructionJobs.id, jobKey: reconstructionJobs.jobKey }); return { ...result[0], ...plan, message: "Capture accepted. Reconstruction pipeline is queued; no geometry is fabricated until processing completes." }; }),
+      manifest: protectedProcedure.input(z.object({ jobKey: z.string().min(8) })).query(async ({ ctx, input }) => { requireDriftRole(ctx.user, ["admin", "engineer", "user"]); const db = await getDb(); if (!db) throw new Error("DATABASE_URL is required."); const rows = await db.select().from(reconstructionJobs).where(eq(reconstructionJobs.jobKey, input.jobKey)).limit(1); const job = rows[0]; if (!job) throw new Error("Reconstruction job not found."); return { job, manifest: job.artifactManifest ?? buildArtifactManifest(job.jobKey, { fileName: job.inputFileName, mimeType: job.inputMimeType, sizeBytes: job.inputSizeBytes, latitude: Number(job.latitude), longitude: Number(job.longitude), altitudeMeters: job.altitudeMeters, hasImu: Boolean((job.inputMetadata as any).hasImu), hasRtk: Boolean((job.inputMetadata as any).hasRtk), hasBarometer: Boolean((job.inputMetadata as any).hasBarometer), hasIntrinsics: Boolean((job.inputMetadata as any).hasIntrinsics), durationSeconds: Number((job.inputMetadata as any).durationSeconds), resolution: (job.inputMetadata as any).resolution }, job.qualityReport as any) }; }),
     }),
     assets: router({
       list: protectedProcedure.query(({ ctx }) => { requireDriftRole(ctx.user, ["admin", "engineer", "user"]); return listAssets(); }),

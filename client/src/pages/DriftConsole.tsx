@@ -47,6 +47,7 @@ import { useMemo, useRef, useState } from "react";
 import { CAPTURE_ZONES, INSPECTION_DOMAINS } from "@shared/types";
 import TrainMonitoring from "@/components/TrainMonitoring";
 import CostScalabilityWorkspace from "@/components/CostScalabilityWorkspace";
+import ReconstructionWorkspace from "@/components/ReconstructionWorkspace";
 import { contractors as contractorData } from "@shared/contractors";
 import { calculateOverallPriority, formatRepairCost } from "@shared/priorityScoring";
 import { trafficSegments as trafficData } from "@shared/trafficData";
@@ -54,13 +55,14 @@ import "./accountability.css";
 
 type Severity = "low" | "medium" | "high" | "critical";
 type DefectType = "pothole" | "crack" | "structural" | "corrosion" | "spalling" | "exposed_rebar" | "water_intrusion" | "settlement" | "rail_alignment" | "obstruction" | "lighting_failure";
-type Workspace = "operations" | "defects" | "evidence" | "reports" | "hardware" | "accountability" | "trains" | "contractors" | "traffic" | "cost" | "scalability";
+type Workspace = "operations" | "defects" | "evidence" | "reports" | "hardware" | "accountability" | "trains" | "contractors" | "traffic" | "cost" | "scalability" | "reconstruction";
 type Role = "administrator" | "engineer" | "contractor" | "citizen";
 type EvidenceItem = { id: number; fileName: string; storageUrl: string; mediaKind: "photo" | "video" | "annotation" | "report"; source?: "hardware" | "upload" | "simulator" | "cctv" | "reference"; latitude: string | null; longitude: string | null; capturedAt?: Date | null; cameraId?: string | null; provenance?: unknown; captureZone?: string | null; qualityStatus?: string | null; imageQuality?: unknown };
 type TransientSimulatorRun = { name?: string; startedAt?: number; telemetry: Array<{ latitude: number; longitude: number; altitude: number; batteryPercent: number; speedMps: number; timestamp: number }>; findings: Array<{ title: string; label: string; confidence: number; latitude: number; longitude: number; score: { score: number; severity: Severity; explanation: string[] } }> };
 
 const navItems: Array<{ key: Workspace; label: string; icon: typeof Radar }> = [
   { key: "operations", label: "Operations", icon: Radar },
+  { key: "reconstruction", label: "3D reconstruction", icon: Layers3 },
   { key: "defects", label: "Defect control", icon: TriangleAlert },
   { key: "evidence", label: "Evidence vault", icon: Video },
   { key: "reports", label: "Reports", icon: FileText },
@@ -782,6 +784,7 @@ export default function DriftConsole() {
           {role === "contractor" && <section className="panel contractor-workspace-panel"><div className="panel-heading"><div><span className="eyebrow">ASSIGNED CONTRACTOR WORK</span><h2>Accept, progress, prove</h2><p className="workspace-lede">Only tickets assigned to your authenticated contractor identity appear here. Closure remains a request until an engineer verifies original follow-up evidence.</p></div><ClipboardCheck /></div>{!contractorWorkReady ? <p className="access-note">{contractorWorkPersistence?.message ?? persistenceMessage} This workspace never falls back to the global accountability register. No contractor transition can be written until approved PostgreSQL migration and real organization records are active.</p> : !assignedContractorTickets.length ? <div className="empty-state"><h3>No assigned real ticket</h3><p>An administrator must assign a registered contractor organization and its authenticated contractor user. DRIFT does not create sample assignments.</p></div> : <div className="contractor-ticket-list">{assignedContractorTickets.map(ticket => <article key={ticket.id} className="contractor-ticket-card"><div><span className="eyebrow">TICKET #{ticket.id} · {ticket.status.replaceAll("_", " ")}</span><h3>{ticket.title}</h3><p>{ticket.scopeNote}</p><small>Verification criterion: {ticket.verificationCriterion}</small></div><div className="contractor-ticket-actions">{ticket.status === "assigned" && <><button type="button" onClick={() => acceptContractorTicket.mutate({ ticketId: ticket.id })} disabled={acceptContractorTicket.isPending}>ACCEPT</button><button type="button" onClick={() => startContractorTicket.mutate({ ticketId: ticket.id })} disabled={startContractorTicket.isPending}>START WORK</button></>}{(ticket.status === "assigned" || ticket.status === "in_progress") && <><textarea value={contractorNote} onChange={event => setContractorNote(event.target.value)} placeholder="Progress note for the engineer audit trail" /><button type="button" onClick={() => addContractorTicketNote.mutate({ ticketId: ticket.id, note: contractorNote })} disabled={!contractorNote.trim() || addContractorTicketNote.isPending}>ADD AUDIT NOTE</button></>}<button type="button" disabled title="Closure proof upload activates only after approved external object storage is configured and original evidence is attached.">PROOF STORAGE REQUIRED FOR CLOSURE</button></div></article>)}</div>}</section>}
         </section>}
 
+        {workspace === "reconstruction" && <ReconstructionWorkspace />}
         {workspace === "hardware" && <section className="workspace-page hardware-workspace">
           <div className="workspace-header"><div><span className="eyebrow">OPERATOR-CONTROLLED INTEGRATION</span><h2>Hardware bridge</h2></div><span className={cn("hardware-status", connectedStatus)}>{connectedStatus}</span></div>
           <div className="uav-capture-console">

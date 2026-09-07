@@ -247,6 +247,29 @@ export const reports = pgTable("reports", {
   updatedAt: updatedAt(),
 });
 
+export const reconstructionJobs = pgTable("reconstruction_jobs", {
+  id: serial("id").primaryKey(),
+  jobKey: varchar("jobKey", { length: 80 }).notNull().unique(),
+  name: varchar("name", { length: 220 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull().default("queued"),
+  inputFileName: varchar("inputFileName", { length: 260 }).notNull(),
+  inputMimeType: varchar("inputMimeType", { length: 120 }).notNull(),
+  inputSizeBytes: integer("inputSizeBytes").notNull(),
+  latitude: varchar("latitude", { length: 32 }).notNull(),
+  longitude: varchar("longitude", { length: 32 }).notNull(),
+  altitudeMeters: integer("altitudeMeters").notNull(),
+  inputMetadata: jsonb("inputMetadata").notNull(),
+  qualityReport: jsonb("qualityReport").notNull(),
+  stages: jsonb("stages").notNull(),
+  artifactManifest: jsonb("artifactManifest"),
+  errorMessage: text("errorMessage"),
+  createdBy: integer("createdBy"),
+  startedAt: timestamp("startedAt", { withTimezone: true }),
+  completedAt: timestamp("completedAt", { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
 export const auditEvents = pgTable("auditEvents", {
   id: serial("id").primaryKey(),
   missionId: integer("missionId"),
