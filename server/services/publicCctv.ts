@@ -29,5 +29,25 @@ async function loadCaltrans(): Promise<CameraConfig[]> { return (await Promise.a
 async function loadTfl(): Promise<CameraConfig[]> { const places = await fetchJson<TflPlace[]>(TFL_JAMCAM_URL); if (!Array.isArray(places)) return []; return places.flatMap(place => { const props = Object.fromEntries((place.additionalProperties ?? []).filter(item => item.key).map(item => [item.key!, item.value ?? ""])); const latitude = num(place.lat); const longitude = num(place.lon); const streamUrl = String(props.imageUrl ?? "").trim(); const id = String(place.id ?? "").replace(/^JamCams_/, ""); if (String(props.available).toLowerCase() !== "true" || latitude === null || longitude === null || !id || !streamUrl.startsWith(TFL_IMAGE_ORIGIN)) return []; const name = String(place.commonName ?? `TfL JamCam ${id}`); return [makeCamera(`tfl-${id}`, name, "London", name, latitude, longitude, streamUrl, "Transport for London", TFL_JAMCAM_URL)]; }); }
 function isValidConfig(value: unknown): value is CameraConfig { if (!value || typeof value !== "object") return false; const camera = value as Partial<CameraConfig>; return typeof camera.id === "string" && typeof camera.name === "string" && typeof camera.displayName === "string" && typeof camera.latitude === "number" && typeof camera.longitude === "number" && typeof camera.city === "string" && typeof camera.area === "string" && typeof camera.zoneLabel === "string" && ["hls", "mjpeg", "snapshot", "webrtc"].includes(String(camera.streamType)) && typeof camera.streamUrl === "string" && typeof camera.sourceUrl === "string" && camera.sourceUrl.startsWith("https://") && typeof camera.provider === "string" && typeof camera.verifiedAt === "string"; }
 function configuredCameras(): CameraConfig[] { const raw = process.env.DELHI_AUTHORIZED_CAMERAS_JSON?.trim(); if (!raw) return []; try { const parsed: unknown = JSON.parse(raw); return Array.isArray(parsed) ? parsed.filter(isValidConfig) : []; } catch (error) { console.warn("[public-cctv] configured cameras invalid:", error instanceof Error ? error.message : error); return []; } }
-export async function listPublicCctv(): Promise<PublicCamera[]> { if (cache.expiresAt > Date.now()) return cache.cameras; if (inflight) return inflight; inflight = Promise.all([loadAustin(), loadCaltrans(), loadTfl(), Promise.resolve(configuredCameras())]).then(groups => groups.flat().slice(0, MAX_CAMERAS)).then(cameras => { const checkedAt = new Date().toISOString(); const catalog = cameras.map(camera => ({ ...camera, status: "unknown" as const, lastChecked: checkedAt })); cache = { cameras: catalog, expiresAt: Date.now() + CACHE_MS }; return catalog; }).catch(error => { console.warn("[public-cctv] camera refresh failed:", error instanceof Error ? error.message : error); cache = { cameras: [], expiresAt: Date.now() + CACHE_MS }; return []; }).finally(() => { inflight = null; }); return inflight; }
+function fallbackDelhiCameras(): CameraConfig[] {
+  return [{
+    id: "delhi-new-delhi-panoramic",
+    name: "New Delhi Panoramic View",
+    displayName: "New Delhi Panoramic View",
+    city: "Delhi",
+    area: "Parikrama The Revolving Restaurant, New Delhi",
+    latitude: 28.6286,
+    longitude: 77.2228,
+    locationPrecision: "city_reference",
+    zoneLabel: "New Delhi · public webcam",
+    streamType: "snapshot",
+    streamUrl: "https://www.worldcam.pl/images/webcams/840x472/69e63c69ad02b-nowe-delhi-panorama-cam.jpg",
+    sourceUrl: "https://worldcam.eu/webcams/asia/india/31023-new-delhi-panoramic-view",
+    provider: "AQI.in via WorldCam",
+    verifiedAt: "2026-09-08T00:00:00Z",
+    accessClassification: "public_webcam",
+    sourceKind: "public-webcam-page",
+  }];
+}
+export async function listPublicCctv(): Promise<PublicCamera[]> { if (cache.expiresAt > Date.now()) return cache.cameras; if (inflight) return inflight; inflight = Promise.all([loadAustin(), loadCaltrans(), loadTfl(), Promise.resolve([...fallbackDelhiCameras(), ...configuredCameras()])]).then(groups => groups.flat().slice(0, MAX_CAMERAS)).then(cameras => { const checkedAt = new Date().toISOString(); const catalog = cameras.map(camera => ({ ...camera, status: "unknown" as const, lastChecked: checkedAt })); cache = { cameras: catalog, expiresAt: Date.now() + CACHE_MS }; return catalog; }).catch(error => { console.warn("[public-cctv] camera refresh failed:", error instanceof Error ? error.message : error); cache = { cameras: [], expiresAt: Date.now() + CACHE_MS }; return []; }).finally(() => { inflight = null; }); return inflight; }
 export function publicCctvMessage() { return EMPTY_MESSAGE; }
