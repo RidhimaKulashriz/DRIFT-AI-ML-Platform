@@ -12,4 +12,10 @@ describe("SDK session verification", () => {
     await expect(sdk.verifySession(undefined)).resolves.toBeNull();
     expect(warning).not.toHaveBeenCalled();
   });
+  it("quietly rejects a token issued with an unsupported JWT algorithm", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const foreignToken = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJmb3JlaWduIn0.invalid";
+    await expect(sdk.verifySession(foreignToken)).resolves.toBeNull();
+    expect(warning).not.toHaveBeenCalled();
+  });
 });
