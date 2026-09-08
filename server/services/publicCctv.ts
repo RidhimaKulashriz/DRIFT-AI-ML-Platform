@@ -6,7 +6,7 @@ type PublicCamera = {
   latitude: number;
   longitude: number;
   accessClassification: "public_open_data";
-  sourceKind: "austin-open-data" | "caltrans-open-data" | "tfl-open-data" | "india-osm-public";
+  sourceKind: "austin-open-data" | "caltrans-open-data" | "tfl-open-data" | "india-osm-public" | "india-public-webcam";
   sourceUrl: string;
   frameUrl: string | null;
   provider: string;
@@ -31,6 +31,15 @@ const INDIA_CITY_BOXES = [
   [22.35, 88.20, 22.75, 88.55, "Kolkata"],
   [18.40, 73.65, 18.70, 74.00, "Pune"],
 ] as const;
+
+// Public webcam snapshots verified from WorldCam pages. These are real public
+// camera images, not police-control-room CCTV and not private camera access.
+const INDIA_PUBLIC_WEBCAMS: PublicCamera[] = [
+  { id: "india-webcam-bengaluru-iskcon", cameraCode: "INDIA-WEBCAM-BLR-ISKCON", displayName: "Bengaluru · ISKCON public webcam", zoneLabel: "Bengaluru, India · public webcam", latitude: 12.8925057, longitude: 77.5488161, accessClassification: "public_open_data", sourceKind: "india-public-webcam", sourceUrl: "https://worldcam.eu/webcams/asia/india/11739-bangalore-iskcon-bangalore", frameUrl: "https://www.worldcam.pl/images/webcams/420x236/bengaluru-bangalore-obraz.jpg", provider: "WorldCam public webcam" },
+  { id: "india-webcam-bengaluru-shivoham", cameraCode: "INDIA-WEBCAM-BLR-SHIVOHAM", displayName: "Bengaluru · Shivoham public webcam", zoneLabel: "Bengaluru, India · public webcam", latitude: 12.958606, longitude: 77.6566851, accessClassification: "public_open_data", sourceKind: "india-public-webcam", sourceUrl: "https://worldcam.eu/webcams/asia/india/36063-bangalore-shivoham-shiva-temple", frameUrl: "https://www.worldcam.pl/images/webcams/420x236/6846a32cdb885.jpg", provider: "WorldCam public webcam" },
+  { id: "india-webcam-delhi-panorama", cameraCode: "INDIA-WEBCAM-DELHI-PANORAMA", displayName: "New Delhi · panoramic public webcam", zoneLabel: "New Delhi, India · public webcam", latitude: 28.628748, longitude: 77.2226656, accessClassification: "public_open_data", sourceKind: "india-public-webcam", sourceUrl: "https://worldcam.eu/webcams/asia/india/31023-new-delhi-panoramic-view", frameUrl: "https://www.worldcam.pl/images/webcams/420x236/69e63c69ad02b-nowe-delhi-panorama-cam.jpg", provider: "WorldCam public webcam" },
+  { id: "india-webcam-kannur", cameraCode: "INDIA-WEBCAM-KANNUR", displayName: "Kannur · public webcam", zoneLabel: "Kannur, Kerala, India · public webcam", latitude: 11.900536, longitude: 75.360176, accessClassification: "public_open_data", sourceKind: "india-public-webcam", sourceUrl: "https://worldcam.eu/webcams/asia/india/21794-kerala-kannur", frameUrl: "https://www.worldcam.pl/images/webcams/420x236/5feb077b6a716.jpg", provider: "WorldCam public webcam" },
+];
 
 function finite(value: unknown) {
   const number = Number(value);
@@ -180,7 +189,7 @@ async function loadIndiaCity(box: readonly [number, number, number, number, stri
 export async function listPublicCctv(): Promise<PublicCamera[]> {
   if (cache.expiresAt > Date.now()) return cache.cameras;
   if (inflight) return inflight;
-  inflight = Promise.all([loadAustin(), ...CALTRANS_DISTRICTS.map(loadCaltransDistrict), loadTfl(), ...INDIA_CITY_BOXES.map(loadIndiaCity)])
+  inflight = Promise.all([loadAustin(), ...CALTRANS_DISTRICTS.map(loadCaltransDistrict), loadTfl(), Promise.resolve(INDIA_PUBLIC_WEBCAMS), ...INDIA_CITY_BOXES.map(loadIndiaCity)])
     .then(groups => groups.flat().slice(0, MAX_CAMERAS))
     .then(cameras => {
       cache = { cameras, expiresAt: Date.now() + CACHE_MS };
