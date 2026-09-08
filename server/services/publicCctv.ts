@@ -21,67 +21,12 @@ export type PublicCamera = {
 
 type CameraConfig = Omit<PublicCamera, "status" | "lastChecked"> & { verifiedAt: string };
 
-const EMPTY_MESSAGE = "No authorized live Delhi CCTV feeds are currently available.";
+const EMPTY_MESSAGE = "No authorized in-app Delhi/NCR camera image feeds are configured. Add an approved MJPEG, HLS, WebRTC, or snapshot endpoint; provider webpages and redirect links are not displayed.";
 const FETCH_TIMEOUT_MS = 10_000;
 const CACHE_MS = 30_000;
 let cache: { expiresAt: number; cameras: PublicCamera[] } = { expiresAt: 0, cameras: [] };
 let inflight: Promise<PublicCamera[]> | null = null;
-const VERIFIED_PUBLIC_WEBCAMS: CameraConfig[] = [
-  {
-    id: "delhi-city-street",
-    name: "Delhi City Street",
-    displayName: "Delhi City Street",
-    latitude: 28.6139,
-    longitude: 77.209,
-    area: "Delhi city reference · exact camera coordinates not published",
-    locationPrecision: "city_reference",
-    zoneLabel: "Delhi, India · Public outdoor road webcam",
-    city: "Delhi",
-    streamType: "youtube",
-    streamUrl: "https://www.youtube.com/embed/LQB5x9G8UNQ?autoplay=1&mute=1&playsinline=1&rel=0",
-    sourceUrl: "https://earthlive24.com/camera/cam_357",
-    provider: "EarthLive24",
-    verifiedAt: "2026-09-08T15:41:00+05:30",
-    sourceKind: "public-webcam-page",
-    accessClassification: "public_webcam",
-  },
-  {
-    id: "new-delhi-panoramic",
-    name: "New Delhi Panoramic View",
-    displayName: "New Delhi Panoramic View",
-    latitude: 28.6286,
-    longitude: 77.2228,
-    area: "Parikrama The Revolving Restaurant, New Delhi",
-    locationPrecision: "exact",
-    zoneLabel: "New Delhi, Delhi · Public webcam",
-    city: "Delhi",
-    streamType: "webcam_page",
-    streamUrl: "https://www.aqi.in/live/city/india/delhi",
-    sourceUrl: "https://worldcam.eu/webcams/asia/india/31023-new-delhi-panoramic-view",
-    provider: "AQI.in / Parikrama The Revolving Restaurant",
-    verifiedAt: "2026-09-08T15:42:00+05:30",
-    sourceKind: "public-webcam-page",
-    accessClassification: "public_webcam",
-  },
-  {
-    id: "delhi-iskcon-radha-parthasarathi",
-    name: "Delhi Sri Sri Radha Partha-Sarathi",
-    displayName: "Delhi Sri Sri Radha Partha-Sarathi",
-    latitude: 28.6664,
-    longitude: 77.2181,
-    area: "ISKCON Delhi",
-    locationPrecision: "exact",
-    zoneLabel: "New Delhi, Delhi · Public webcam",
-    city: "Delhi",
-    streamType: "webcam_page",
-    streamUrl: "https://www.iskcondelhi.com/",
-    sourceUrl: "https://de.worldcam.eu/webcams/asia/india/5447-delhi-sri-sri-radha-partha-sarathi",
-    provider: "ISKCON Delhi",
-    verifiedAt: "2026-09-08T15:42:00+05:30",
-    sourceKind: "public-webcam-page",
-    accessClassification: "public_webcam",
-  },
-];
+const VERIFIED_PUBLIC_WEBCAMS: CameraConfig[] = [];
 
 function isValidConfig(value: unknown): value is CameraConfig {
   if (!value || typeof value !== "object") return false;
