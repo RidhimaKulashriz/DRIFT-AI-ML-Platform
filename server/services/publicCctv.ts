@@ -1,200 +1,142 @@
-type PublicCamera = {
+export type PublicCamera = {
   id: string;
-  cameraCode: string;
+  name: string;
   displayName: string;
-  zoneLabel: string;
   latitude: number;
   longitude: number;
-  accessClassification: "public_open_data";
-  sourceKind: "austin-open-data" | "caltrans-open-data" | "tfl-open-data" | "india-osm-public" | "india-public-webcam";
+  area: string;
+  zoneLabel: string;
+  city: "Delhi" | "NCR";
+  streamType: "hls" | "mjpeg" | "webrtc" | "youtube" | "webcam_page";
+  streamUrl: string;
   sourceUrl: string;
-  frameUrl: string | null;
+  status: "live" | "offline" | "unknown";
+  lastChecked?: string;
+  verifiedAt?: string;
   provider: string;
+  accessClassification: "authorized_public" | "public_webcam";
+  sourceKind: "authorized-live-stream" | "public-webcam-page";
 };
 
-type CacheState = { expiresAt: number; cameras: PublicCamera[] };
-let cache: CacheState = { expiresAt: 0, cameras: [] };
-let inflight: Promise<PublicCamera[]> | null = null;
-const CACHE_MS = 10 * 60_000;
-const FETCH_TIMEOUT_MS = 12_000;
-const MAX_CAMERAS = 900;
-const CALTRANS_DISTRICTS = [3, 4, 7, 11];
-const AUSTIN_URL = "https://data.austintexas.gov/api/views/b4k4-adkb/rows.json?accessType=DOWNLOAD";
-const TFL_URL = "https://api.tfl.gov.uk/Place/Type/JamCam";
-const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
-const INDIA_CITY_BOXES = [
-  [28.40, 76.80, 28.90, 77.40, "Delhi NCR"],
-  [18.80, 72.70, 19.35, 73.10, "Mumbai"],
-  [12.80, 77.35, 13.15, 77.80, "Bengaluru"],
-  [17.20, 78.20, 17.65, 78.70, "Hyderabad"],
-  [12.80, 80.00, 13.25, 80.40, "Chennai"],
-  [22.35, 88.20, 22.75, 88.55, "Kolkata"],
-  [18.40, 73.65, 18.70, 74.00, "Pune"],
-] as const;
+type CameraConfig = Omit<PublicCamera, "status" | "lastChecked"> & { verifiedAt: string };
 
-// Public webcam snapshots verified from WorldCam pages. These are real public
-// camera images, not police-control-room CCTV and not private camera access.
-const INDIA_PUBLIC_WEBCAMS: PublicCamera[] = [
-  { id: "india-road-sankari-bhavani", cameraCode: "INDIA-ROAD-SANKARI-BHAVANI", displayName: "Sankari · Bhavani Main Road traffic camera", zoneLabel: "Sankari–Bhavani Main Road, Tamil Nadu, India", latitude: 11.4620493, longitude: 77.8446444, accessClassification: "public_open_data", sourceKind: "india-public-webcam", sourceUrl: "https://worldcam.eu/webcams/asia/india/37665-sankari-bhavani-main-road", frameUrl: "https://www.worldcam.pl/images/webcams/420x236/697b34ef6dc17.jpg", provider: "WorldCam public road webcam" },
+const EMPTY_MESSAGE = "No authorized live Delhi CCTV feeds are currently available.";
+const FETCH_TIMEOUT_MS = 10_000;
+const CACHE_MS = 30_000;
+let cache: { expiresAt: number; cameras: PublicCamera[] } = { expiresAt: 0, cameras: [] };
+let inflight: Promise<PublicCamera[]> | null = null;
+const VERIFIED_PUBLIC_WEBCAMS: CameraConfig[] = [
+  {
+    id: "new-delhi-panoramic",
+    name: "New Delhi Panoramic View",
+    displayName: "New Delhi Panoramic View",
+    latitude: 28.6286,
+    longitude: 77.2228,
+    area: "Parikrama The Revolving Restaurant, New Delhi",
+    zoneLabel: "New Delhi, Delhi · Public webcam",
+    city: "Delhi",
+    streamType: "webcam_page",
+    streamUrl: "https://www.aqi.in/live/city/india/delhi",
+    sourceUrl: "https://worldcam.eu/webcams/asia/india/31023-new-delhi-panoramic-view",
+    provider: "AQI.in / Parikrama The Revolving Restaurant",
+    verifiedAt: "2026-09-08T15:42:00+05:30",
+    sourceKind: "public-webcam-page",
+    accessClassification: "public_webcam",
+  },
+  {
+    id: "delhi-iskcon-radha-parthasarathi",
+    name: "Delhi Sri Sri Radha Partha-Sarathi",
+    displayName: "Delhi Sri Sri Radha Partha-Sarathi",
+    latitude: 28.6664,
+    longitude: 77.2181,
+    area: "ISKCON Delhi",
+    zoneLabel: "New Delhi, Delhi · Public webcam",
+    city: "Delhi",
+    streamType: "webcam_page",
+    streamUrl: "https://www.iskcondelhi.com/",
+    sourceUrl: "https://de.worldcam.eu/webcams/asia/india/5447-delhi-sri-sri-radha-partha-sarathi",
+    provider: "ISKCON Delhi",
+    verifiedAt: "2026-09-08T15:42:00+05:30",
+    sourceKind: "public-webcam-page",
+    accessClassification: "public_webcam",
+  },
 ];
 
-function finite(value: unknown) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
+function isValidConfig(value: unknown): value is CameraConfig {
+  if (!value || typeof value !== "object") return false;
+  const camera = value as Partial<CameraConfig>;
+  return (
+    typeof camera.id === "string" &&
+    typeof camera.name === "string" &&
+    typeof camera.displayName === "string" &&
+    typeof camera.latitude === "number" &&
+    typeof camera.longitude === "number" &&
+    camera.latitude >= 28.3 && camera.latitude <= 29.0 &&
+    camera.longitude >= 76.7 && camera.longitude <= 77.6 &&
+    (camera.city === "Delhi" || camera.city === "NCR") &&
+    typeof camera.area === "string" &&
+    typeof camera.zoneLabel === "string" &&
+    ["hls", "mjpeg", "webrtc", "youtube", "webcam_page"].includes(String(camera.streamType)) &&
+    typeof camera.streamUrl === "string" &&
+    typeof camera.sourceUrl === "string" &&
+    camera.sourceUrl.startsWith("https://") &&
+    typeof camera.provider === "string" &&
+    typeof camera.verifiedAt === "string"
+  );
 }
 
-async function getJson(url: string) {
-  const response = await fetch(url, {
-    headers: { Accept: "application/json", "User-Agent": "DRIFT-public-cctv/1.0" },
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-  if (!response.ok) throw new Error(`${response.status} ${url}`);
-  return response.json();
-}
-
-async function loadAustin(): Promise<PublicCamera[]> {
+function configuredCameras(): CameraConfig[] {
+  const raw = process.env.DELHI_AUTHORIZED_CAMERAS_JSON?.trim();
+  if (!raw) return [];
   try {
-    const payload: any = await getJson(AUSTIN_URL);
-    const rows = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : [];
-    return rows.flatMap((row: any, index: number) => {
-      const values = Array.isArray(row) ? row : [];
-      const location = String(row?.location ?? values[33] ?? "");
-      const point = /POINT\s*\(\s*(-?[\d.]+)\s+(-?[\d.]+)\s*\)/i.exec(location);
-      const latitude = finite(row?.latitude ?? row?.lat ?? (point ? point[2] : null));
-      const longitude = finite(row?.longitude ?? row?.lon ?? (point ? point[1] : null));
-      const image = String(row?.published_screenshots ?? row?.image_url ?? row?.url ?? values[30] ?? "");
-      if (latitude === null || longitude === null) return [];
-      return [{
-        id: `austin-${String(row?.camera_id ?? values[8] ?? index)}`,
-        cameraCode: `AUSTIN-${String(row?.camera_id ?? values[8] ?? index)}`,
-        displayName: String(row?.location_name ?? row?.name ?? values[9] ?? `Austin public camera ${index + 1}`),
-        zoneLabel: "Austin, Texas",
-        latitude, longitude,
-        accessClassification: "public_open_data" as const,
-        sourceKind: "austin-open-data" as const,
-        sourceUrl: AUSTIN_URL,
-        frameUrl: image.startsWith("https://") ? image : null,
-        provider: "City of Austin Open Data",
-      }];
-    });
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter(isValidConfig) : [];
   } catch (error) {
-    console.warn("[public-cctv] Austin catalog unavailable:", error instanceof Error ? error.message : error);
+    console.warn("[public-cctv] DELHI_AUTHORIZED_CAMERAS_JSON is invalid:", error instanceof Error ? error.message : error);
     return [];
   }
 }
 
-async function loadCaltransDistrict(district: number): Promise<PublicCamera[]> {
-  const url = `https://cwwp2.dot.ca.gov/data/d${district}/cctv/cctvStatusD${String(district).padStart(2, "0")}.json`;
-  try {
-    const payload: any = await getJson(url);
-    const rows = Array.isArray(payload?.data) ? payload.data : [];
-    return rows.flatMap((row: any, index: number) => {
-      const cctv = row?.cctv;
-      const location = cctv?.location ?? {};
-      const latitude = finite(location.latitude);
-      const longitude = finite(location.longitude);
-      const image = String(cctv?.imageData?.static?.currentImageURL ?? "");
-      if (String(cctv?.inService).toLowerCase() !== "true" || latitude === null || longitude === null || !image.startsWith("https://cwwp2.dot.ca.gov/")) return [];
-      const name = String(location.locationName ?? `Caltrans District ${district} camera ${index + 1}`).replace(/^([A-Za-z0-9_-]+)\s*--\s*/, "");
-      return [{
-        id: `caltrans-d${district}-${index}`,
-        cameraCode: `CALTRANS-D${district}-${index}`,
-        displayName: name,
-        zoneLabel: `California · Caltrans District ${district}`,
-        latitude, longitude,
-        accessClassification: "public_open_data" as const,
-        sourceKind: "caltrans-open-data" as const,
-        sourceUrl: url,
-        frameUrl: image,
-        provider: "Caltrans Open Data",
-      }];
-    });
-  } catch (error) {
-    console.warn(`[public-cctv] Caltrans D${district} unavailable:`, error instanceof Error ? error.message : error);
-    return [];
+async function probe(camera: CameraConfig): Promise<PublicCamera> {
+  const lastChecked = new Date().toISOString();
+  const isPublicWebcam = camera.streamType === "webcam_page";
+  const base = { ...camera, lastChecked, sourceKind: isPublicWebcam ? "public-webcam-page" as const : "authorized-live-stream" as const, accessClassification: isPublicWebcam ? "public_webcam" as const : "authorized_public" as const };
+  if (camera.streamType === "webrtc" || camera.streamType === "youtube" || isPublicWebcam) {
+    return { ...base, status: "unknown" };
   }
-}
-
-async function loadTfl(): Promise<PublicCamera[]> {
   try {
-    const places: any = await getJson(TFL_URL);
-    if (!Array.isArray(places)) return [];
-    return places.flatMap((place: any) => {
-      const properties = Object.fromEntries((place?.additionalProperties ?? []).filter((item: any) => item?.key).map((item: any) => [item.key, item.value]));
-      const latitude = finite(place?.lat);
-      const longitude = finite(place?.lon);
-      const image = String(properties.imageUrl ?? "");
-      if (String(properties.available).toLowerCase() !== "true" || latitude === null || longitude === null || !image.startsWith("https://s3-eu-west-1.amazonaws.com/jamcams.tfl.gov.uk/")) return [];
-      const id = String(place?.id ?? "").replace(/^JamCams_/, "");
-      if (!id) return [];
-      return [{
-        id: `tfl-${id}`,
-        cameraCode: `TFL-${id}`,
-        displayName: String(place?.commonName ?? `TfL JamCam ${id}`),
-        zoneLabel: "London · Transport for London",
-        latitude, longitude,
-        accessClassification: "public_open_data" as const,
-        sourceKind: "tfl-open-data" as const,
-        sourceUrl: TFL_URL,
-        frameUrl: image,
-        provider: "Transport for London Open Data",
-      }];
-    });
-  } catch (error) {
-    console.warn("[public-cctv] TfL catalog unavailable:", error instanceof Error ? error.message : error);
-    return [];
-  }
-}
-
-async function loadIndiaCity(box: readonly [number, number, number, number, string]): Promise<PublicCamera[]> {
-  const [south, west, north, east, city] = box;
-  const query = `[out:json][timeout:20];(nwr["surveillance:type"="traffic"](${south},${west},${north},${east});nwr["surveillance"="public"]["surveillance:type"="camera"](${south},${west},${north},${east}););out center tags;`;
-  try {
-    const response = await fetch(OVERPASS_URL, {
-      method: "POST",
-      headers: { Accept: "application/json", "Content-Type": "application/x-www-form-urlencoded", "User-Agent": "DRIFT-public-cctv/1.0" },
-      body: new URLSearchParams({ data: query }),
+    const response = await fetch(camera.streamUrl, {
+      method: "GET",
+      headers: { Accept: camera.streamType === "hls" ? "application/vnd.apple.mpegurl, application/x-mpegURL, */*" : "multipart/x-mixed-replace, video/*, */*" },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
-    if (!response.ok) throw new Error(`${response.status} ${city}`);
-    const payload: any = await response.json();
-    return (Array.isArray(payload?.elements) ? payload.elements : []).flatMap((element: any) => {
-      const latitude = finite(element?.lat ?? element?.center?.lat);
-      const longitude = finite(element?.lon ?? element?.center?.lon);
-      if (latitude === null || longitude === null) return [];
-      const tags = element?.tags ?? {};
-      const id = `india-osm-${element.type}-${element.id}`;
-      return [{
-        id,
-        cameraCode: id.toUpperCase(),
-        displayName: String(tags.name ?? tags.ref ?? `Public traffic camera · ${city}`),
-        zoneLabel: `${city}, India · OpenStreetMap public mapping`,
-        latitude, longitude,
-        accessClassification: "public_open_data" as const,
-        sourceKind: "india-osm-public" as const,
-        sourceUrl: "https://www.openstreetmap.org/",
-        frameUrl: null,
-        provider: "OpenStreetMap public camera mapping",
-      }];
-    });
-  } catch (error) {
-    console.warn(`[public-cctv] India ${city} catalog unavailable:`, error instanceof Error ? error.message : error);
-    return [];
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    const validMedia = camera.streamType === "hls"
+      ? contentType.includes("mpegurl") || camera.streamUrl.includes(".m3u8")
+      : contentType.includes("multipart") || contentType.startsWith("video/");
+    return { ...base, status: response.ok && validMedia ? "live" : "offline" };
+  } catch {
+    return { ...base, status: "offline" };
   }
 }
 
 export async function listPublicCctv(): Promise<PublicCamera[]> {
   if (cache.expiresAt > Date.now()) return cache.cameras;
   if (inflight) return inflight;
-  inflight = Promise.all([Promise.resolve(INDIA_PUBLIC_WEBCAMS), ...INDIA_CITY_BOXES.map(loadIndiaCity), loadAustin(), ...CALTRANS_DISTRICTS.map(loadCaltransDistrict), loadTfl()])
-    .then(groups => groups.flat().slice(0, MAX_CAMERAS))
+  inflight = Promise.all([...VERIFIED_PUBLIC_WEBCAMS, ...configuredCameras()].map(probe))
     .then(cameras => {
       cache = { cameras, expiresAt: Date.now() + CACHE_MS };
       return cameras;
     })
-    .catch(() => cache.cameras)
+    .catch(error => {
+      console.warn("[public-cctv] camera health check failed:", error instanceof Error ? error.message : error);
+      cache = { cameras: [], expiresAt: Date.now() + CACHE_MS };
+      return [];
+    })
     .finally(() => { inflight = null; });
   return inflight;
 }
 
-export type { PublicCamera };
+export function publicCctvMessage() {
+  return EMPTY_MESSAGE;
+}

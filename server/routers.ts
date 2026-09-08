@@ -22,7 +22,7 @@ import { getDb } from "./db";
 import { reconstructionJobs, assets, cameraSources, cctvCandidates } from "../drizzle/schema";
 import { desc, eq } from "drizzle-orm";
 import { buildArtifactManifest, buildReconstructionPlan, validateCapture } from "./services/reconstruction";
-import { listPublicCctv } from "./services/publicCctv";
+import { listPublicCctv, publicCctvMessage } from "./services/publicCctv";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -45,7 +45,7 @@ export const appRouter = router({
     hardwareStatus: publicProcedure.query(() => probeHardwareConnection()),
     godEye: publicProcedure.query(async () => {
       const db = await getDb();
-      if (!db) return { available: false, message: "DATABASE_URL is not configured; showing public open-data camera layers only.", assets: [], defects: [], cameras: await listPublicCctv(), candidates: [] };
+      if (!db) return { available: false, message: publicCctvMessage(), assets: [], defects: [], cameras: await listPublicCctv(), candidates: [] };
       const [assetRows, cameraRows, candidateRows, defectRows, publicCameras] = await Promise.all([
         db.select({ id: assets.id, name: assets.name, assetType: assets.assetType, latitude: assets.latitude, longitude: assets.longitude, status: assets.status, criticality: assets.criticality }).from(assets).limit(500),
         db.select({ id: cameraSources.id, cameraCode: cameraSources.cameraCode, displayName: cameraSources.displayName, zoneLabel: cameraSources.zoneLabel, latitude: cameraSources.latitude, longitude: cameraSources.longitude, accessClassification: cameraSources.accessClassification, retentionUntil: cameraSources.retentionUntil }).from(cameraSources).limit(500),
@@ -53,9 +53,10 @@ export const appRouter = router({
         listFilteredDefects({}).then(rows => rows.slice(0, 1000).map(row => ({ id: row.id, label: row.label, severity: row.severity, latitude: row.latitude, longitude: row.longitude, status: row.status, missionId: row.missionId }))),
         listPublicCctv(),
       ]);
-      const now = Date.now();
-      const authorizedCameras = cameraRows.filter(camera => camera.latitude && camera.longitude && camera.retentionUntil.getTime() > now).map(({ retentionUntil, ...camera }) => camera);
-      return { available: true, message: "Live database-linked operational layer with public open-data cameras", assets: assetRows, defects: defectRows, cameras: [...authorizedCameras, ...publicCameras], candidates: candidateRows.filter(candidate => candidate.latitude && candidate.longitude) };
+      // Database camera records may be private/control-room CCTV. They are
+      // intentionally excluded from this public God’s Eye camera layer.
+      void cameraRows;
+      return { available: true, message: publicCctvMessage(), assets: assetRows, defects: defectRows, cameras: publicCameras, candidates: candidateRows.filter(candidate => candidate.latitude && candidate.longitude) };
     }),
     validateTelemetry: protectedProcedure.input(z.unknown()).mutation(({ input }) => validateTelemetryPayload(input)),
     ingestTelemetry: protectedProcedure.input(z.object({ missionId: z.number().int().positive(), latitude: z.number(), longitude: z.number(), altitude: z.number().nonnegative(), speedMps: z.number().nonnegative(), batteryPercent: z.number().min(0).max(100), timestamp: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
