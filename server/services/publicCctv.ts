@@ -5,6 +5,7 @@ export type PublicCamera = {
   latitude: number;
   longitude: number;
   area: string;
+  locationPrecision: "exact" | "city_reference";
   zoneLabel: string;
   city: "Delhi" | "NCR";
   streamType: "hls" | "mjpeg" | "webrtc" | "youtube" | "webcam_page";
@@ -27,12 +28,31 @@ let cache: { expiresAt: number; cameras: PublicCamera[] } = { expiresAt: 0, came
 let inflight: Promise<PublicCamera[]> | null = null;
 const VERIFIED_PUBLIC_WEBCAMS: CameraConfig[] = [
   {
+    id: "delhi-city-street",
+    name: "Delhi City Street",
+    displayName: "Delhi City Street",
+    latitude: 28.6139,
+    longitude: 77.209,
+    area: "Delhi city reference · exact camera coordinates not published",
+    locationPrecision: "city_reference",
+    zoneLabel: "Delhi, India · Public outdoor road webcam",
+    city: "Delhi",
+    streamType: "youtube",
+    streamUrl: "https://www.youtube.com/embed/LQB5x9G8UNQ?autoplay=1&mute=1&playsinline=1&rel=0",
+    sourceUrl: "https://earthlive24.com/camera/cam_357",
+    provider: "EarthLive24",
+    verifiedAt: "2026-09-08T15:41:00+05:30",
+    sourceKind: "public-webcam-page",
+    accessClassification: "public_webcam",
+  },
+  {
     id: "new-delhi-panoramic",
     name: "New Delhi Panoramic View",
     displayName: "New Delhi Panoramic View",
     latitude: 28.6286,
     longitude: 77.2228,
     area: "Parikrama The Revolving Restaurant, New Delhi",
+    locationPrecision: "exact",
     zoneLabel: "New Delhi, Delhi · Public webcam",
     city: "Delhi",
     streamType: "webcam_page",
@@ -50,6 +70,7 @@ const VERIFIED_PUBLIC_WEBCAMS: CameraConfig[] = [
     latitude: 28.6664,
     longitude: 77.2181,
     area: "ISKCON Delhi",
+    locationPrecision: "exact",
     zoneLabel: "New Delhi, Delhi · Public webcam",
     city: "Delhi",
     streamType: "webcam_page",
@@ -75,6 +96,7 @@ function isValidConfig(value: unknown): value is CameraConfig {
     camera.longitude >= 76.7 && camera.longitude <= 77.6 &&
     (camera.city === "Delhi" || camera.city === "NCR") &&
     typeof camera.area === "string" &&
+    (camera.locationPrecision === "exact" || camera.locationPrecision === "city_reference") &&
     typeof camera.zoneLabel === "string" &&
     ["hls", "mjpeg", "webrtc", "youtube", "webcam_page"].includes(String(camera.streamType)) &&
     typeof camera.streamUrl === "string" &&
