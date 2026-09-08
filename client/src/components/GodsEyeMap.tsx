@@ -23,7 +23,7 @@ function CameraPreview({ camera, compact = false }: { camera: any; compact?: boo
   if (camera.streamType === "youtube" || camera.streamType === "webcam_page") {
     return <div className={`${frameClass} flex items-center justify-center bg-black px-4 text-center text-sm text-slate-400`}>No embeddable camera image feed configured</div>;
   }
-  if (camera.streamType === "mjpeg") {
+  if (camera.streamType === "mjpeg" || camera.streamType === "snapshot") {
     return <img src={camera.streamUrl} alt={`${camera.name} live preview`} className={`${frameClass} rounded-lg bg-black object-contain`} />;
   }
   if (camera.streamType === "hls") {

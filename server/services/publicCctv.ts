@@ -8,7 +8,7 @@ export type PublicCamera = {
   locationPrecision: "exact" | "city_reference";
   zoneLabel: string;
   city: "Delhi" | "NCR";
-  streamType: "hls" | "mjpeg" | "webrtc" | "youtube" | "webcam_page";
+  streamType: "hls" | "mjpeg" | "snapshot" | "webrtc" | "youtube" | "webcam_page";
   streamUrl: string;
   sourceUrl: string;
   status: "live" | "offline" | "unknown";
@@ -43,7 +43,7 @@ function isValidConfig(value: unknown): value is CameraConfig {
     typeof camera.area === "string" &&
     (camera.locationPrecision === "exact" || camera.locationPrecision === "city_reference") &&
     typeof camera.zoneLabel === "string" &&
-    ["hls", "mjpeg", "webrtc", "youtube", "webcam_page"].includes(String(camera.streamType)) &&
+    ["hls", "mjpeg", "snapshot", "webrtc", "youtube", "webcam_page"].includes(String(camera.streamType)) &&
     typeof camera.streamUrl === "string" &&
     typeof camera.sourceUrl === "string" &&
     camera.sourceUrl.startsWith("https://") &&
@@ -80,7 +80,9 @@ async function probe(camera: CameraConfig): Promise<PublicCamera> {
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
     const validMedia = camera.streamType === "hls"
       ? contentType.includes("mpegurl") || camera.streamUrl.includes(".m3u8")
-      : contentType.includes("multipart") || contentType.startsWith("video/");
+      : camera.streamType === "snapshot"
+        ? contentType.startsWith("image/")
+        : contentType.includes("multipart") || contentType.startsWith("video/");
     return { ...base, status: response.ok && validMedia ? "live" : "offline" };
   } catch {
     return { ...base, status: "offline" };
