@@ -189,7 +189,7 @@ async function loadIndiaCity(box: readonly [number, number, number, number, stri
 export async function listPublicCctv(): Promise<PublicCamera[]> {
   if (cache.expiresAt > Date.now()) return cache.cameras;
   if (inflight) return inflight;
-  inflight = Promise.all([loadAustin(), ...CALTRANS_DISTRICTS.map(loadCaltransDistrict), loadTfl(), Promise.resolve(INDIA_PUBLIC_WEBCAMS), ...INDIA_CITY_BOXES.map(loadIndiaCity)])
+  inflight = Promise.all([Promise.resolve(INDIA_PUBLIC_WEBCAMS), ...INDIA_CITY_BOXES.map(loadIndiaCity), loadAustin(), ...CALTRANS_DISTRICTS.map(loadCaltransDistrict), loadTfl()])
     .then(groups => groups.flat().slice(0, MAX_CAMERAS))
     .then(cameras => {
       cache = { cameras, expiresAt: Date.now() + CACHE_MS };
