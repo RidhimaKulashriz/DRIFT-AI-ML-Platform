@@ -12,6 +12,7 @@ import { rankApprovedKnowledge, type KnowledgeCitation } from "./services/rag";
 import type { InferenceResult } from "./services/mlInference";
 import type { DefectKind } from "./services/scoring";
 import { lookupContractorForLocation } from "./services/geoContractorLookup";
+import { buildIntelligenceSnapshot, simulateTwinFailure, type IntelligenceSnapshot } from "./services/intelligenceEngine";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -603,6 +604,22 @@ export async function listReportRecords() {
 }
 export async function listAuditEvents(missionId?: number) { const db = await getDb(); if (!db) return []; const rows = await db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(300); return missionId ? rows.filter(row => row.missionId === missionId) : rows; }
 export async function listAssets() { const db = await getDb(); return db ? db.select().from(assets).orderBy(desc(assets.updatedAt)).limit(100) : []; }
+export async function getOperationalIntelligence(): Promise<IntelligenceSnapshot> {
+  const db = await getDb();
+  if (!db) return buildIntelligenceSnapshot({ assets: [], defects: [], evidence: [], missions: [], telemetry: [] });
+  const [assetRows, defectRows, evidenceRows, missionRows, telemetryRows] = await Promise.all([
+    db.select().from(assets).limit(1000),
+    db.select().from(defects).orderBy(desc(defects.createdAt)).limit(2500),
+    db.select().from(evidence).orderBy(desc(evidence.createdAt)).limit(2500),
+    db.select().from(missions).orderBy(desc(missions.createdAt)).limit(1000),
+    db.select().from(telemetry).orderBy(desc(telemetry.capturedAt)).limit(5000),
+  ]);
+  return buildIntelligenceSnapshot({ assets: assetRows, defects: defectRows, evidence: evidenceRows, missions: missionRows, telemetry: telemetryRows });
+}
+export async function simulateOperationalTwinFailure(assetIds: number[]) {
+  const snapshot = await getOperationalIntelligence();
+  return { snapshot: { generatedAt: snapshot.generatedAt, algorithm: snapshot.algorithm }, simulation: simulateTwinFailure(snapshot, assetIds) };
+}
 
 export async function getDatabaseAttachment(storageKey: string) {
   if (!storageKey.startsWith("db:")) return undefined;
