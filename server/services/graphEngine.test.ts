@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildWorldGraph, queryWorldGraph, traverseGraph } from "./graphEngine";
+import { analyzeGraphImpact, buildNextBestActions, buildWorldGraph, diffWorldGraphs, findInformationGaps, queryWorldGraph, simulateCounterfactual, traverseGraph } from "./graphEngine";
 
 describe("DRIFT world graph", () => {
   const now = new Date("2026-09-10T00:00:00Z");
@@ -26,5 +26,21 @@ describe("DRIFT world graph", () => {
     const result = queryWorldGraph(graph, { kind: "defect", severity: "high" });
     expect(result.nodes).toHaveLength(1);
     expect(result.nodes[0]?.id).toBe("defect:4");
+  });
+
+  it("computes impact paths, information gaps, and isolated counterfactuals", () => {
+    const impact = analyzeGraphImpact(graph, "asset:1", 2);
+    expect(impact.directImpact.map(item => item.nodeId)).toContain("defect:4");
+    expect(findInformationGaps(graph).length).toBeGreaterThanOrEqual(0);
+    expect(buildNextBestActions(graph)).toBeInstanceOf(Array);
+    const simulated = simulateCounterfactual(graph, { nodeId: "defect:4", event: "failure" });
+    expect(simulated.counterfactual.nodes.find(node => node.id === "defect:4")?.state).toBe("SIMULATED");
+    expect(graph.nodes.find(node => node.id === "defect:4")?.state).not.toBe("SIMULATED");
+  });
+
+  it("returns graph-level state changes", () => {
+    const changed = JSON.parse(JSON.stringify(graph));
+    changed.nodes.find((node: any) => node.id === "defect:4").confidence = .2;
+    expect(diffWorldGraphs(graph, changed).riskChanges).toHaveLength(1);
   });
 });

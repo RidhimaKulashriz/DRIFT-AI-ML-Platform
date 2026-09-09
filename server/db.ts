@@ -15,7 +15,7 @@ import { lookupContractorForLocation } from "./services/geoContractorLookup";
 import { buildIntelligenceSnapshot, simulateTwinFailure, type IntelligenceSnapshot } from "./services/intelligenceEngine";
 import { createDomainEvent, getDirtyDerivedState, markDerivedDirty, type DomainEventType } from "./services/domainEvents";
 import { analyzeDefectEvolution, analyzeModelDisagreement, buildCausalHypotheses, evaluateQualityGate, optimizeMissionPlans, replayEvents, resolveDefectIdentity } from "./services/finalIntelligence";
-import { buildWorldGraph, queryWorldGraph, type GraphNodeKind, type GraphEdge } from "./services/graphEngine";
+import { analyzeGraphImpact, buildNextBestActions, buildWorldGraph, diffWorldGraphs, findInformationGaps, graphCentrality, queryWorldGraph, simulateCounterfactual, type GraphNodeKind, type GraphEdge } from "./services/graphEngine";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -642,6 +642,11 @@ export async function queryOperationalWorldGraph(input: { kind?: GraphNodeKind; 
   const events = eventRows.filter(row => row.action.startsWith("domain.")).map(row => row.details).filter((details): details is Record<string, unknown> => Boolean(details && typeof details === "object"));
   const graph = buildWorldGraph({ assets: assetRows, defects: defectRows, evidence: evidenceRows, missions: missionRows, telemetry: telemetryRows }, events as never[]);
   return { graph, result: queryWorldGraph(graph, input) };
+}
+export async function analyzeOperationalWorldGraph(input: { startId?: string; hops?: number; counterfactual?: { nodeId: string; event: "failure" | "repair" | "inspection" } }) {
+  const queried = await queryOperationalWorldGraph({ startId: input.startId, hops: input.hops });
+  const impact = input.startId ? analyzeGraphImpact(queried.graph, input.startId, input.hops ?? 3) : null;
+  return { graph: queried.graph, impact, centrality: graphCentrality(queried.graph), informationGaps: findInformationGaps(queried.graph), nextBestActions: buildNextBestActions(queried.graph), counterfactual: input.counterfactual ? simulateCounterfactual(queried.graph, input.counterfactual) : null };
 }
 export async function getFinalIntelligence(assetId?: number) {
   const snapshot = await getOperationalIntelligence();
