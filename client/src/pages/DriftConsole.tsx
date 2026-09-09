@@ -70,6 +70,7 @@ const Wrench = createIcon(["M14.7 6.3a3 3 0 014.2 4.2l-1.4 1.4 1.4 1.4-3.5 3.5-1
 const Train = createIcon(["M7 5h10a2 2 0 012 2v7a3 3 0 01-3 3h-2l2 3h-2l-2-3H9l-2 3H5l2-3H5a3 3 0 01-3-3V7a2 2 0 012-2z", "M8 9h8", "M8 13h8"]);
 const Calculator = createIcon(["M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z", "M8 7h8", "M8 12h2", "M12 12h2", "M16 12h0", "M8 16h2", "M12 16h2", "M16 16h0"]);
 const TrendingUp = createIcon(["M4 16l6-6 4 4 6-8", "M16 6h4v4"]);
+const Target = createIcon(["M12 3v3", "M12 18v3", "M3 12h3", "M18 12h3", "M12 7a5 5 0 110 10 5 5 0 010-10z", "M12 10v4", "M10 12h4"]);
 
 type Severity = "low" | "medium" | "high" | "critical";
 type DefectType = "pothole" | "crack" | "structural" | "corrosion" | "spalling" | "exposed_rebar" | "water_intrusion" | "settlement" | "rail_alignment" | "obstruction" | "lighting_failure";
