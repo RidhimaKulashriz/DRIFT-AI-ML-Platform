@@ -13,8 +13,17 @@ import type { InferenceResult } from "./services/mlInference";
 import type { DefectKind } from "./services/scoring";
 import { lookupContractorForLocation } from "./services/geoContractorLookup";
 import { buildIntelligenceSnapshot, simulateTwinFailure, type IntelligenceSnapshot } from "./services/intelligenceEngine";
+import { createDomainEvent, getDirtyDerivedState, markDerivedDirty, type DomainEventType } from "./services/domainEvents";
 
 let _db: ReturnType<typeof drizzle> | null = null;
+
+async function recordDomainEvent(input: { type: DomainEventType; actorId?: number | null; missionId?: number | null; assetId?: number | null; defectId?: number | null; evidenceId?: number | null; payload: Record<string, unknown> }) {
+  const event = createDomainEvent(input);
+  markDerivedDirty(event);
+  const db = await getDb();
+  if (db) await db.insert(auditEvents).values({ missionId: event.missionId ?? null, defectId: event.defectId ?? null, actorId: event.actorId ?? null, action: `domain.${event.type}`, details: event });
+  return event;
+}
 
 const { attachmentData: _evidenceAttachmentData, ...evidenceListColumns } = getTableColumns(evidence);
 const { attachmentData: _reportAttachmentData, ...reportListColumns } = getTableColumns(reports);
@@ -489,6 +498,8 @@ export async function createEvidenceRecord(input: { missionId: number; uploadedB
   const provenance = input.provenance ?? {};
   const correlationKey = typeof provenance.correlationKey === "string" ? provenance.correlationKey : `mission:${input.missionId}:evidence:${evidenceId}`;
   await db.insert(inspectionCorrelations).values({ correlationKey, missionId: input.missionId, evidenceId, relationType: "evidence" });
+  await recordDomainEvent({ type: "EvidenceReceived", actorId: input.uploadedBy, missionId: input.missionId, evidenceId, payload: { fileName: input.fileName, source: input.source ?? "upload", qualityStatus: input.qualityStatus ?? "pending", correlationKey } });
+  if (input.qualityStatus === "pass" || input.qualityStatus === "fail") await recordDomainEvent({ type: input.qualityStatus === "pass" ? "EvidenceValidated" : "EvidenceRejected", actorId: input.uploadedBy, missionId: input.missionId, evidenceId, payload: { qualityStatus: input.qualityStatus } });
   return { id: evidenceId };
 }
 
@@ -501,6 +512,8 @@ export async function persistInferenceDefect(input: { missionId: number; assetId
   await db.insert(severityHistory).values({ defectId, nextSeverity: input.inference.score.severity, score: input.inference.score.score, reason: input.inference.annotationNote, changedBy: input.createdBy ?? null });
   if (input.inference.score.severity === "critical" || input.inference.score.severity === "high") await db.insert(alerts).values({ missionId: input.missionId, defectId, severity: input.inference.score.severity, title: `${input.inference.score.severity.toUpperCase()} · ${input.inference.label} candidate`, message: input.inference.score.urgency, status: "open" });
   await db.insert(auditEvents).values({ missionId: input.missionId, defectId, actorId: input.createdBy ?? null, action: "inference.completed", details: { model: input.inference.model, source: input.inference.source, confidence: input.inference.confidence, evidenceId: input.evidenceId } });
+  await recordDomainEvent({ type: "InferenceCompleted", actorId: input.createdBy, missionId: input.missionId, assetId: input.assetId, defectId, evidenceId: input.evidenceId, payload: { model: input.inference.model, source: input.inference.source, confidence: input.inference.confidence, severity: input.inference.score.severity } });
+  await recordDomainEvent({ type: "DefectCreated", actorId: input.createdBy, missionId: input.missionId, assetId: input.assetId, defectId, evidenceId: input.evidenceId, payload: { label: input.inference.label, severity: input.inference.score.severity } });
   return { defectId, source: input.inference.source, model: input.inference.model };
 }
 
@@ -577,6 +590,7 @@ export async function addTelemetryRecord(input: { missionId: number; latitude: n
   const telemetryId = insertId(result);
   await db.insert(inspectionCorrelations).values({ correlationKey: `mission:${input.missionId}:telemetry`, missionId: input.missionId, telemetryId, relationType: "telemetry" });
   await db.insert(auditEvents).values({ missionId: input.missionId, action: "hardware.telemetry_ingested", details: { source: "operator-approved adapter", batteryPercent: input.batteryPercent } });
+  await recordDomainEvent({ type: "EvidenceReceived", missionId: input.missionId, payload: { modality: "telemetry", telemetryId, batteryPercent: input.batteryPercent, capturedAt: new Date(input.timestamp).toISOString() } });
   return { id: insertId(result) };
 }
 
@@ -616,6 +630,7 @@ export async function getOperationalIntelligence(): Promise<IntelligenceSnapshot
   ]);
   return buildIntelligenceSnapshot({ assets: assetRows, defects: defectRows, evidence: evidenceRows, missions: missionRows, telemetry: telemetryRows });
 }
+export function getOperationalWorldStateStatus() { return { engine: "drift-world-state-v1", dirtyScopes: getDirtyDerivedState(), incrementalInvalidation: true, eventSource: "auditEvents:domain.*", note: "Dirty derived nodes are recomputed at the intelligence boundary; event history remains immutable." }; }
 export async function simulateOperationalTwinFailure(assetIds: number[]) {
   const snapshot = await getOperationalIntelligence();
   return { snapshot: { generatedAt: snapshot.generatedAt, algorithm: snapshot.algorithm }, simulation: simulateTwinFailure(snapshot, assetIds) };
@@ -649,6 +664,7 @@ export async function addReview(input: { defectId: number; reviewerId?: number |
     await db.update(defects).set(next).where(eq(defects.id, input.defectId));
     await db.insert(severityHistory).values({ defectId: defect.id, previousSeverity: defect.severity, nextSeverity: next.severity, score: defect.zeroErrorScore, reason: `Engineer ${input.decision}: ${input.note}`, changedBy: input.reviewerId ?? null });
     await db.insert(auditEvents).values({ missionId: defect.missionId, defectId: defect.id, actorId: input.reviewerId ?? null, action: `review.${input.decision}`, details: { note: input.note, priorityOverride: input.priorityOverride ?? null } });
+    await recordDomainEvent({ type: input.decision === "approve" ? "DefectVerified" : "DefectSeverityChanged", actorId: input.reviewerId, missionId: defect.missionId, assetId: defect.assetId, defectId: defect.id, evidenceId: defect.evidenceId, payload: { decision: input.decision, previousSeverity: defect.severity, nextSeverity: next.severity, reviewNote: input.note } });
   }
   return { id: insertId(result) };
 }
