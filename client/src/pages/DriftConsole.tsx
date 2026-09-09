@@ -6,40 +6,56 @@ import { requestedSeverityFilter } from "@/lib/driftInteractions";
 import { AIChatBox, type Message } from "@/components/AIChatBox";
 import { getBackendOrigin, startLogin } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
+import React, { useMemo, useRef, useState, type SVGProps, type FC } from "react";
 import { toast } from "sonner";
-import {
-  AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
-  BatteryCharging,
-  BookOpenCheck,
-  CheckCheck,
-  ChevronRight,
-  CircleDot,
-  ClipboardCheck,
-  CloudCog,
-  Crosshair,
-  FileText,
-  Gauge,
-  Layers3,
-  MapPinned,
-  Network,
-  Play,
-  Radar,
-  RadioTower,
-  ScanLine,
-  ShieldCheck,
-  SlidersHorizontal,
-  Sparkles,
-  TriangleAlert,
-  Upload,
-  Video,
-  Waypoints,
-  Wrench,
-} from "lucide-react";
-import { useMemo, useRef, useState } from "react";
 import { CAPTURE_ZONES, INSPECTION_DOMAINS } from "@shared/types";
 import "./accountability.css";
+
+const createIcon = (paths: string[]): FC<SVGProps<SVGSVGElement>> => (props: SVGProps<SVGSVGElement>): React.JSX.Element => (
+  <svg
+    {...props}
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden={props["aria-hidden"] ?? true}
+  >
+    {paths.map((path, index) => (
+      <path key={`${path}-${index}`} d={path} />
+    ))}
+  </svg>
+);
+
+const AlertTriangle = createIcon(["M12 3l9 16H3L12 3z", "M12 9v4", "M12 17h.01"]);
+const ArrowDownRight = createIcon(["M5 15l10-10", "M9 5h11v11"]);
+const ArrowUpRight = createIcon(["M5 9l10 10", "M15 9h4v4"]);
+const BatteryCharging = createIcon(["M7 7h3l2 4h3l-2 6 2-1V7h-5l-2 4H7z", "M4 12h2", "M18 12h2"]);
+const BookOpenCheck = createIcon(["M4 5.5A2.5 2.5 0 016.5 3H20v15H6.5A2.5 2.5 0 014 15.5v-10z", "M20 18V3", "M8 7h6", "M8 11h8", "M9 15l2 2 4-4"]);
+const CheckCheck = createIcon(["M4 12l4 4L18 2", "M20 8l-8 8-2-2"]);
+const ChevronRight = createIcon(["M9 18l6-6-6-6"]);
+const CircleDot = createIcon(["M12 22a10 10 0 100-20 10 10 0 000 20z", "M12 12h.01"]);
+const ClipboardCheck = createIcon(["M9 3v3h6V3", "M9 3H7a2 2 0 00-2 2v13a2 2 0 002 2h10a2 2 0 002-2V5a2 2 0 00-2-2h-2", "M9 12l2 2 4-4"]);
+const CloudCog = createIcon(["M7 18a4 4 0 11.5-7.9A5.5 5.5 0 0117.5 10 4.5 4.5 0 0117 18H7z", "M10 16a2 2 0 012-2m2 2a2 2 0 01-2 2m-4-4h0m10 0h0", "M12 13v2m0 0v2m0-2h2m-2 0H10"]);
+const Crosshair = createIcon(["M12 3v3", "M12 18v3", "M3 12h3", "M18 12h3", "M12 7a5 5 0 110 10 5 5 0 010-10z"]);
+const FileText = createIcon(["M14 2H7a2 2 0 00-2 2v16a2 2 0 002 2h10a2 2 0 002-2V7z", "M14 2v5h5", "M9 13h6", "M9 17h6", "M9 9h2"]);
+const Gauge = createIcon(["M12 14a2 2 0 110-4 2 2 0 010 4z", "M16.8 11.5A7 7 0 1018 12h-6", "M12 12l5-5", "M14 8h3v3"]);
+const Layers3 = createIcon(["M12 2l9 5-9 5-9-5 9-5z", "M3 11l9 5 9-5", "M3 16l9 5 9-5"]);
+const MapPinned = createIcon(["M12 21s6-5.5 6-11a6 6 0 10-12 6 6 0 0012 11z", "M12 8a2 2 0 110 4 2 2 0 010-4z"]);
+const Network = createIcon(["M3 12h4l2-5 4 10 2-5h6", "M12 3v18", "M4 4h16v16H4z"]);
+const Play = createIcon(["M8 5v14l11-7z"]);
+const Radar = createIcon(["M12 2a10 10 0 0110 10h-4A6 6 0 0012 6V2z", "M12 12l8-8", "M12 12a4 4 0 110-8 4 4 0 010 8z", "M12 22a10 10 0 0010-10"]);
+const RadioTower = createIcon(["M12 5v10", "M9 8l6 0", "M8 18l4-8 4 8", "M4 18h16", "M6 21h12"]);
+const ScanLine = createIcon(["M3 7V5a2 2 0 012-2h2", "M17 3h2a2 2 0 012 2v2", "M21 17v2a2 2 0 01-2 2h-2", "M7 21H5a2 2 0 01-2-2v-2", "M4 12h16"]) ;
+const ShieldCheck = createIcon(["M12 3l7 3v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-3z", "M9 12l2 2 4-4"]);
+const SlidersHorizontal = createIcon(["M4 7h7", "M13 7h7", "M4 17h3", "M9 17h11", "M16 12h4", "M4 12h10", "M10 5a2 2 0 100 4 2 2 0 000-4z", "M17 15a2 2 0 100 4 2 2 0 000-4z", "M7 15a2 2 0 100 4 2 2 0 000-4z"]);
+const Sparkles = createIcon(["M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8L12 2z", "M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14z", "M5 14l.9 2.1L8 17l-2.1.9L5 20l-.9-2.1L2 17l2.1-.9L5 14z"]);
+const TriangleAlert = createIcon(["M12 3l9 16H3L12 3z", "M12 8v5", "M12 17h.01"]);
+const Upload = createIcon(["M12 3v12", "M8 11l4-4 4 4", "M5 19v1h14v-1"]);
+const Video = createIcon(["M5 7h10a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2z", "M15 10l5-3v10l-5-3"]);
+const Waypoints = createIcon(["M12 2v4", "M12 18v4", "M4 12h4", "M16 12h4", "M12 8a4 4 0 110 8 4 4 0 010-8z", "M12 3a9 9 0 019 9", "M12 21a9 9 0 01-9-9"]);
+const Wrench = createIcon(["M14.7 6.3a3 3 0 014.2 4.2l-1.4 1.4 1.4 1.4-3.5 3.5-1.4-1.4-1.4 1.4-3.5-3.5 1.4-1.4-1.4-1.4a3 3 0 014.2-4.2l.7.7z", "M2 20l6-6"]) ;
 
 type Severity = "low" | "medium" | "high" | "critical";
 type DefectType = "pothole" | "crack" | "structural" | "corrosion" | "spalling" | "exposed_rebar" | "water_intrusion" | "settlement" | "rail_alignment" | "obstruction" | "lighting_failure";
