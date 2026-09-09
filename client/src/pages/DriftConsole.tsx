@@ -16,6 +16,7 @@ import TrainMonitoring from "@/components/TrainMonitoring";
 import CostScalabilityWorkspace from "@/components/CostScalabilityWorkspace";
 import ReconstructionWorkspace from "@/components/ReconstructionWorkspace";
 import GodsEyeMap from "@/components/GodsEyeMap";
+import MissionApplicationsWorkspace, { type MissionMode } from "@/components/MissionApplicationsWorkspace";
 import { contractors as contractorData } from "@shared/contractors";
 import { calculateOverallPriority, formatRepairCost } from "@shared/priorityScoring";
 import { trafficSegments as trafficData } from "@shared/trafficData";
@@ -72,7 +73,7 @@ const TrendingUp = createIcon(["M4 16l6-6 4 4 6-8", "M16 6h4v4"]);
 
 type Severity = "low" | "medium" | "high" | "critical";
 type DefectType = "pothole" | "crack" | "structural" | "corrosion" | "spalling" | "exposed_rebar" | "water_intrusion" | "settlement" | "rail_alignment" | "obstruction" | "lighting_failure";
-type Workspace = "operations" | "defects" | "evidence" | "reports" | "hardware" | "accountability" | "trains" | "contractors" | "traffic" | "cost" | "scalability" | "reconstruction" | "godseye";
+type Workspace = "operations" | "defects" | "evidence" | "reports" | "hardware" | "accountability" | "trains" | "contractors" | "traffic" | "cost" | "scalability" | "reconstruction" | "godseye" | MissionMode;
 type Role = "administrator" | "engineer" | "contractor" | "citizen";
 type EvidenceItem = { id: number; fileName: string; storageUrl: string; mediaKind: "photo" | "video" | "annotation" | "report"; source?: "hardware" | "upload" | "simulator" | "cctv" | "reference"; latitude: string | null; longitude: string | null; capturedAt?: Date | null; cameraId?: string | null; provenance?: unknown; captureZone?: string | null; qualityStatus?: string | null; imageQuality?: unknown };
 type TransientSimulatorRun = { name?: string; startedAt?: number; telemetry: Array<{ latitude: number; longitude: number; altitude: number; batteryPercent: number; speedMps: number; timestamp: number }>; findings: Array<{ title: string; label: string; confidence: number; latitude: number; longitude: number; score: { score: number; severity: Severity; explanation: string[] } }> };
@@ -81,6 +82,13 @@ const navItems: Array<{ key: Workspace; label: string; icon: typeof Radar }> = [
   { key: "operations", label: "Operations", icon: Radar },
   { key: "reconstruction", label: "3D reconstruction", icon: Layers3 },
   { key: "godseye", label: "God's Eye map", icon: Crosshair },
+  { key: "border", label: "Strategic mapping", icon: MapPinned },
+  { key: "disaster", label: "Disaster response", icon: ShieldCheck },
+  { key: "urban", label: "Smart city planning", icon: Waypoints },
+  { key: "construction", label: "Construction progress", icon: Layers3 },
+  { key: "archaeology", label: "Archaeology records", icon: BookOpenCheck },
+  { key: "digital-twin", label: "Digital twin", icon: Network },
+  { key: "military", label: "Recon mission planning", icon: Target },
   { key: "defects", label: "Defect control", icon: TriangleAlert },
   { key: "evidence", label: "Evidence vault", icon: Video },
   { key: "reports", label: "Reports", icon: FileText },
@@ -803,6 +811,7 @@ export default function DriftConsole() {
         </section>}
 
         {workspace === "reconstruction" && <ReconstructionWorkspace />}
+        {(workspace === "border" || workspace === "disaster" || workspace === "urban" || workspace === "construction" || workspace === "archaeology" || workspace === "digital-twin" || workspace === "military") && <MissionApplicationsWorkspace modeKey={workspace} />}
         {workspace === "godseye" && <GodsEyeMap />}
         {workspace === "hardware" && <section className="workspace-page hardware-workspace">
           <div className="workspace-header"><div><span className="eyebrow">OPERATOR-CONTROLLED INTEGRATION</span><h2>Hardware bridge</h2></div><span className={cn("hardware-status", connectedStatus)}>{connectedStatus}</span></div>
