@@ -8,6 +8,7 @@ export type ReconstructionInput = {
   longitude: number;
   altitudeMeters: number;
   cameraModel?: string;
+  flightMetadata?: string;
   hasImu: boolean;
   hasRtk: boolean;
   hasBarometer: boolean;
