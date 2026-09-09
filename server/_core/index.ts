@@ -52,8 +52,10 @@ async function startServer() {
     const fileName = path.basename(String(req.params.fileName ?? ""));
     if (!/^[a-zA-Z0-9_-]{8,80}$/.test(jobKey) || !fileName || fileName !== path.basename(fileName)) return res.status(400).send("Invalid artifact path");
     const root = process.env.RECONSTRUCTION_ARTIFACT_ROOT || "/var/lib/drift/reconstruction";
-    const artifactPath = path.join(root, jobKey, fileName);
-    if (!fs.existsSync(artifactPath)) return res.status(404).send("Artifact not available");
+    const artifactRoot = path.resolve(root, jobKey);
+    const artifactPath = path.resolve(artifactRoot, fileName);
+    if (!artifactPath.startsWith(`${artifactRoot}${path.sep}`) || !fs.existsSync(artifactPath) || !fs.statSync(artifactPath).isFile()) return res.status(404).send("Artifact not available");
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     return res.sendFile(artifactPath);
   });
 

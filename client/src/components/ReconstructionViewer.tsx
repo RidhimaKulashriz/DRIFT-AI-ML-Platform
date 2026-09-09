@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Boxes, Expand, Grid3X3, LoaderCircle, RotateCcw, Sun, Triangle, X } from "lucide-react";
+import { Box, Boxes, Download, Expand, Grid3X3, LoaderCircle, RotateCcw, Sun, Triangle, X } from "lucide-react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 type ViewerState = "idle" | "loading" | "ready" | "failed";
 
-type Props = { artifactUrl?: string | null };
+type Props = { artifactUrl?: string | null; artifacts?: Array<{ type?: string; format?: string; url?: string; sizeBytes?: number; sha256?: string; status?: string }>; quality?: { accuracyStatus?: string; processingTimeSeconds?: number; processingTargetMet?: boolean; completenessRatio?: number | null; horizontalRmseMeters?: number | null; verticalRmseMeters?: number | null } | null };
 
 function resolveArtifactUrl(artifactUrl?: string | null) {
   if (!artifactUrl) return null;
@@ -15,7 +15,7 @@ function resolveArtifactUrl(artifactUrl?: string | null) {
   return `${backendOrigin}${artifactUrl.startsWith("/") ? artifactUrl : `/${artifactUrl}`}`;
 }
 
-export default function ReconstructionViewer({ artifactUrl }: Props) {
+export default function ReconstructionViewer({ artifactUrl, artifacts = [], quality }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<ViewerState>("idle");
   const [progress, setProgress] = useState(0);
@@ -201,8 +201,9 @@ export default function ReconstructionViewer({ artifactUrl }: Props) {
   return <article className="panel overflow-hidden">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b p-4">
       <div><span className="eyebrow">WEBGL MESH INSPECTOR</span><h3>Textured 3D reconstruction</h3></div>
-      <div className="flex items-center gap-1 text-cyan-600">{state === "loading" && <LoaderCircle className="animate-spin" />}<Box /></div>
+      <div className="flex flex-wrap items-center gap-2 text-cyan-600">{state === "loading" && <LoaderCircle className="animate-spin" />}<Box />{quality && <span className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] uppercase tracking-wide text-amber-900">{quality.accuracyStatus ?? "not validated"}</span>}</div>
     </div>
+    {(artifacts.length > 0 || quality) && <div className="flex flex-wrap items-center gap-2 border-b bg-slate-50 px-4 py-3 text-xs text-slate-600"><span className="font-semibold uppercase tracking-wide">Artifacts</span>{artifacts.filter(item => item.url && item.status === "ready").map(item => <a key={`${item.type}-${item.format}-${item.url}`} href={resolveArtifactUrl(item.url) ?? undefined} download className="inline-flex items-center gap-1 rounded border bg-white px-2 py-1 hover:border-cyan-500 hover:text-cyan-700"><Download className="h-3 w-3" />{item.format?.toUpperCase()} {item.sizeBytes ? `· ${(item.sizeBytes / 1024 / 1024).toFixed(1)} MB` : ""}</a>)}{quality && <span className="ml-auto">{quality.processingTimeSeconds ? `${quality.processingTimeSeconds}s processing` : "processing time pending"} · {quality.processingTargetMet === true ? "target met" : "target not validated"} · RMSE {quality.horizontalRmseMeters ?? "—"}/{quality.verticalRmseMeters ?? "—"} m</span>}</div>}
     {resolvedArtifactUrl ? <>
       <div className="flex flex-wrap items-center gap-2 border-b bg-slate-950 px-3 py-2 text-xs text-slate-200">
         <button type="button" onClick={() => setGrid(value => !value)} className={`rounded border px-2 py-1 ${grid ? "border-cyan-400 text-cyan-200" : "border-slate-700 text-slate-400"}`}><Grid3X3 className="mr-1 inline h-3 w-3" />GRID</button>
