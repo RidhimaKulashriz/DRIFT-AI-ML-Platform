@@ -17,3 +17,38 @@
 .proof-grid p { margin: 8px 0 0; color: #b9c0bc; font-size: 10px; line-height: 1.5; }
 @media (max-width: 900px) { .proof-grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 760px) { .proof-panel { margin-left: 16px; margin-right: 16px; padding: 18px; } .proof-grid { grid-template-columns: 1fr; } .proof-grid > div { min-height: auto; } }
+
+.live-media-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; align-items: stretch; }
+.live-detection-panel { min-width: 0; }
+.live-detection-image-wrap { position: relative; overflow: hidden; background: #101010; aspect-ratio: 16 / 9; }
+.live-detection-image-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.live-detection-badges { position: absolute; inset: auto .75rem .75rem; display: flex; flex-wrap: wrap; gap: .35rem; }
+.live-detection-badge { background: #f4c542; color: #17130a; padding: .3rem .45rem; font-size: .65rem; font-weight: 800; text-transform: uppercase; }
+.live-detection-empty { min-height: 13rem; display: grid; place-content: center; gap: .5rem; padding: 1.5rem; background: #eeeae2; color: #29251f; }
+.live-detection-empty span { max-width: 24rem; font-size: .8rem; line-height: 1.4; }
+.live-detection-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; padding-top: .75rem; font-size: .7rem; color: #625b50; }
+@media (max-width: 900px) { .live-media-grid { grid-template-columns: 1fr; } }
+
+.live-detection-history { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 14px; max-height: 430px; overflow: auto; }
+.live-detection-history-card { min-width: 0; background: #101313; border: 1px solid #35403f; padding: 8px; }
+.live-detection-image-stage { position: relative; overflow: hidden; background: #050606; aspect-ratio: 16 / 9; }
+.live-detection-image-stage img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.live-detection-box { position: absolute; border: 3px solid #ffb000; box-shadow: 0 0 0 1px #171a18, 0 0 14px rgba(255,176,0,.75); pointer-events: none; }
+.live-detection-history-card small { display: block; color: #b9c7c2; font-size: 10px; margin-top: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 760px) { .live-detection-history { grid-template-columns: 1fr; } }
+
+.live-video-overlay-stage { position: relative; background: #050606; }
+.live-video-overlay-stage > .live-stream-video { display: block; }
+.live-video-detection-box { position: absolute; border: 3px solid #ffd000; box-shadow: 0 0 0 1px #111, 0 0 16px rgba(255,208,0,.9); pointer-events: none; z-index: 3; }
+.live-video-detection-box b { position: absolute; left: -3px; top: -28px; background: #ffd000; color: #111; padding: 5px 8px; font: 800 11px/1 Arial, sans-serif; text-transform: uppercase; white-space: nowrap; }
+.live-video-detection-strip { position: absolute; left: 10px; right: 10px; bottom: 10px; display: flex; gap: 8px; flex-wrap: wrap; z-index: 4; }
+.live-video-detection-strip span { background: rgba(8,12,12,.88); color: #ffd000; border: 1px solid #ffd000; padding: 6px 9px; font: 800 11px/1 Arial, sans-serif; text-transform: uppercase; }
+
+.live-video-detection-box.detection-crack { border-color: #ff3030; box-shadow: 0 0 0 1px #111, 0 0 16px rgba(255,48,48,.9); }
+.live-video-detection-box.detection-crack b, .live-video-detection-strip .detection-crack { background: #ff3030; color: #fff; border-color: #ff3030; }
+.live-video-detection-box.detection-pothole { border-color: #168cff; box-shadow: 0 0 0 1px #111, 0 0 16px rgba(22,140,255,.9); }
+.live-video-detection-box.detection-pothole b, .live-video-detection-strip .detection-pothole { background: #168cff; color: #fff; border-color: #168cff; }
+.live-video-detection-box.detection-corrosion { border-color: #ff8a00; box-shadow: 0 0 0 1px #111, 0 0 16px rgba(255,138,0,.9); }
+.live-video-detection-box.detection-corrosion b, .live-video-detection-strip .detection-corrosion { background: #ff8a00; color: #111; border-color: #ff8a00; }
+.live-video-detection-box.detection-other { border-color: #44d17a; box-shadow: 0 0 0 1px #111, 0 0 16px rgba(68,209,122,.9); }
+.live-video-detection-box.detection-other b, .live-video-detection-strip .detection-other { background: #44d17a; color: #111; border-color: #44d17a; }

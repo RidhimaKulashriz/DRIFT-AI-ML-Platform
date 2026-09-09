@@ -6,11 +6,12 @@ import { ENV } from "./_core/env";
 import { resolveReviewState } from "./services/reviewState";
 import { summarizeSeverity, toMapMarker } from "./services/reportPresentation";
 import { storageGetSignedUrl, storagePutWithFallback } from "./storage";
-import { supabasePortableStorageConfigured } from "./services/supabaseStorage";
+import { browserStorageUrl, isSupabaseStorageKey, supabasePortableStorageConfigured } from "./services/supabaseStorage";
 import { renderInspectionPdf } from "./services/reportPdf";
 import { rankApprovedKnowledge, type KnowledgeCitation } from "./services/rag";
 import type { InferenceResult } from "./services/mlInference";
 import type { DefectKind } from "./services/scoring";
+import { lookupContractorForLocation } from "./services/geoContractorLookup";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -34,6 +35,226 @@ export async function getDb() {
   }
   return _db;
 }
+
+let _dbColumnsAdded = false;
+let _dbColumnsMigrationInProgress = false;
+
+/**
+ * One-time, raw SQL migration that adds missing columns to the reports table.
+ * Uses a direct pg client (not Drizzle) to ensure columns are actually added.
+ */
+export async function ensureReportsColumns(db: any): Promise<void> {
+  if (_dbColumnsAdded) return;
+  if (_dbColumnsMigrationInProgress) return;
+  _dbColumnsMigrationInProgress = true;
+  try {
+    const databaseUrl = postgresDatabaseUrl();
+    if (!databaseUrl) return;
+
+    // Use a fresh direct connection to run the migration
+    const { Client } = await import("pg");
+    const client = new Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      const colCheck = await client.query<{ column_name: string }>(
+        `SELECT column_name FROM information_schema.columns WHERE table_name='reports' AND table_schema='public'`
+      );
+      const existing = new Set(colCheck.rows.map((r) => r.column_name));
+
+      const alters: string[] = [];
+      if (!existing.has("pdfBase64")) alters.push(`ALTER TABLE "reports" ADD COLUMN "pdfBase64" text`);
+      if (!existing.has("pdfSizeBytes")) alters.push(`ALTER TABLE "reports" ADD COLUMN "pdfSizeBytes" integer`);
+      if (!existing.has("pdfPages")) alters.push(`ALTER TABLE "reports" ADD COLUMN "pdfPages" integer`);
+      if (!existing.has("findingCount")) alters.push(`ALTER TABLE "reports" ADD COLUMN "findingCount" integer DEFAULT 0`);
+      if (!existing.has("emailStatus")) alters.push(`ALTER TABLE "reports" ADD COLUMN "emailStatus" varchar(20)`);
+      if (!existing.has("emailMessageId")) alters.push(`ALTER TABLE "reports" ADD COLUMN "emailMessageId" text`);
+      if (!existing.has("emailedAt")) alters.push(`ALTER TABLE "reports" ADD COLUMN "emailedAt" timestamp with time zone`);
+      if (!existing.has("emailError")) alters.push(`ALTER TABLE "reports" ADD COLUMN "emailError" text`);
+      if (!existing.has("updatedAt")) alters.push(`ALTER TABLE "reports" ADD COLUMN "updatedAt" timestamp with time zone DEFAULT now()`);
+
+      if (alters.length > 0) {
+        console.log(`[Database] Running ${alters.length} ALTER TABLE statements...`);
+        for (const stmt of alters) {
+          try {
+            await client.query(stmt);
+            console.log(`[Database] OK: ${stmt}`);
+          } catch (e) {
+            console.warn(`[Database] FAILED: ${stmt} -`, e instanceof Error ? e.message?.substring(0, 200) : e);
+          }
+        }
+      }
+      _dbColumnsAdded = true;
+    } finally {
+      await client.end();
+    }
+  } catch (e) {
+    console.warn("[Database] ensureReportsColumns failed:", e instanceof Error ? e.message : e);
+  } finally {
+    _dbColumnsMigrationInProgress = false;
+  }
+}
+
+let _campusMigrationApplied = false;
+/**
+ * PHASE 10/14/15: Apply campus + campusLocations tables and seed IGDTUW + IIIT-Delhi.
+ * Runs once on first DB connection. Idempotent (ON CONFLICT clauses).
+ */
+export async function ensureCampusSchema(): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+
+  // Always run reports column migration (separate from campus check)
+  await ensureReportsColumns(db);
+  // Reconstruction was added after the original runtime bootstrap. Keep this
+  // idempotent guard here so existing Render/Postgres deployments do not need
+  // a manual migration before the public queue can accept its first job.
+  try {
+    await db.execute(sql.raw(RECONSTRUCTION_SCHEMA_SQL));
+  } catch (err) {
+    console.warn("[Database] Reconstruction schema migration failed:", err instanceof Error ? err.message : err);
+  }
+
+  if (_campusMigrationApplied) return;
+
+  try {
+    // Check if campuses table exists
+    const exists = await db.execute<{ table_name: string }>(sql`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'campuses'
+    `);
+
+    if (exists.rows.length > 0) {
+      _campusMigrationApplied = true;
+      return;
+    }
+
+    console.log("[Database] Applying campus schema migration...");
+    // Run the entire migration in a single statement to keep DDL atomic
+    await db.execute(sql.raw(CAMPUS_MIGRATION_SQL));
+    _campusMigrationApplied = true;
+    console.log("[Database] Campus schema migration applied. IGDTUW and IIIT-Delhi seeded.");
+  } catch (err) {
+    console.error("[Database] Failed to apply campus migration:", err);
+  }
+}
+const RECONSTRUCTION_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS "reconstruction_jobs" (
+  "id" serial PRIMARY KEY,
+  "jobKey" varchar(80) NOT NULL UNIQUE,
+  "name" varchar(220) NOT NULL,
+  "status" varchar(32) NOT NULL DEFAULT 'queued',
+  "inputFileName" varchar(260) NOT NULL,
+  "inputMimeType" varchar(120) NOT NULL,
+  "inputSizeBytes" integer NOT NULL,
+  "latitude" varchar(32) NOT NULL,
+  "longitude" varchar(32) NOT NULL,
+  "altitudeMeters" integer NOT NULL,
+  "inputMetadata" jsonb NOT NULL,
+  "qualityReport" jsonb NOT NULL,
+  "stages" jsonb NOT NULL,
+  "artifactManifest" jsonb,
+  "errorMessage" text,
+  "createdBy" integer,
+  "startedAt" timestamptz,
+  "completedAt" timestamptz,
+  "createdAt" timestamptz NOT NULL DEFAULT now(),
+  "updatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS reconstruction_jobs_status_idx ON "reconstruction_jobs"("status");
+CREATE INDEX IF NOT EXISTS reconstruction_jobs_created_at_idx ON "reconstruction_jobs"("createdAt");
+`;
+const CAMPUS_MIGRATION_SQL = `
+DO $$ BEGIN
+  CREATE TYPE "public"."location_source" AS ENUM('image_exif', 'device_gps', 'verified_campus', 'user_selected', 'geocoded', 'unknown');
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+CREATE TABLE IF NOT EXISTS "campuses" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"name" varchar(220) NOT NULL UNIQUE,
+	"shortName" varchar(40) NOT NULL UNIQUE,
+	"description" text,
+	"address" varchar(300),
+	"city" varchar(80),
+	"state" varchar(80),
+	"country" varchar(80) DEFAULT 'India' NOT NULL,
+	"latitude" varchar(32) NOT NULL,
+	"longitude" varchar(32) NOT NULL,
+	"website" varchar(300),
+	"defaultImageUrl" text,
+	"sourceUrl" text,
+	"createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+	"updatedAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "campusLocations" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"campusId" integer NOT NULL,
+	"name" varchar(200) NOT NULL,
+	"description" text,
+	"locationType" varchar(80),
+	"latitude" varchar(32) NOT NULL,
+	"longitude" varchar(32) NOT NULL,
+	"address" varchar(300),
+	"sourceUrl" text,
+	"createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+	"updatedAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE "assets" ADD COLUMN IF NOT EXISTS "campusId" integer;
+ALTER TABLE "evidence" ADD COLUMN IF NOT EXISTS "locationSource" "location_source" DEFAULT 'unknown';
+
+-- Reports table columns for production PDF/email pipeline
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "pdfBase64" text;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "pdfSizeBytes" integer;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "pdfPages" integer;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "findingCount" integer DEFAULT 0;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailStatus" varchar(20);
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailMessageId" text;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailedAt" timestamp with time zone;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailError" text;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "updatedAt" timestamp with time zone DEFAULT now();
+
+INSERT INTO "campuses" ("id", "name", "shortName", "description", "address", "city", "state", "country", "latitude", "longitude", "website", "defaultImageUrl", "sourceUrl", "createdAt", "updatedAt")
+VALUES (
+  1, 'Indira Gandhi Delhi Technical University for Women', 'IGDTUW',
+  'A premier women''s technical university in Delhi established in 1998 (formerly IGITW), located at Kashmere Gate, Delhi. Offers B.Tech, M.Tech, and PhD programs in engineering, technology, and applied sciences.',
+  'Kashmere Gate, Near St. James Church', 'New Delhi', 'Delhi', 'India',
+  '28.6647', '77.2325', 'https://www.igdtuw.ac.in/',
+  'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/IGDTUW_New_Delhi.jpg/800px-IGDTUW_New_Delhi.jpg',
+  'https://en.wikipedia.org/wiki/Indira_Gandhi_Delhi_Technical_University_for_Women',
+  NOW(), NOW()
+) ON CONFLICT ("id") DO UPDATE SET
+  "name" = EXCLUDED.name, "shortName" = EXCLUDED."shortName", "description" = EXCLUDED.description,
+  "address" = EXCLUDED.address, "latitude" = EXCLUDED.latitude, "longitude" = EXCLUDED.longitude,
+  "website" = EXCLUDED.website, "defaultImageUrl" = EXCLUDED."defaultImageUrl", "sourceUrl" = EXCLUDED."sourceUrl",
+  "updatedAt" = NOW();
+
+INSERT INTO "campuses" ("id", "name", "shortName", "description", "address", "city", "state", "country", "latitude", "longitude", "website", "defaultImageUrl", "sourceUrl", "createdAt", "updatedAt")
+VALUES (
+  2, 'Indraprastha Institute of Information Technology Delhi', 'IIIT-Delhi',
+  'A State University by the Government of NCT of Delhi, established in 2008. Focuses on Information Technology research and education. Located in Okhla Phase III, New Delhi.',
+  'Okhla Phase III, Near Govindpuri Metro Station', 'New Delhi', 'Delhi', 'India',
+  '28.5444', '77.2725', 'https://www.iiitd.ac.in/',
+  'https://upload.wikimedia.org/wikipedia/commons/thumb/8/89/IIIT-Delhi_Entrance.jpg/800px-IIIT-Delhi_Entrance.jpg',
+  'https://en.wikipedia.org/wiki/IIIT-Delhi',
+  NOW(), NOW()
+) ON CONFLICT ("id") DO UPDATE SET
+  "name" = EXCLUDED.name, "shortName" = EXCLUDED."shortName", "description" = EXCLUDED.description,
+  "address" = EXCLUDED.address, "latitude" = EXCLUDED.latitude, "longitude" = EXCLUDED.longitude,
+  "website" = EXCLUDED.website, "defaultImageUrl" = EXCLUDED."defaultImageUrl", "sourceUrl" = EXCLUDED."sourceUrl",
+  "updatedAt" = NOW();
+
+INSERT INTO "campusLocations" ("id", "campusId", "name", "description", "locationType", "latitude", "longitude", "address", "sourceUrl", "createdAt", "updatedAt") VALUES
+  (1, 1, 'IGDTUW Main Gate', 'Primary entrance to IGDTUW campus on Kashmere Gate road', 'entrance', '28.6880', '77.2108', 'Kashmere Gate, New Delhi', 'https://www.igdtuw.ac.in/', NOW(), NOW()),
+  (2, 1, 'IGDTUW Main Building', 'Central academic and administrative building', 'building', '28.6643', '77.2320', 'IGDTUW Campus, Kashmere Gate', 'https://www.igdtuw.ac.in/', NOW(), NOW()),
+  (3, 1, 'IGDTUW Internal Road', 'Internal campus road connecting main gate to academic blocks', 'road', '28.6647', '77.2328', 'IGDTUW Campus', 'https://www.igdtuw.ac.in/', NOW(), NOW()),
+  (4, 2, 'IIIT-Delhi Main Entrance', 'Primary entrance to IIIT-Delhi campus in Okhla Phase III', 'entrance', '28.5452', '77.2755', 'Okhla Phase III, New Delhi', 'https://www.iiitd.ac.in/', NOW(), NOW()),
+  (5, 2, 'IIIT-Delhi Academic Block', 'Main academic block housing lecture halls and labs', 'building', '28.5445', '77.2748', 'IIIT-Delhi Campus, Okhla Phase III', 'https://www.iiitd.ac.in/', NOW(), NOW()),
+  (6, 2, 'IIIT-Delhi Library Bridge', 'Connecting bridge between academic block and library', 'bridge', '28.5440', '77.2752', 'IIIT-Delhi Campus', 'https://www.iiitd.ac.in/', NOW(), NOW())
+ON CONFLICT ("id") DO UPDATE SET
+  "name" = EXCLUDED.name, "description" = EXCLUDED.description,
+  "latitude" = EXCLUDED.latitude, "longitude" = EXCLUDED.longitude, "updatedAt" = NOW();
+`;
 
 const READINESS_TABLE_GROUPS = {
   core: ["assets", "missions", "telemetry", "evidence", "defects", "reports", "alerts", "auditEvents"],
@@ -143,24 +364,56 @@ export async function getMissionOverview() {
     ? { available: true, configured: true, driver: "postgresql", portableEvidenceStorage: supabasePortableStorageConfigured(), message: supabasePortableStorageConfigured() ? "Persistent mission records and portable private evidence storage are ready." : "Persistent mission records are ready, but portable private evidence storage is not configured." }
     : { available: false, configured: Boolean(postgresDatabaseUrl()), driver: "postgresql", message: "Persistent missions, original evidence, and PDF reports require a compatible PostgreSQL DATABASE_URL." };
   if (!db) return { assets: [], missions: [], defects: [], telemetry: [], reports: [], estimates: [], reviews: [], audit: [], alerts: [], persistence };
+  // Run schema migration before queries
+  await ensureReportsColumns(db);
+  const safe = async <T,>(label: string, fn: () => Promise<T>, fallback: T): Promise<T> => {
+    try { return await fn(); }
+    catch (err) { console.warn(`[getMissionOverview] ${label} failed:`, err instanceof Error ? err.message?.substring(0, 200) : err); return fallback; }
+  };
   const [assetRows, missionRows, defectRows, telemetryRows, reportRows, estimateRows, reviewRows, auditRows, alertRows] = await Promise.all([
-    db.select().from(assets).orderBy(desc(assets.updatedAt)).limit(40),
-    db.select().from(missions).orderBy(desc(missions.createdAt)).limit(30),
-    db.select().from(defects).orderBy(desc(defects.zeroErrorScore)).limit(120),
-    db.select().from(telemetry).orderBy(desc(telemetry.capturedAt)).limit(240),
-    db.select(reportListColumns).from(reports).orderBy(desc(reports.createdAt)).limit(30),
-    db.select().from(repairEstimates).orderBy(desc(repairEstimates.createdAt)).limit(120),
-    db.select().from(reviews).orderBy(desc(reviews.createdAt)).limit(120),
-    db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(120),
-    db.select().from(alerts).orderBy(desc(alerts.createdAt)).limit(120),
+    safe("assets", () => db.select().from(assets).orderBy(desc(assets.updatedAt)).limit(40), [] as any[]),
+    safe("missions", () => db.select().from(missions).orderBy(desc(missions.createdAt)).limit(30), [] as any[]),
+    safe("defects", () => db.select().from(defects).orderBy(desc(defects.zeroErrorScore)).limit(120), [] as any[]),
+    safe("telemetry", () => db.select().from(telemetry).orderBy(desc(telemetry.capturedAt)).limit(240), [] as any[]),
+    safe("reports", () => db.select(reportListColumns).from(reports).orderBy(desc(reports.createdAt)).limit(30), [] as any[]),
+    safe("repairEstimates", () => db.select().from(repairEstimates).orderBy(desc(repairEstimates.createdAt)).limit(120), [] as any[]),
+    safe("reviews", () => db.select().from(reviews).orderBy(desc(reviews.createdAt)).limit(120), [] as any[]),
+    safe("auditEvents", () => db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(120), [] as any[]),
+    safe("alerts", () => db.select().from(alerts).orderBy(desc(alerts.createdAt)).limit(120), [] as any[]),
   ]);
   return { assets: assetRows, missions: missionRows, defects: defectRows, telemetry: telemetryRows, reports: reportRows, estimates: estimateRows, reviews: reviewRows, audit: auditRows, alerts: alertRows, persistence };
 }
 
-export function getPublicMissionOverview() {
-  return {
+export async function getPublicMissionOverview() {
+  const db = await getDb();
+  if (!db) return {
     assets: [], missions: [], defects: [], telemetry: [], reports: [], estimates: [], reviews: [], audit: [], alerts: [],
-    persistence: { available: false, configured: true, driver: "postgresql", portableEvidenceStorage: false, message: "Sign in with an approved DRIFT role to access persistent project records. The public walkthrough is browser-session-only." },
+    persistence: { available: false, configured: Boolean(postgresDatabaseUrl()), driver: "postgresql", portableEvidenceStorage: false, message: "PostgreSQL is not configured." },
+  };
+  // Run schema migrations BEFORE queries (idempotent, fast on subsequent calls)
+  await ensureReportsColumns(db);
+
+  // Each query is wrapped in try/catch so a single failing table doesn't crash the entire overview
+  const safe = async <T,>(label: string, fn: () => Promise<T>, fallback: T): Promise<T> => {
+    try { return await fn(); }
+    catch (err) { console.warn(`[getPublicMissionOverview] ${label} query failed:`, err instanceof Error ? err.message?.substring(0, 200) : err); return fallback; }
+  };
+
+  const [assetRows, missionRows, defectRows, telemetryRows, reportRows, estimateRows, reviewRows, auditRows, alertRows] = await Promise.all([
+    safe("assets", () => db.select().from(assets).orderBy(desc(assets.updatedAt)).limit(40), [] as any[]),
+    safe("missions", () => db.select().from(missions).orderBy(desc(missions.createdAt)).limit(30), [] as any[]),
+    safe("defects", () => db.select().from(defects).orderBy(desc(defects.zeroErrorScore)).limit(120), [] as any[]),
+    safe("telemetry", () => db.select().from(telemetry).orderBy(desc(telemetry.capturedAt)).limit(240), [] as any[]),
+    safe("reports", () => db.select(reportListColumns).from(reports).orderBy(desc(reports.createdAt)).limit(30), [] as any[]),
+    safe("repairEstimates", () => db.select().from(repairEstimates).orderBy(desc(repairEstimates.createdAt)).limit(120), [] as any[]),
+    safe("reviews", () => db.select().from(reviews).orderBy(desc(reviews.createdAt)).limit(120), [] as any[]),
+    safe("auditEvents", () => db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(120), [] as any[]),
+    safe("alerts", () => db.select().from(alerts).orderBy(desc(alerts.createdAt)).limit(120), [] as any[]),
+  ]);
+  return {
+    assets: assetRows, missions: missionRows, defects: defectRows, telemetry: telemetryRows,
+    reports: reportRows, estimates: estimateRows, reviews: reviewRows, audit: auditRows, alerts: alertRows,
+    persistence: { available: true, configured: true, driver: "postgresql", portableEvidenceStorage: supabasePortableStorageConfigured(), message: "Database connected. Demo detections are visible on the map." },
   };
 }
 
@@ -180,7 +433,7 @@ export async function createDemoMissionRecord(input: { name: string; createdBy?:
     try {
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="100%" height="100%" fill="#343434"/><path d="M0 600 L420 210 L860 720" stroke="#cfcfc8" stroke-width="92" fill="none"/><rect x="${460 + index * 55}" y="${240 + index * 35}" width="230" height="150" fill="none" stroke="#ffffff" stroke-width="6"/><text x="60" y="72" fill="#ffffff" font-size="30" font-family="Arial" letter-spacing="6">DRIFT / SIMULATED EVIDENCE</text><text x="60" y="670" fill="#ffffff" font-size="24" font-family="Arial">${finding.title.toUpperCase()} · ${Math.round(finding.confidence * 100)}% CONFIDENCE</text></svg>`;
       const stored = await storagePutWithFallback(`drift/system/missions/${missionId}/simulated-evidence-${index + 1}.svg`, svg, "image/svg+xml");
-      const evidenceResult = await db.insert(evidence).values({ missionId, fileName: `${finding.title.replace(/\s+/g, "-")}.svg`, mimeType: "image/svg+xml", storageKey: stored.key, storageUrl: stored.url, mediaKind: "annotation", source: "simulator", latitude: finding.latitude.toFixed(6), longitude: finding.longitude.toFixed(6), playbackSeconds: finding.captureOffsetSeconds, captureZone: finding.label === "structural" ? "under-bridge" : "oblique", qualityStatus: "review", imageQuality: { source: "simulator", singleFrame: true, requiresEngineerReview: true }, provenance: { kind: "generated-simulator", generator: "DRIFT simulator", note: "Synthetic annotation generated for repeatable demo workflow; not a live inspection.", inspectionDomain: finding.label === "pothole" ? "roads" : "bridges" }, attachmentData: stored.attachmentData }).returning({ id: evidence.id });
+      const evidenceResult = await db.insert(evidence).values({ missionId, fileName: `${finding.title.replace(/\s+/g, "-")}.svg`, mimeType: "image/svg+xml", storageKey: stored.key, storageUrl: browserStorageUrl(stored.key, stored.url), mediaKind: "annotation", source: "simulator", latitude: finding.latitude.toFixed(6), longitude: finding.longitude.toFixed(6), playbackSeconds: finding.captureOffsetSeconds, captureZone: finding.label === "structural" ? "under-bridge" : "oblique", qualityStatus: "review", imageQuality: { source: "simulator", singleFrame: true, requiresEngineerReview: true }, provenance: { kind: "generated-simulator", generator: "DRIFT simulator", note: "Synthetic annotation generated for repeatable demo workflow; not a live inspection.", inspectionDomain: finding.label === "pothole" ? "roads" : "bridges" }, attachmentData: stored.attachmentData }).returning({ id: evidence.id });
       evidenceId = insertId(evidenceResult);
     } catch (error) {
       console.warn("[DRIFT Storage] Simulator evidence record could not be persisted:", error);
@@ -193,15 +446,22 @@ export async function createDemoMissionRecord(input: { name: string; createdBy?:
   }
 
   const reportTitle = `${input.name} · ZeroError inspection report`;
-  const reportNarrative = "Demo report generated from simulated telemetry and explainable ML inference. Evidence references, capture coverage, uncertainty, and next-inspection actions are included; engineering sign-off is required before release.";
+  const reportNarrative = "PDF report generated from simulated telemetry and explainable ML inference. Simulator evidence is clearly labelled as synthetic and is not a live inspection claim; engineering sign-off is required before release.";
   let reportStorage: { key?: string; url?: string; attachmentData?: Buffer } = {};
   try {
-    const body = `# ${reportTitle}\n\n${reportNarrative}\n\n## Inspection scope\n\nDomains: roads, bridges. Capture zones: oblique, under-bridge. Mode: simulator.\n\n## Findings\n\n${input.simulator.findings.map((finding, index) => `- ${finding.title}: ${finding.score.severity} priority, ${finding.score.score}/100 ZeroError score, ${Math.round(finding.confidence * 100)}% raw confidence, evidence reference simulator:${missionId}:${index}. Coverage is simulator-generated and not a site-survey measurement. Uncertainty: single-pass simulated evidence. Next action: engineer review and site verification before work-order release.`).join("\n")}\n\n## Control boundary\n\nAutomated findings are advisory. An authorised engineer must verify, override, or reject every repair priority before release. Sign-off status: PENDING.\n`;
-    reportStorage = await storagePutWithFallback(`drift/system/missions/${missionId}/zeroerror-report.md`, body, "text/markdown");
+    const [reportEvidence, reportDefects] = await Promise.all([
+      db.select().from(evidence).where(eq(evidence.missionId, missionId)).orderBy(desc(evidence.createdAt)),
+      db.select().from(defects).where(eq(defects.missionId, missionId)).orderBy(desc(defects.zeroErrorScore)),
+    ]);
+    const reportEstimates = reportDefects.length
+      ? await db.select().from(repairEstimates).where(inArray(repairEstimates.defectId, reportDefects.map(row => row.id)))
+      : [];
+    const pdf = await renderInspectionPdf({ mission: { id: missionId, name: input.name, mode: "demo", status: "completed", startedAt: new Date(input.simulator.startedAt), completedAt: new Date() }, evidence: reportEvidence, defects: reportDefects, repairTotalCents: reportEstimates.reduce((sum, row) => sum + Number(row.estimateCents ?? 0), 0) });
+    reportStorage = await storagePutWithFallback(`drift/system/missions/${missionId}/zeroerror-report-${Date.now()}.pdf`, pdf, "application/pdf");
   } catch (error) {
-    console.warn("[DRIFT Storage] Report record created without a downloadable attachment:", error);
+    console.warn("[DRIFT Storage] PDF report could not be generated:", error);
   }
-  await db.insert(reports).values({ missionId, title: reportTitle, narrative: reportNarrative, storageKey: reportStorage.key, storageUrl: reportStorage.url, status: "ready", generatedBy: "zeroerror-demo", inspectionScope: { domains: ["roads", "bridges"], captureZones: ["oblique", "under-bridge"], mode: "simulator" }, signoff: { required: true, status: "pending", note: "Engineer sign-off required before release." }, attachmentData: reportStorage.attachmentData });
+  await db.insert(reports).values({ missionId, title: reportTitle, narrative: reportNarrative, storageKey: reportStorage.key, storageUrl: reportStorage.url, status: "ready", generatedBy: "zeroerror-demo", inspectionScope: { domains: ["roads", "bridges"], captureZones: ["oblique", "under-bridge"], mode: "simulator", format: "application/pdf" }, signoff: { required: true, status: "pending", note: "Engineer sign-off required before release." }, attachmentData: reportStorage.attachmentData });
   await db.insert(auditEvents).values({ missionId, actorId: input.createdBy ?? null, action: "simulator.mission_created", details: { findings: input.simulator.findings.length, mode: "demo" } });
   return { missionId, assetId };
 }
@@ -253,6 +513,10 @@ export async function generateMissionReport(input: { missionId: number; generate
     db.select().from(defects).where(eq(defects.missionId, input.missionId)).orderBy(desc(defects.zeroErrorScore)),
   ]);
   const estimateRows = defectRows.length ? await db.select().from(repairEstimates).where(inArray(repairEstimates.defectId, defectRows.map(row => row.id))).orderBy(desc(repairEstimates.createdAt)) : [];
+  const ticketRows = defectRows.length ? await db.select().from(contractorTickets).where(inArray(contractorTickets.defectId, defectRows.map(row => row.id))).orderBy(desc(contractorTickets.createdAt)) : [];
+  const primaryFinding = defectRows.find(row => Number.isFinite(Number(row.latitude)) && Number.isFinite(Number(row.longitude)));
+  const geoRoute = primaryFinding ? lookupContractorForLocation(Number(primaryFinding.latitude), Number(primaryFinding.longitude), primaryFinding.inspectionDomain ?? "roads") : null;
+  const primaryTicket = ticketRows[0];
   const evidenceForPdf = await Promise.all(evidenceRows.map(async row => {
     if (row.attachmentData && row.mimeType.startsWith("image/")) return { ...row, imageBuffer: Buffer.from(row.attachmentData) };
     if (!row.mimeType.startsWith("image/") || !row.storageKey) return row;
@@ -268,20 +532,39 @@ export async function generateMissionReport(input: { missionId: number; generate
   const severityCounts = summarizeSeverity(defectRows);
   const repairTotalCents = estimateRows.reduce((sum, row) => sum + row.estimateCents, 0);
   const body = `# ${title}\n\n## Executive summary\n\n${evidenceRows.length} evidence record(s), ${defectRows.length} candidate finding(s), ${severityCounts.critical ?? 0} critical, ${severityCounts.high ?? 0} high, ${severityCounts.medium ?? 0} medium, and ${severityCounts.low ?? 0} low. Engineer sign-off is pending.\n\n## Evidence coverage\n\n${evidenceRows.map(row => `- Evidence ${row.id}: ${row.fileName} (${row.source ?? "unknown"}), capture zone ${row.captureZone ?? "unknown"}, quality ${row.qualityStatus ?? "unknown"}, coordinates ${row.latitude ?? "unknown"}, ${row.longitude ?? "unknown"}.`).join("\\n") || "No evidence records are available."}\n\n## Candidate findings\n\n${defectRows.map(row => `- Defect ${row.id}: ${row.defectType} · ${row.severity} · ${row.confidencePercent ?? 0}% confidence · ${row.coveragePercent ?? 0}% coverage · evidence ${row.evidenceId ?? "unlinked"} · correlation ${row.correlationKey ?? "unlinked"}.`).join("\\n") || "No defect candidates are available."}\n\n## Next inspection\n\nRepeat the pass with an engineer-approved coverage plan, original media review, and calibrated production CV model for the relevant asset domain and capture zone.\n\n## Sign-off\n\nStatus: PENDING. Automated outputs are advisory and require qualified engineer review before maintenance release.\n`;
-  const pdf = await renderInspectionPdf({ mission, evidence: evidenceForPdf, defects: defectRows, repairTotalCents });
+  const csvLog = ["evidence_id,file_name,captured_at,latitude,longitude,source,quality_status", ...evidenceRows.map(row => [row.id, JSON.stringify(row.fileName), row.capturedAt?.toISOString() ?? row.createdAt?.toISOString() ?? "", row.latitude ?? "", row.longitude ?? "", row.source ?? "", row.qualityStatus ?? ""].join(","))].join("\\n");
+  const jsonLog = JSON.stringify({ generatedAt: new Date().toISOString(), mission: { id: mission.id, name: mission.name, startedAt: mission.startedAt, completedAt: mission.completedAt }, evidence: evidenceRows.map(row => ({ id: row.id, fileName: row.fileName, capturedAt: row.capturedAt, createdAt: row.createdAt, latitude: row.latitude, longitude: row.longitude, source: row.source, qualityStatus: row.qualityStatus, provenance: row.provenance })), findings: defectRows.map(row => ({ id: row.id, defectType: row.defectType, severity: row.severity, confidencePercent: row.confidencePercent, latitude: row.latitude, longitude: row.longitude, evidenceId: row.evidenceId, createdAt: row.createdAt })), ticket: primaryTicket ? { id: primaryTicket.id, status: primaryTicket.status, dueAt: primaryTicket.dueAt } : null }, null, 2);
+  const pdf = await renderInspectionPdf({ mission, evidence: evidenceForPdf, defects: defectRows, repairTotalCents, contractorRoute: geoRoute ? { contractorName: geoRoute.contractor.name, contractorEmail: geoRoute.contractor.email, ragStatus: "amber", workProfile: geoRoute.contractor.specialization.join(", "), sourceLabel: geoRoute.matchedBy, sourceUrl: "internal geo-boundary registry", disclaimer: "Geo match is a routing aid and requires engineer confirmation." } : undefined, auditAppendix: { ticketId: primaryTicket?.id ?? null, contractorName: geoRoute?.contractor.name ?? null, contractorEmail: geoRoute?.contractor.email ?? null, zoneLabel: geoRoute?.contractor.region ?? null, dueAt: primaryTicket?.dueAt ?? null, repairDurationDays: defectRows.length ? Math.max(...defectRows.map(row => row.severity === "critical" ? 4 : row.severity === "high" ? 7 : row.severity === "medium" ? 14 : 21)) : null, csvLog, jsonLog } });
   const stored = await storagePutWithFallback(`drift/system/missions/${input.missionId}/inspection-report-${Date.now()}.pdf`, pdf, "application/pdf");
   const result = await db.insert(reports).values({ missionId: input.missionId, title, narrative: `Engineer-ready PDF report generated from ${evidenceRows.length} evidence item(s) and ${defectRows.length} candidate finding(s). Severity: ${severityCounts.critical ?? 0} critical / ${severityCounts.high ?? 0} high / ${severityCounts.medium ?? 0} medium / ${severityCounts.low ?? 0} low. Sign-off is pending.`, storageKey: stored.key, storageUrl: stored.url, status: "ready", generatedBy: input.generatedBy ? String(input.generatedBy) : "drift-report-generator", inspectionScope: { evidenceCount: evidenceRows.length, defectCount: defectRows.length, severityCounts, repairTotalCents, coordinateCount: defectRows.filter(row => row.latitude && row.longitude).length, format: "application/pdf" }, signoff: { required: true, status: "pending" }, attachmentData: stored.attachmentData }).returning({ id: reports.id });
   return { reportId: insertId(result), title, storageUrl: stored.url, evidenceCount: evidenceRows.length, defectCount: defectRows.length, body, format: "application/pdf", severityCounts };
 }
 
-export async function listMissionEvidence(missionId: number) { const db = await getDb(); return db ? db.select(evidenceListColumns).from(evidence).where(eq(evidence.missionId, missionId)).orderBy(desc(evidence.createdAt)) : []; }
+async function refreshEvidenceUrls<T extends { storageKey: string; storageUrl: string }>(rows: T[]) {
+  return Promise.all(rows.map(async row => {
+    if (!isSupabaseStorageKey(row.storageKey)) return row;
+    try {
+      return { ...row, storageUrl: browserStorageUrl(row.storageKey, row.storageUrl) };
+    } catch (error) {
+      // Keep the record visible if the object was deleted or storage is temporarily unavailable.
+      console.warn(`[DRIFT Storage] Could not refresh evidence ${row.storageKey}:`, error instanceof Error ? error.message : error);
+      return row;
+    }
+  }));
+}
+
+export async function listMissionEvidence(missionId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return refreshEvidenceUrls(await db.select(evidenceListColumns).from(evidence).where(eq(evidence.missionId, missionId)).orderBy(desc(evidence.createdAt)));
+}
 export async function listDemoEvidence(missionId: number) {
   const db = await getDb();
   if (!db) return [];
   const mission = (await db.select().from(missions).where(eq(missions.id, missionId)).limit(1))[0];
   if (!mission || mission.mode !== "demo") return [];
   const rows = await db.select(evidenceListColumns).from(evidence).where(eq(evidence.missionId, missionId)).orderBy(desc(evidence.createdAt));
-  return rows.filter(item => item.source === "simulator");
+  return refreshEvidenceUrls(rows.filter(item => item.source === "simulator"));
 }
 
 export async function addTelemetryRecord(input: { missionId: number; latitude: number; longitude: number; altitude: number; speedMps: number; batteryPercent: number; timestamp: number }) {
@@ -311,7 +594,13 @@ export async function listFilteredDefects(filters: { assetId?: number; missionId
 
 export async function listAlerts() { const db = await getDb(); return db ? db.select().from(alerts).orderBy(desc(alerts.createdAt)).limit(200) : []; }
 export async function acknowledgeAlert(alertId: number, actorId: number) { const db = await getDb(); if (!db) throw new Error("Database is unavailable."); await db.update(alerts).set({ status: "acknowledged", acknowledgedBy: actorId, acknowledgedAt: new Date() }).where(eq(alerts.id, alertId)); return { success: true }; }
-export async function listReportRecords() { const db = await getDb(); return db ? db.select(reportListColumns).from(reports).orderBy(desc(reports.createdAt)).limit(100) : []; }
+export async function listReportRecords() {
+  const db = await getDb();
+  if (!db) return [];
+  await ensureReportsColumns(db);
+  try { return await db.select(reportListColumns).from(reports).orderBy(desc(reports.createdAt)).limit(100); }
+  catch (err) { console.warn("[listReportRecords] Query failed:", err instanceof Error ? err.message?.substring(0, 200) : err); return []; }
+}
 export async function listAuditEvents(missionId?: number) { const db = await getDb(); if (!db) return []; const rows = await db.select().from(auditEvents).orderBy(desc(auditEvents.createdAt)).limit(300); return missionId ? rows.filter(row => row.missionId === missionId) : rows; }
 export async function listAssets() { const db = await getDb(); return db ? db.select().from(assets).orderBy(desc(assets.updatedAt)).limit(100) : []; }
 

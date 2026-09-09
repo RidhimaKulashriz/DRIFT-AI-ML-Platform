@@ -32,6 +32,15 @@ export function isSupabaseStorageKey(key: string) {
   return key.startsWith("supabase://");
 }
 
+/** Stable browser URL; the server resolves a fresh signed URL for every request. */
+export function supabaseEvidenceProxyPath(storageKey: string) {
+  return `/api/drift/evidence-media/${Buffer.from(storageKey, "utf8").toString("base64url")}`;
+}
+
+export function browserStorageUrl(storageKey: string, fallbackUrl: string) {
+  return isSupabaseStorageKey(storageKey) ? supabaseEvidenceProxyPath(storageKey) : fallbackUrl;
+}
+
 function decodeStorageKey(key: string) {
   if (!isSupabaseStorageKey(key)) return null;
   const match = /^supabase:\/\/([^/]+)\/(.+)$/.exec(key);

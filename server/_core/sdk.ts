@@ -3,7 +3,7 @@ import { ForbiddenError } from "@shared/_core/errors";
 import axios, { type AxiosInstance } from "axios";
 import { parse as parseCookieHeader } from "cookie";
 import type { Request } from "express";
-import { SignJWT, jwtVerify } from "jose";
+import { SignJWT, decodeProtectedHeader, jwtVerify } from "jose";
 import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { ENV } from "./env";
@@ -198,12 +198,17 @@ class SDKServer {
   async verifySession(
     cookieValue: string | undefined | null
   ): Promise<{ openId: string; appId: string; name: string } | null> {
-    if (!cookieValue) {
-      console.warn("[Auth] Missing session cookie");
-      return null;
-    }
+    // Anonymous requests are valid for public procedures such as auth.me and
+    // the public dashboard. Do not log them as authentication failures; those
+    // requests are expected when the user has not signed in.
+    if (!cookieValue) return null;
 
     try {
+      // Session cookies issued by this service are HS256 tokens. Browsers can
+      // retain cookies from another deployment or identity provider; reject
+      // those quietly instead of emitting one warning per public request.
+      const header = decodeProtectedHeader(cookieValue);
+      if (header.alg !== "HS256") return null;
       const secretKey = this.getSessionSecret();
       const { payload } = await jwtVerify(cookieValue, secretKey, {
         algorithms: ["HS256"],

@@ -13,12 +13,21 @@ import { buildSimulatorMission } from "./services/simulator";
 import { renderInspectionPdf } from "./services/reportPdf";
 import { askDriftAi } from "./services/driftAi";
 import { storagePut } from "./storage";
-import { supabasePortableStorageConfigured } from "./services/supabaseStorage";
+import { browserStorageUrl, supabasePortableStorageConfigured } from "./services/supabaseStorage";
+import { deliverContractorReport } from "./services/contractorDelivery";
+import { featureRouter } from "./featureRouter";
+import { runDemoDetection } from "./demoDetection";
 import { CAPTURE_ZONES, INSPECTION_DOMAINS, QUALITY_STATUSES } from "@shared/types";
+import { getDb } from "./db";
+import { reconstructionJobs, assets, cameraSources, cctvCandidates } from "../drizzle/schema";
+import { desc, eq } from "drizzle-orm";
+import { buildArtifactManifest, buildReconstructionPlan, validateCapture } from "./services/reconstruction";
+import { listPublicCctv, publicCctvMessage } from "./services/publicCctv";
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
+  features: featureRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
@@ -34,6 +43,21 @@ export const appRouter = router({
     schemaReadiness: publicProcedure.query(() => getReadOnlySchemaReadiness()),
     correlatedDefects: protectedProcedure.input(z.object({ correlationKey: z.string().min(3).max(160) })).query(({ ctx, input }) => { requireDriftRole(ctx.user, ["admin", "engineer", "user"]); return listCorrelatedDefects(input.correlationKey); }),
     hardwareStatus: publicProcedure.query(() => probeHardwareConnection()),
+    godEye: publicProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) return { available: false, message: publicCctvMessage(), assets: [], defects: [], cameras: await listPublicCctv(), candidates: [] };
+      const [assetRows, cameraRows, candidateRows, defectRows, publicCameras] = await Promise.all([
+        db.select({ id: assets.id, name: assets.name, assetType: assets.assetType, latitude: assets.latitude, longitude: assets.longitude, status: assets.status, criticality: assets.criticality }).from(assets).limit(500),
+        db.select({ id: cameraSources.id, cameraCode: cameraSources.cameraCode, displayName: cameraSources.displayName, zoneLabel: cameraSources.zoneLabel, latitude: cameraSources.latitude, longitude: cameraSources.longitude, accessClassification: cameraSources.accessClassification, retentionUntil: cameraSources.retentionUntil }).from(cameraSources).limit(500),
+        db.select({ id: cctvCandidates.id, cameraSourceId: cctvCandidates.cameraSourceId, candidateType: cctvCandidates.candidateType, zoneLabel: cctvCandidates.zoneLabel, latitude: cctvCandidates.latitude, longitude: cctvCandidates.longitude, status: cctvCandidates.status, detectionConfidence: cctvCandidates.detectionConfidence }).from(cctvCandidates).limit(500),
+        listFilteredDefects({}).then(rows => rows.slice(0, 1000).map(row => ({ id: row.id, label: row.label, severity: row.severity, latitude: row.latitude, longitude: row.longitude, status: row.status, missionId: row.missionId }))),
+        listPublicCctv(),
+      ]);
+      // Database camera records may be private/control-room CCTV. They are
+      // intentionally excluded from this public God’s Eye camera layer.
+      void cameraRows;
+      return { available: true, message: publicCctvMessage(), assets: assetRows, defects: defectRows, cameras: publicCameras, candidates: candidateRows.filter(candidate => candidate.latitude && candidate.longitude) };
+    }),
     validateTelemetry: protectedProcedure.input(z.unknown()).mutation(({ input }) => validateTelemetryPayload(input)),
     ingestTelemetry: protectedProcedure.input(z.object({ missionId: z.number().int().positive(), latitude: z.number(), longitude: z.number(), altitude: z.number().nonnegative(), speedMps: z.number().nonnegative(), batteryPercent: z.number().min(0).max(100), timestamp: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
       requireDriftRole(ctx.user, ["admin", "engineer"]);
@@ -50,6 +74,42 @@ export const appRouter = router({
     runStatelessSimulator: publicProcedure.input(z.object({ name: z.string().min(3).max(180).default("Demo corridor patrol") })).mutation(async ({ input }) => {
       const simulator = await buildSimulatorMission(input.name);
       return { mode: "stateless_demo" as const, transient: true, storage: "none" as const, message: "Transient simulated walkthrough only. No mission, finding, telemetry, evidence, ticket, report, CCTV candidate, security observation, or UAV action was stored or created.", ...simulator };
+    }),
+    demoDetect: publicProcedure.input(z.object({
+      defectType: z.string().min(1).max(120),
+      confidence: z.number().min(0).max(1),
+      latitude: z.number().min(-90).max(90),
+      longitude: z.number().min(-180).max(180),
+      infrastructureType: z.string().default("roads"),
+      imageUrl: z.string().optional(),
+      sensorContribution: z.number().default(0),
+    })).mutation(async ({ input }) => {
+      return runDemoDetection(input);
+    }),
+    runDemoScan: publicProcedure.input(z.object({ name: z.string().default("Campus inspection scan") })).mutation(async ({ input }) => {
+      const simulator = await buildSimulatorMission(input.name);
+      const results = [];
+      for (const finding of simulator.findings) {
+        try {
+          const result = await runDemoDetection({
+            defectType: finding.label,
+            confidence: finding.confidence,
+            latitude: finding.latitude,
+            longitude: finding.longitude,
+            infrastructureType: (finding as typeof finding & { infrastructureType?: string }).infrastructureType ?? "roads",
+          });
+          results.push(result);
+        } catch (error) {
+          console.error("[DRIFT] Demo detection failed for", finding.label, error);
+        }
+      }
+      return {
+        mode: "demo_scan" as const,
+        message: `${results.length} detections persisted to database.`,
+        findings: simulator.findings,
+        telemetry: simulator.telemetry,
+        detections: results,
+      };
     }),
     createHardwareCaptureMission: protectedProcedure.input(z.object({ name: z.string().trim().min(3).max(180), aircraftProfile: z.string().trim().min(2).max(120), adapter: z.enum(["mavlink-bridge", "http-webhook", "rtsp-media"]), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180), operatorNote: z.string().trim().max(500).optional() })).mutation(({ ctx, input }) => {
       requireDriftRole(ctx.user, ["admin", "engineer"]);
@@ -69,13 +129,21 @@ export const appRouter = router({
         if (!supabasePortableStorageConfigured()) throw new Error("Portable evidence storage is not configured for this deployment.");
         const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
         const stored = await storagePut(`drift/${ctx.user.id}/missions/${input.missionId}/${Date.now()}-${safeName}`, bytes, input.mimeType);
-        const evidenceRecord = await createEvidenceRecord({ missionId: input.missionId, uploadedBy: ctx.user.id, fileName: input.fileName, mimeType: input.mimeType, storageKey: stored.key, storageUrl: stored.url, mediaKind: input.mediaKind, latitude: input.latitude, longitude: input.longitude, playbackSeconds: input.playbackSeconds, source: input.captureSource, sha256: crypto.createHash("sha256").update(bytes).digest("hex"), capturedAt: input.capturedAt ? new Date(input.capturedAt) : undefined, cameraId: input.cameraId, captureZone: input.captureZone, headingDegrees: input.headingDegrees, qualityStatus: input.qualityStatus, imageQuality: input.imageQuality, provenance: { inspectionDomain: input.inspectionDomain, correlationKey: input.correlationKey, kind: input.captureSource === "hardware" ? "operator-uav-capture" : "operator-upload", aircraftProfile: input.aircraftProfile ?? null, originalCaptureRequired: true, notSimulator: true } });
+        const evidenceRecord = await createEvidenceRecord({ missionId: input.missionId, uploadedBy: ctx.user.id, fileName: input.fileName, mimeType: input.mimeType, storageKey: stored.key, storageUrl: browserStorageUrl(stored.key, stored.url), mediaKind: input.mediaKind, latitude: input.latitude, longitude: input.longitude, playbackSeconds: input.playbackSeconds, source: input.captureSource, sha256: crypto.createHash("sha256").update(bytes).digest("hex"), capturedAt: input.capturedAt ? new Date(input.capturedAt) : undefined, cameraId: input.cameraId, captureZone: input.captureZone, headingDegrees: input.headingDegrees, qualityStatus: input.qualityStatus, imageQuality: input.imageQuality, provenance: { inspectionDomain: input.inspectionDomain, correlationKey: input.correlationKey, kind: input.captureSource === "hardware" ? "operator-uav-capture" : "operator-upload", aircraftProfile: input.aircraftProfile ?? null, originalCaptureRequired: true, notSimulator: true } });
         const qualityGate = input.qualityStatus === "fail" ? { status: "fail", action: "blocked-from-inference" } : input.qualityStatus === "review" ? { status: "review", action: "engineer-review-required" } : { status: input.qualityStatus ?? "pending", action: "review-policy-applies" };
         if (input.qualityStatus === "fail" || input.mediaKind !== "photo" || !input.runInference || !input.assetId || !input.assetCriticality || !input.latitude || !input.longitude) return { ...evidenceRecord, inference: null, qualityGate };
         const inference = await runVisionInference({ fileName: input.fileName, imageBase64: input.base64, latitude: Number(input.latitude), longitude: Number(input.longitude), assetCriticality: input.assetCriticality, priorOpenDefects: input.priorOpenDefects ?? 0 });
+        if (!inference) return { ...evidenceRecord, inference: null, qualityGate: { status: "review", action: "production-inference-unavailable" } };
         const persisted = await persistInferenceDefect({ missionId: input.missionId, assetId: input.assetId, evidenceId: evidenceRecord.id, latitude: Number(input.latitude), longitude: Number(input.longitude), inference, inspectionDomain: input.inspectionDomain, correlationKey: input.correlationKey, createdBy: ctx.user.id });
         return { ...evidenceRecord, inference: persisted };
       }),
+    }),
+    reconstruction: router({
+      list: publicProcedure.query(async () => { const db = await getDb(); if (!db) return []; const jobs = await db.select().from(reconstructionJobs).orderBy(desc(reconstructionJobs.createdAt)).limit(25); return jobs.map(job => job.status === "queued" && !(job.inputMetadata as any)?.sourceUrl ? { ...job, status: "awaiting_source", errorMessage: "Attach an HTTPS object-storage source URL before the photogrammetry worker can process this capture." } : job); }),
+      uploadSource: publicProcedure.input(z.object({ fileName: z.string().min(1).max(255), mimeType: z.string().min(3).max(120), base64: z.string().min(32).max(70_000_000) })).mutation(async ({ ctx, input }) => { const encoded = input.base64.replace(/^data:[^;]+;base64,/, ""); const bytes = Buffer.from(encoded, "base64"); if (!bytes.length || bytes.length > 50 * 1024 * 1024) throw new Error("Video upload must be between 1 byte and 50 MB."); const stored = await storagePut(`drift/reconstruction/source/${Date.now()}-${input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_")}`, bytes, input.mimeType); const configuredOrigin = process.env.PUBLIC_BACKEND_URL?.replace(/\/$/, ""); const forwardedProto = String(ctx.req.headers["x-forwarded-proto"] ?? ctx.req.protocol ?? "https").split(",")[0]; const forwardedHost = String(ctx.req.headers["x-forwarded-host"] ?? ctx.req.headers.host ?? ""); const origin = configuredOrigin || `${forwardedProto}://${forwardedHost}`; return { sourceUrl: stored.url.startsWith("http") ? stored.url : `${origin}${stored.url}`, storageKey: stored.key, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: bytes.length }; }),
+      validate: publicProcedure.input(z.object({ fileName: z.string().min(1), mimeType: z.string(), sizeBytes: z.number().int().nonnegative(), latitude: z.number(), longitude: z.number(), altitudeMeters: z.number(), cameraModel: z.string().optional(), hasImu: z.boolean(), hasRtk: z.boolean(), hasBarometer: z.boolean(), hasIntrinsics: z.boolean(), durationSeconds: z.number(), resolution: z.enum(["1080p", "4k"]) })).query(({ input }) => ({ validation: validateCapture(input), plan: buildReconstructionPlan(input) })),
+      create: publicProcedure.input(z.object({ name: z.string().min(3).max(220), fileName: z.string().min(1), mimeType: z.string(), sizeBytes: z.number().int().positive(), sourceUrl: z.string().url().refine(url => url.startsWith("https://"), "sourceUrl must use HTTPS so the worker can securely download the original capture."), latitude: z.number(), longitude: z.number(), altitudeMeters: z.number().positive(), cameraModel: z.string().optional(), hasImu: z.boolean(), hasRtk: z.boolean(), hasBarometer: z.boolean(), hasIntrinsics: z.boolean(), durationSeconds: z.number().positive(), resolution: z.enum(["1080p", "4k"]) })).mutation(async ({ ctx, input }) => { const validation = validateCapture(input); if (!validation.valid) throw new Error(validation.errors.join(" ")); const plan = buildReconstructionPlan(input); const db = await getDb(); if (!db) throw new Error("DATABASE_URL is required to persist a reconstruction job."); const result = await db.insert(reconstructionJobs).values({ jobKey: plan.jobKey, name: input.name, status: "queued", inputFileName: input.fileName, inputMimeType: input.mimeType, inputSizeBytes: input.sizeBytes, latitude: String(input.latitude), longitude: String(input.longitude), altitudeMeters: Math.round(input.altitudeMeters), inputMetadata: input, qualityReport: plan.quality, stages: plan.stages, createdBy: ctx.user?.id ?? null }).returning({ id: reconstructionJobs.id, jobKey: reconstructionJobs.jobKey }); return { ...result[0], ...plan, message: "Capture accepted and queued for the persistent photogrammetry worker." }; }),
+      manifest: publicProcedure.input(z.object({ jobKey: z.string().min(8) })).query(async ({ input }) => { const db = await getDb(); if (!db) throw new Error("DATABASE_URL is required."); const rows = await db.select().from(reconstructionJobs).where(eq(reconstructionJobs.jobKey, input.jobKey)).limit(1); const job = rows[0]; if (!job) throw new Error("Reconstruction job not found."); return { job, manifest: job.artifactManifest ?? buildArtifactManifest(job.jobKey, { fileName: job.inputFileName, mimeType: job.inputMimeType, sizeBytes: job.inputSizeBytes, latitude: Number(job.latitude), longitude: Number(job.longitude), altitudeMeters: job.altitudeMeters, hasImu: Boolean((job.inputMetadata as any).hasImu), hasRtk: Boolean((job.inputMetadata as any).hasRtk), hasBarometer: Boolean((job.inputMetadata as any).hasBarometer), hasIntrinsics: Boolean((job.inputMetadata as any).hasIntrinsics), durationSeconds: Number((job.inputMetadata as any).durationSeconds), resolution: (job.inputMetadata as any).resolution }, job.qualityReport as any) }; }),
     }),
     assets: router({
       list: protectedProcedure.query(({ ctx }) => { requireDriftRole(ctx.user, ["admin", "engineer", "user"]); return listAssets(); }),
@@ -106,9 +174,22 @@ export const appRouter = router({
           if (label === "structural" || label === "spalling" || label === "exposed_rebar") return { contractorName: "Afcons Infrastructure Limited", ragStatus: "amber" as const, workProfile: "transport and bridge infrastructure works", sourceLabel: "Public company profile candidate", sourceUrl: "https://www.afcons.com/", disclaimer: "Candidate only; not assigned, vetted, or endorsed by DRIFT." };
           return { contractorName: "Larsen & Toubro Limited", ragStatus: "amber" as const, workProfile: "transport, civil, and infrastructure works", sourceLabel: "Public company profile candidate", sourceUrl: "https://www.larsentoubro.com/", disclaimer: "Candidate only; not assigned, vetted, or endorsed by DRIFT." };
         })();
+        const demoEvidence = selectedFindings.map((finding, index) => ({
+          id: index + 1,
+          fileName: `simulated-detection-${index + 1}.svg`,
+          source: "simulator" as const,
+          captureZone: finding.label === "structural" ? "under-bridge" : "oblique",
+          qualityStatus: "review",
+          latitude: String(finding.latitude),
+          longitude: String(finding.longitude),
+          cameraId: "DRIFT simulator",
+          storageUrl: "synthetic://simulator-evidence",
+          provenance: { kind: "generated-simulator", note: "Synthetic visual for repeatable demo only; not live drone evidence." },
+          imageBuffer: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="100%" height="100%" fill="#18232e"/><path d="M0 600 L420 210 L860 720" stroke="#778692" stroke-width="92" fill="none"/><rect x="460" y="240" width="230" height="150" fill="none" stroke="#15b8c9" stroke-width="6"/><text x="60" y="72" fill="#ffffff" font-size="30" font-family="Arial" letter-spacing="6">DRIFT / SIMULATED DETECTION</text><text x="60" y="670" fill="#ffffff" font-size="24" font-family="Arial">${finding.title.toUpperCase()} · ${Math.round(finding.confidence * 100)}% CONFIDENCE</text></svg>`),
+        }));
         const pdf = await renderInspectionPdf({
           mission: { id: 0, name: simulator.name, startedAt: new Date(simulator.startedAt), completedAt: new Date(), mode: "stateless_demo", status: "completed" },
-          evidence: [],
+          evidence: demoEvidence,
           defects: selectedFindings.map((finding, index) => ({
             id: index + 1,
             label: finding.title,
@@ -177,6 +258,7 @@ export const appRouter = router({
         approveRouting: protectedProcedure.input(z.object({ routingDecisionId: z.number().int().positive() })).mutation(({ ctx, input }) => { requireDriftRole(ctx.user, ["admin", "engineer"]); return approveRoutingDecisionRecord({ routingDecisionId: input.routingDecisionId, reviewerId: ctx.user.id }); }),
         prepareHandoff: protectedProcedure.input(z.object({ ticketId: z.number().int().positive(), routingDecisionId: z.number().int().positive(), recipientSystem: z.string().trim().max(160).optional(), expiresAt: z.number().int().positive().optional() })).mutation(({ ctx, input }) => { requireDriftRole(ctx.user, ["admin", "engineer"]); return prepareHandoffPackageRecord({ ...input, expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined, preparedBy: ctx.user.id }); }),
         publishStatus: protectedProcedure.input(z.object({ ticketId: z.number().int().positive(), publicSummary: z.string().trim().min(8).max(2000), expectedCompletionAt: z.number().int().positive().optional(), privacyReviewNote: z.string().trim().min(8).max(2000) })).mutation(({ ctx, input }) => { requireDriftRole(ctx.user, ["admin"]); return publishPublicStatusRecord({ ...input, expectedCompletionAt: input.expectedCompletionAt ? new Date(input.expectedCompletionAt) : undefined, approvedBy: ctx.user.id }); }),
+        sendReportEmail: protectedProcedure.input(z.object({ ticketId: z.number().int().positive().optional(), subject: z.string().trim().min(4).max(240), contractor: z.string().trim().min(2).max(220), defect: z.string().trim().min(2).max(160), confidencePercent: z.number().int().min(0).max(100), severity: z.string().trim().min(2).max(40), latitude: z.string().trim().max(32), longitude: z.string().trim().max(32), estimatedRepairCost: z.string().trim().max(80), recommendedDeadline: z.string().trim().max(160), reportUrl: z.string().url().optional(), evidenceUrl: z.string().url().optional(), reportBase64: z.string().optional(), reportFileName: z.string().trim().max(240).optional() })).mutation(async ({ ctx, input }) => { requireDriftRole(ctx.user, ["admin", "engineer"]); return deliverContractorReport(input); }),
       }),
     }),
     workspace: protectedProcedure.query(({ ctx }) => { const role = ctx.user.role; return { role, permissions: role === "admin" ? ["asset:create", "asset:update", "asset:delete", "review", "audit", "alert:acknowledge"] : role === "engineer" || role === "user" ? ["review", "audit", "alert:acknowledge"] : ["public:read"] }; }),

@@ -1,0 +1,2 @@
+# Keep public evidence videos as regular blobs so Vercel serves playable bytes.
+client/public/evidence/iiit-delhi/*.mp4 -filter -diff -merge -text

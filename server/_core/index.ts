@@ -2,17 +2,22 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import path from "node:path";
+import fs from "node:fs";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
-import { addTelemetryRecord, createEvidenceRecord, getDatabaseAttachment, persistInferenceDefect } from "../db";
+import { addTelemetryRecord, createEvidenceRecord, getDatabaseAttachment, persistInferenceDefect, ensureCampusSchema } from "../db";
 import { storagePutWithFallback } from "../storage";
+import { browserStorageUrl, getSupabaseEvidenceSignedUrl, isSupabaseStorageKey } from "../services/supabaseStorage";
 import { authorizeBridgeToken, validateTelemetryPayload } from "../services/hardwareAdapter";
 import { runVisionInference } from "../services/mlInference";
 import { createCorsMiddleware } from "../services/cors";
+import { runDemoDetection } from "../demoDetection";
+import { publishLiveMissionEvent, subscribeLiveMission } from "../liveEvents";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -42,6 +47,15 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  app.get("/api/reconstruction/:jobKey/artifacts/:fileName", (req, res) => {
+    const jobKey = String(req.params.jobKey ?? "");
+    const fileName = path.basename(String(req.params.fileName ?? ""));
+    if (!/^[a-zA-Z0-9_-]{8,80}$/.test(jobKey) || !fileName || fileName !== path.basename(fileName)) return res.status(400).send("Invalid artifact path");
+    const root = process.env.RECONSTRUCTION_ARTIFACT_ROOT || "/var/lib/drift/reconstruction";
+    const artifactPath = path.join(root, jobKey, fileName);
+    if (!fs.existsSync(artifactPath)) return res.status(404).send("Artifact not available");
+    return res.sendFile(artifactPath);
+  });
 
   const bridgeRateWindows = new Map<string, { count: number; resetAt: number }>();
   const bridgeAuthorized = (req: express.Request) => {
@@ -69,6 +83,30 @@ async function startServer() {
     }
   });
 
+  // Public demo detection endpoint — no auth required
+  app.post("/api/drift/demo-detect", async (req, res) => {
+    const body = req.body as Record<string, unknown>;
+    const { defectType, confidence, latitude, longitude, infrastructureType, imageUrl, sensorContribution } = body as {
+      defectType?: string; confidence?: number; latitude?: number; longitude?: number;
+      infrastructureType?: string; imageUrl?: string; sensorContribution?: number;
+    };
+    if (!defectType || typeof confidence !== "number" || typeof latitude !== "number" || typeof longitude !== "number") {
+      return res.status(400).json({ error: "Missing required fields: defectType, confidence, latitude, longitude" });
+    }
+    try {
+      const result = await runDemoDetection({
+        defectType, confidence, latitude, longitude,
+        infrastructureType: infrastructureType ?? "roads",
+        imageUrl,
+        sensorContribution: sensorContribution ?? 0,
+      });
+      return res.status(201).json(result);
+    } catch (error) {
+      console.error("[DRIFT] Demo detection failed:", error);
+      return res.status(500).json({ error: String(error) });
+    }
+  });
+
   app.post("/api/drift/evidence", async (req, res) => {
     if (!bridgeAuthorized(req)) return res.status(401).json({ error: "Bridge authentication required." });
     const body = req.body as Record<string, unknown>;
@@ -81,22 +119,61 @@ async function startServer() {
     const hasSafeDataUri = /^data:(?:image|video)\/[a-z0-9.+-]+;base64,/i.test(base64Payload);
     const encodedPayload = hasSafeDataUri ? base64Payload.split(",").slice(1).join(",") : base64Payload;
     if (!allowedMimeTypes.has(String(body.mimeType).toLowerCase()) || !/^[A-Za-z0-9+/=\s]+$/.test(encodedPayload)) return res.status(400).json({ error: "Only supported image/video media and base64 payloads are accepted." });
+    const hasLatitude = body.latitude !== undefined;
+    const hasLongitude = body.longitude !== undefined;
+    if (hasLatitude !== hasLongitude || (hasLatitude && (typeof body.latitude !== "number" || typeof body.longitude !== "number" || !Number.isFinite(body.latitude) || !Number.isFinite(body.longitude) || body.latitude < -90 || body.latitude > 90 || body.longitude < -180 || body.longitude > 180))) {
+      return res.status(400).json({ error: "latitude and longitude must be supplied together within valid geographic bounds." });
+    }
+    const capturedAt = typeof body.capturedAt === "string" ? new Date(body.capturedAt) : undefined;
+    if (body.capturedAt !== undefined && (!capturedAt || Number.isNaN(capturedAt.getTime()))) return res.status(400).json({ error: "capturedAt must be a valid ISO-8601 timestamp." });
     const bytes = Buffer.from(encodedPayload, "base64");
     if (bytes.byteLength === 0 || bytes.byteLength > 50 * 1024 * 1024) return res.status(413).json({ error: "Evidence must be between 1 byte and 50 MB." });
     try {
       const safeName = String(body.fileName).replace(/[^a-zA-Z0-9._-]/g, "_");
       const stored = await storagePutWithFallback(`drift/bridge/missions/${Number(body.missionId)}/${Date.now()}-${safeName}`, bytes, String(body.mimeType));
-      const result = await createEvidenceRecord({ missionId: Number(body.missionId), fileName: String(body.fileName), mimeType: String(body.mimeType), storageKey: stored.key, storageUrl: stored.url, attachmentData: stored.attachmentData, mediaKind: body.mediaKind as "photo" | "video", source: "hardware", latitude: typeof body.latitude === "number" ? body.latitude.toFixed(6) : undefined, longitude: typeof body.longitude === "number" ? body.longitude.toFixed(6) : undefined, playbackSeconds: typeof body.playbackSeconds === "number" ? Math.max(0, Math.floor(body.playbackSeconds)) : undefined, cameraId: typeof body.cameraId === "string" ? body.cameraId : undefined, captureZone: typeof body.captureZone === "string" ? body.captureZone : undefined, headingDegrees: typeof body.headingDegrees === "number" ? body.headingDegrees : undefined, provenance: { kind: "operator-uav-capture", inspectionDomain: typeof body.inspectionDomain === "string" ? body.inspectionDomain : undefined, correlationKey: typeof body.correlationKey === "string" ? body.correlationKey : undefined, aircraftProfile: typeof body.aircraftProfile === "string" ? body.aircraftProfile : "operator bridge profile not reported", originalCaptureRequired: true, notSimulator: true } });
+      const result = await createEvidenceRecord({ missionId: Number(body.missionId), fileName: String(body.fileName), mimeType: String(body.mimeType), storageKey: stored.key, storageUrl: browserStorageUrl(stored.key, stored.url), attachmentData: stored.attachmentData, mediaKind: body.mediaKind as "photo" | "video", source: "hardware", latitude: typeof body.latitude === "number" ? body.latitude.toFixed(6) : undefined, longitude: typeof body.longitude === "number" ? body.longitude.toFixed(6) : undefined, playbackSeconds: typeof body.playbackSeconds === "number" ? Math.max(0, Math.floor(body.playbackSeconds)) : undefined, capturedAt, cameraId: typeof body.cameraId === "string" ? body.cameraId : undefined, captureZone: typeof body.captureZone === "string" ? body.captureZone : undefined, headingDegrees: typeof body.headingDegrees === "number" ? body.headingDegrees : undefined, provenance: { kind: "operator-uav-capture", inspectionDomain: typeof body.inspectionDomain === "string" ? body.inspectionDomain : undefined, correlationKey: typeof body.correlationKey === "string" ? body.correlationKey : undefined, aircraftProfile: typeof body.aircraftProfile === "string" ? body.aircraftProfile : "operator bridge profile not reported", originalCaptureRequired: true, notSimulator: true } });
       if (body.runInference === true && body.mediaKind === "photo" && typeof body.assetId === "number" && typeof body.assetCriticality === "number" && typeof body.latitude === "number" && typeof body.longitude === "number") {
-        const inference = await runVisionInference({ fileName: String(body.fileName), imageBase64: base64Payload, latitude: body.latitude, longitude: body.longitude, assetCriticality: body.assetCriticality, priorOpenDefects: typeof body.priorOpenDefects === "number" ? body.priorOpenDefects : 0, inspectionDomain: typeof body.inspectionDomain === "string" ? body.inspectionDomain : undefined, captureZone: typeof body.captureZone === "string" ? body.captureZone : undefined });
+        const inference = await runVisionInference({ fileName: String(body.fileName), imageBase64: base64Payload, latitude: body.latitude, longitude: body.longitude, assetCriticality: body.assetCriticality, priorOpenDefects: typeof body.priorOpenDefects === "number" ? body.priorOpenDefects : 0, inspectionDomain: typeof body.inspectionDomain === "string" ? body.inspectionDomain : undefined, captureZone: typeof body.captureZone === "string" ? body.captureZone : undefined, productionOnly: body.liveFrame === true });
+        if (!inference) {
+          if (body.liveFrame === true) publishLiveMissionEvent({ type: "frame.received", missionId: Number(body.missionId), evidenceId: result.id, frameId: typeof body.frameId === "string" ? body.frameId : undefined, imageUrl: browserStorageUrl(stored.key, stored.url), fileName: String(body.fileName), latitude: body.latitude, longitude: body.longitude, detections: [], occurredAt: new Date().toISOString() });
+          return res.status(201).json({ ...result, inference: null, qualityGate: { status: "review", action: "production-inference-unavailable" } });
+        }
         const defect = await persistInferenceDefect({ missionId: Number(body.missionId), assetId: body.assetId, evidenceId: result.id, latitude: body.latitude, longitude: body.longitude, inference, inspectionDomain: typeof body.inspectionDomain === "string" ? body.inspectionDomain : undefined, correlationKey: typeof body.correlationKey === "string" ? body.correlationKey : undefined });
-        return res.status(201).json({ ...result, inference: defect, qualityGate: { status: "review", action: "engineer-review-required" } });
+        const response = { ...result, inference: defect, qualityGate: { status: "review", action: "engineer-review-required" } };
+        if (body.liveFrame === true) publishLiveMissionEvent({ type: "detection.completed", missionId: Number(body.missionId), evidenceId: result.id, frameId: typeof body.frameId === "string" ? body.frameId : undefined, imageUrl: browserStorageUrl(stored.key, stored.url), fileName: String(body.fileName), latitude: body.latitude, longitude: body.longitude, detections: [{ defectId: defect.defectId, label: inference.label, confidence: inference.confidence, severity: inference.score.severity, boundingBox: inference.boundingBox }], occurredAt: new Date().toISOString() });
+        return res.status(201).json(response);
       }
+      if (body.liveFrame === true) publishLiveMissionEvent({ type: "frame.received", missionId: Number(body.missionId), evidenceId: result.id, frameId: typeof body.frameId === "string" ? body.frameId : undefined, imageUrl: browserStorageUrl(stored.key, stored.url), fileName: String(body.fileName), latitude: typeof body.latitude === "number" ? body.latitude : undefined, longitude: typeof body.longitude === "number" ? body.longitude : undefined, detections: [], occurredAt: new Date().toISOString() });
       return res.status(201).json({ ...result, inference: null });
     } catch (error) {
       console.error("[DRIFT] Evidence ingestion failed", error);
       return res.status(503).json({ error: "Evidence could not be stored." });
     }
+  });
+
+  app.get("/api/drift/evidence-media/:encodedKey", async (req, res) => {
+    const encodedKey = String((req.params as Record<string, string>).encodedKey ?? "");
+    try {
+      const storageKey = Buffer.from(encodedKey, "base64url").toString("utf8");
+      if (!isSupabaseStorageKey(storageKey)) return res.status(404).send("Evidence not found");
+      const signedUrl = await getSupabaseEvidenceSignedUrl(storageKey);
+      res.set("Cache-Control", "private, no-store");
+      return res.redirect(307, signedUrl);
+    } catch (error) {
+      console.error("[DRIFT] Supabase evidence media proxy failed", error);
+      return res.status(404).send("Evidence unavailable");
+    }
+  });
+
+  app.get("/api/drift/live/events", (req, res) => {
+    const missionId = Number(req.query.missionId);
+    if (!Number.isInteger(missionId) || missionId <= 0) return res.status(400).json({ error: "A valid missionId is required." });
+    res.status(200).set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform", Connection: "keep-alive", "X-Accel-Buffering": "no" });
+    res.flushHeaders();
+    res.write(`: connected to mission ${missionId}\n\n`);
+    const unsubscribe = subscribeLiveMission(missionId, event => res.write(`data: ${JSON.stringify(event)}\n\n`));
+    const heartbeat = setInterval(() => res.write(": heartbeat\n\n"), 15_000);
+    req.on("close", () => { clearInterval(heartbeat); unsubscribe(); });
   });
 
   app.get("/api/drift/attachments/*", async (req, res) => {
@@ -114,6 +191,35 @@ async function startServer() {
     }
   });
 
+  // PHASE 51: Real inspection endpoint — full pipeline (image upload → EXIF → ML → PDF → email)
+  app.post("/api/inspections", async (req, res) => {
+    try {
+      const pipelineModule = await import("../services/inspectionPipeline");
+      const body = req.body as Record<string, unknown>;
+      const result = await pipelineModule.runFullInspection({
+        fileName: typeof body.fileName === "string" ? body.fileName : null,
+        mimeType: typeof body.mimeType === "string" ? body.mimeType : null,
+        base64: typeof body.base64 === "string" ? body.base64 : null,
+        campusId: typeof body.campusId === "number" ? body.campusId : null,
+        inspectionName: typeof body.inspectionName === "string" ? body.inspectionName : "Field inspection",
+        explicitLatitude: typeof body.latitude === "number" ? body.latitude : null,
+        explicitLongitude: typeof body.longitude === "number" ? body.longitude : null,
+        locationSource: typeof body.locationSource === "string" ? body.locationSource : null,
+        assetCriticality: typeof body.assetCriticality === "number" ? body.assetCriticality : 3,
+        inspectionDomain: typeof body.inspectionDomain === "string" ? body.inspectionDomain : null,
+        sendEmail: body.sendEmail === true,
+        recipientEmail: typeof body.recipientEmail === "string" ? body.recipientEmail : null,
+      });
+      res.status(result.success ? 201 : 400).json(result);
+    } catch (err) {
+      console.error("[Inspection] Pipeline error:", err);
+      res.status(500).json({ success: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // PHASE 10/14/15: Apply campus schema + seed IGDTUW + IIIT-Delhi on startup
+  await ensureCampusSchema();
+
   // tRPC API
   app.use(
     "/api/trpc",
@@ -122,6 +228,73 @@ async function startServer() {
       createContext,
     })
   );
+
+  // Run DB migration BEFORE the tRPC route to ensure all column additions are in place
+  await ensureCampusSchema();
+
+  // Re-register tRPC middleware after migration
+  // (Note: tRPC is already mounted; this is a no-op safety check)
+
+  // PHASE 77: Health endpoint with dependency checks
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString(), service: "drift-api" });
+  });
+
+  app.get("/health/dependencies", async (_req, res) => {
+    const checks: Record<string, { ok: boolean; detail: string }> = {};
+
+    // Database
+    try {
+      const { getDb } = await import("../db");
+      const db = await getDb();
+      checks.database = { ok: Boolean(db), detail: db ? "connected" : "DATABASE_URL is not configured" };
+
+      // Test if reports columns exist
+      if (db) {
+        try {
+          const { sql } = await import("drizzle-orm");
+          const colCheck = await db.execute<{ column_name: string }>(sql`
+            SELECT column_name FROM information_schema.columns
+            WHERE table_name='reports' AND table_schema='public'
+          `);
+          const cols = colCheck.rows.map((r: any) => r.column_name);
+          const hasNew = cols.includes("pdfBase64") && cols.includes("emailStatus");
+          checks.reports_schema = { ok: hasNew, detail: hasNew ? "columns present" : `missing: ${cols.includes("pdfBase64") ? "" : "pdfBase64 "}${cols.includes("emailStatus") ? "" : "emailStatus"} (have: ${cols.length} cols)` };
+        } catch (e) {
+          checks.reports_schema = { ok: false, detail: "column check failed: " + (e instanceof Error ? e.message?.substring(0, 200) : String(e)) };
+        }
+      }
+    } catch (e) {
+      checks.database = { ok: false, detail: String(e instanceof Error ? e.message : e) };
+    }
+
+    // Supabase
+    const supabaseUrl = process.env.SUPABASE_URL?.trim();
+    checks.supabase = { ok: Boolean(supabaseUrl), detail: supabaseUrl ? "configured" : "SUPABASE_URL is not configured" };
+
+    // Email
+    const webhook = process.env.DRIFT_EMAIL_WEBHOOK_URL?.trim();
+    const smtp = process.env.EMAIL_USER && process.env.EMAIL_PASS;
+    checks.email = webhook || smtp
+      ? { ok: true, detail: webhook ? "webhook configured" : "Gmail SMTP configured" }
+      : { ok: false, detail: "No email provider configured (set DRIFT_EMAIL_WEBHOOK_URL or EMAIL_USER+EMAIL_PASS)" };
+
+    // ML inference
+    const mlUrl = process.env.ML_INFERENCE_URL?.trim();
+    const geminiKey = process.env.GEMINI_API_KEY?.trim();
+    checks.ml_inference = mlUrl
+      ? { ok: true, detail: `external inference URL configured: ${new URL(mlUrl).host}` }
+      : geminiKey
+        ? { ok: true, detail: "Gemini vision configured (server-side only)" }
+        : { ok: false, detail: "Not configured. Set ML_INFERENCE_URL or GEMINI_API_KEY. Fallback uses deterministic mock." };
+
+    // Hardware bridge
+    const ingestToken = process.env.DRIFT_INGEST_TOKEN?.trim();
+    checks.drone_bridge = { ok: Boolean(ingestToken), detail: ingestToken ? "token configured" : "DRIFT_INGEST_TOKEN is not configured" };
+
+    const allOk = Object.values(checks).every(c => c.ok);
+    res.status(allOk ? 200 : 503).json({ status: allOk ? "healthy" : "degraded", timestamp: new Date().toISOString(), checks });
+  });
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);

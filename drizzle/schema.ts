@@ -34,6 +34,7 @@ export const uavRecommendationStatusEnum = pgEnum("uav_recommendation_status", [
 export const securityObservationSourceEnum = pgEnum("security_observation_source", ["authorized_bridge_health", "approved_security_adapter"]);
 export const securityObservationStatusEnum = pgEnum("security_observation_status", ["pending_review", "validated", "rejected", "expired"]);
 export const publicationStatusEnum = pgEnum("publication_status", ["draft", "approved", "published", "revoked"]);
+export const locationSourceEnum = pgEnum("location_source", ["image_exif", "device_gps", "verified_campus", "user_selected", "geocoded", "unknown"]);
 
 const createdAt = () => timestamp("createdAt", { withTimezone: true }).defaultNow().notNull();
 const updatedAt = () => timestamp("updatedAt", { withTimezone: true }).defaultNow().notNull();
@@ -59,6 +60,39 @@ export const assets = pgTable("assets", {
   longitude: varchar("longitude", { length: 32 }).notNull(),
   criticality: integer("criticality").notNull().default(3),
   status: assetStatusEnum("status").notNull().default("operational"),
+  campusId: integer("campusId"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const campuses = pgTable("campuses", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 220 }).notNull().unique(),
+  shortName: varchar("shortName", { length: 40 }).notNull().unique(),
+  description: text("description"),
+  address: varchar("address", { length: 300 }),
+  city: varchar("city", { length: 80 }),
+  state: varchar("state", { length: 80 }),
+  country: varchar("country", { length: 80 }).notNull().default("India"),
+  latitude: varchar("latitude", { length: 32 }).notNull(),
+  longitude: varchar("longitude", { length: 32 }).notNull(),
+  website: varchar("website", { length: 300 }),
+  defaultImageUrl: text("defaultImageUrl"),
+  sourceUrl: text("sourceUrl"),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const campusLocations = pgTable("campusLocations", {
+  id: serial("id").primaryKey(),
+  campusId: integer("campusId").notNull(),
+  name: varchar("name", { length: 200 }).notNull(),
+  description: text("description"),
+  locationType: varchar("locationType", { length: 80 }),
+  latitude: varchar("latitude", { length: 32 }).notNull(),
+  longitude: varchar("longitude", { length: 32 }).notNull(),
+  address: varchar("address", { length: 300 }),
+  sourceUrl: text("sourceUrl"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -101,6 +135,7 @@ export const evidence = pgTable("evidence", {
   mediaKind: mediaKindEnum("mediaKind").notNull(),
   latitude: varchar("latitude", { length: 32 }),
   longitude: varchar("longitude", { length: 32 }),
+  locationSource: locationSourceEnum("locationSource").default("unknown"),
   playbackSeconds: integer("playbackSeconds"),
   source: evidenceSourceEnum("source").notNull().default("upload"),
   sha256: varchar("sha256", { length: 64 }),
@@ -200,7 +235,39 @@ export const reports = pgTable("reports", {
   inspectionScope: jsonb("inspectionScope"),
   signoff: jsonb("signoff"),
   attachmentData: bytea("attachmentData"),
+  pdfBase64: text("pdfBase64"),
+  pdfSizeBytes: integer("pdfSizeBytes"),
+  pdfPages: integer("pdfPages"),
+  findingCount: integer("findingCount").default(0),
+  emailStatus: varchar("emailStatus", { length: 20 }),
+  emailMessageId: text("emailMessageId"),
+  emailedAt: timestamp("emailedAt", { withTimezone: true }),
+  emailError: text("emailError"),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const reconstructionJobs = pgTable("reconstruction_jobs", {
+  id: serial("id").primaryKey(),
+  jobKey: varchar("jobKey", { length: 80 }).notNull().unique(),
+  name: varchar("name", { length: 220 }).notNull(),
+  status: varchar("status", { length: 32 }).notNull().default("queued"),
+  inputFileName: varchar("inputFileName", { length: 260 }).notNull(),
+  inputMimeType: varchar("inputMimeType", { length: 120 }).notNull(),
+  inputSizeBytes: integer("inputSizeBytes").notNull(),
+  latitude: varchar("latitude", { length: 32 }).notNull(),
+  longitude: varchar("longitude", { length: 32 }).notNull(),
+  altitudeMeters: integer("altitudeMeters").notNull(),
+  inputMetadata: jsonb("inputMetadata").notNull(),
+  qualityReport: jsonb("qualityReport").notNull(),
+  stages: jsonb("stages").notNull(),
+  artifactManifest: jsonb("artifactManifest"),
+  errorMessage: text("errorMessage"),
+  createdBy: integer("createdBy"),
+  startedAt: timestamp("startedAt", { withTimezone: true }),
+  completedAt: timestamp("completedAt", { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
 });
 
 export const auditEvents = pgTable("auditEvents", {

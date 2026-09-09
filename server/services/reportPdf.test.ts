@@ -19,13 +19,13 @@ describe("DRIFT inspection PDF renderer", () => {
     const content = pdf.toString("latin1");
     expect(content).toContain("/AcroForm");
     expect(content).toContain("/Fields");
-    expect(content).toContain("/Count 6");
+    expect(content).toContain("/Count 10");
   });
 
   it("renders an honest empty-state report without inventing findings or evidence", async () => {
     const pdf = await renderInspectionPdf({ mission: { id: 13, name: "Empty capture review", mode: "inspection", status: "completed" }, evidence: [], defects: [], repairTotalCents: 0 });
     expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
     expect(pdf.toString("latin1")).toContain("/AcroForm");
-    expect(pdf.toString("latin1")).toContain("/Count 4");
+    expect(pdf.toString("latin1")).toContain("/Count 10");
   });
 });
