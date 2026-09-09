@@ -11,37 +11,6 @@ import { startLogin } from "@/const";
 import { useAuth } from "@/_core/hooks/useAuth";
 import React, { useMemo, useRef, useState, type SVGProps, type FC } from "react";
 import { toast } from "sonner";
-import {
-  AlertTriangle,
-  ArrowDownRight,
-  ArrowUpRight,
-  BatteryCharging,
-  BookOpenCheck,
-  CheckCheck,
-  ChevronRight,
-  CircleDot,
-  ClipboardCheck,
-  CloudCog,
-  Crosshair,
-  FileText,
-  Gauge,
-  Layers3,
-  MapPinned,
-  Network,
-  Play,
-  Radar,
-  RadioTower,
-  ScanLine,
-  ShieldCheck,
-  SlidersHorizontal,
-  Sparkles,
-  TriangleAlert,
-  Upload,
-  Video,
-  Waypoints,
-  Wrench,
-} from "lucide-react";
-import { useMemo, useRef, useState } from "react";
 import { CAPTURE_ZONES, INSPECTION_DOMAINS } from "@shared/types";
 import TrainMonitoring from "@/components/TrainMonitoring";
 import CostScalabilityWorkspace from "@/components/CostScalabilityWorkspace";
@@ -97,6 +66,9 @@ const Upload = createIcon(["M12 3v12", "M8 11l4-4 4 4", "M5 19v1h14v-1"]);
 const Video = createIcon(["M5 7h10a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2z", "M15 10l5-3v10l-5-3"]);
 const Waypoints = createIcon(["M12 2v4", "M12 18v4", "M4 12h4", "M16 12h4", "M12 8a4 4 0 110 8 4 4 0 010-8z", "M12 3a9 9 0 019 9", "M12 21a9 9 0 01-9-9"]);
 const Wrench = createIcon(["M14.7 6.3a3 3 0 014.2 4.2l-1.4 1.4 1.4 1.4-3.5 3.5-1.4-1.4-1.4 1.4-3.5-3.5 1.4-1.4-1.4-1.4a3 3 0 014.2-4.2l.7.7z", "M2 20l6-6"]) ;
+const Train = createIcon(["M7 5h10a2 2 0 012 2v7a3 3 0 01-3 3h-2l2 3h-2l-2-3H9l-2 3H5l2-3H5a3 3 0 01-3-3V7a2 2 0 012-2z", "M8 9h8", "M8 13h8"]);
+const Calculator = createIcon(["M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z", "M8 7h8", "M8 12h2", "M12 12h2", "M16 12h0", "M8 16h2", "M12 16h2", "M16 16h0"]);
+const TrendingUp = createIcon(["M4 16l6-6 4 4 6-8", "M16 6h4v4"]);
 
 type Severity = "low" | "medium" | "high" | "critical";
 type DefectType = "pothole" | "crack" | "structural" | "corrosion" | "spalling" | "exposed_rebar" | "water_intrusion" | "settlement" | "rail_alignment" | "obstruction" | "lighting_failure";
