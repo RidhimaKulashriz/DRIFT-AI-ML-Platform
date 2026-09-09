@@ -15,6 +15,7 @@ import { lookupContractorForLocation } from "./services/geoContractorLookup";
 import { buildIntelligenceSnapshot, simulateTwinFailure, type IntelligenceSnapshot } from "./services/intelligenceEngine";
 import { createDomainEvent, getDirtyDerivedState, markDerivedDirty, type DomainEventType } from "./services/domainEvents";
 import { analyzeDefectEvolution, analyzeModelDisagreement, buildCausalHypotheses, evaluateQualityGate, optimizeMissionPlans, replayEvents, resolveDefectIdentity } from "./services/finalIntelligence";
+import { buildWorldGraph, queryWorldGraph, type GraphNodeKind, type GraphEdge } from "./services/graphEngine";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -632,6 +633,16 @@ export async function getOperationalIntelligence(): Promise<IntelligenceSnapshot
   return buildIntelligenceSnapshot({ assets: assetRows, defects: defectRows, evidence: evidenceRows, missions: missionRows, telemetry: telemetryRows });
 }
 export function getOperationalWorldStateStatus() { return { engine: "drift-world-state-v1", dirtyScopes: getDirtyDerivedState(), incrementalInvalidation: true, eventSource: "auditEvents:domain.*", note: "Dirty derived nodes are recomputed at the intelligence boundary; event history remains immutable." }; }
+export async function queryOperationalWorldGraph(input: { kind?: GraphNodeKind; severity?: string; assetId?: number; relationship?: GraphEdge["relationship"]; startId?: string; hops?: number }) {
+  const db = await getDb();
+  if (!db) return { graph: buildWorldGraph({ assets: [], defects: [], evidence: [], missions: [], telemetry: [] }), result: { nodes: [], edges: [], traversalCost: 0 } };
+  const [assetRows, defectRows, evidenceRows, missionRows, telemetryRows, eventRows] = await Promise.all([
+    db.select().from(assets).limit(1000), db.select().from(defects).limit(2500), db.select().from(evidence).limit(2500), db.select().from(missions).limit(1000), db.select().from(telemetry).limit(5000), db.select().from(auditEvents).orderBy(auditEvents.createdAt).limit(5000),
+  ]);
+  const events = eventRows.filter(row => row.action.startsWith("domain.")).map(row => row.details).filter((details): details is Record<string, unknown> => Boolean(details && typeof details === "object"));
+  const graph = buildWorldGraph({ assets: assetRows, defects: defectRows, evidence: evidenceRows, missions: missionRows, telemetry: telemetryRows }, events as never[]);
+  return { graph, result: queryWorldGraph(graph, input) };
+}
 export async function getFinalIntelligence(assetId?: number) {
   const snapshot = await getOperationalIntelligence();
   const db = await getDb();
