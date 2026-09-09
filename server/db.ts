@@ -14,6 +14,7 @@ import type { DefectKind } from "./services/scoring";
 import { lookupContractorForLocation } from "./services/geoContractorLookup";
 import { buildIntelligenceSnapshot, simulateTwinFailure, type IntelligenceSnapshot } from "./services/intelligenceEngine";
 import { createDomainEvent, getDirtyDerivedState, markDerivedDirty, type DomainEventType } from "./services/domainEvents";
+import { analyzeDefectEvolution, analyzeModelDisagreement, buildCausalHypotheses, evaluateQualityGate, optimizeMissionPlans, replayEvents, resolveDefectIdentity } from "./services/finalIntelligence";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -631,6 +632,22 @@ export async function getOperationalIntelligence(): Promise<IntelligenceSnapshot
   return buildIntelligenceSnapshot({ assets: assetRows, defects: defectRows, evidence: evidenceRows, missions: missionRows, telemetry: telemetryRows });
 }
 export function getOperationalWorldStateStatus() { return { engine: "drift-world-state-v1", dirtyScopes: getDirtyDerivedState(), incrementalInvalidation: true, eventSource: "auditEvents:domain.*", note: "Dirty derived nodes are recomputed at the intelligence boundary; event history remains immutable." }; }
+export async function getFinalIntelligence(assetId?: number) {
+  const snapshot = await getOperationalIntelligence();
+  const db = await getDb();
+  const defectRows = assetId ? await listFilteredDefects({ assetId }) : await listFilteredDefects({});
+  const evidenceRows = assetId && db ? await db.select().from(evidence).where(eq(evidence.missionId, defectRows[0]?.missionId ?? -1)) : [];
+  const focusDefect = defectRows[0];
+  const qualityGate = evaluateQualityGate({ assets: [], defects: [], evidence: [], missions: [], telemetry: [] }, snapshot);
+  return { algorithm: "drift-final-engine-v1", generatedAt: new Date().toISOString(), worldState: getOperationalWorldStateStatus(), qualityGate, snapshot, missionPlans: optimizeMissionPlans(snapshot), causalHypotheses: buildCausalHypotheses({ assets: [], defects: defectRows, evidence: evidenceRows, missions: [], telemetry: [] }), focus: focusDefect ? { defectId: focusDefect.id, identity: resolveDefectIdentity(focusDefect, defectRows.filter(item => item.id !== focusDefect.id)), evolution: analyzeDefectEvolution(focusDefect, defectRows), disagreement: analyzeModelDisagreement(focusDefect, evidenceRows) } : null };
+}
+export async function replayOperationalEvents(until?: Date) {
+  const db = await getDb();
+  if (!db) return replayEvents([], until);
+  const rows = await db.select().from(auditEvents).orderBy(auditEvents.createdAt).limit(5000);
+  const events = rows.filter(row => row.action.startsWith("domain.")).map(row => row.details).filter((details): details is Record<string, unknown> => Boolean(details && typeof details === "object"));
+  return replayEvents(events as never[], until);
+}
 export async function simulateOperationalTwinFailure(assetIds: number[]) {
   const snapshot = await getOperationalIntelligence();
   return { snapshot: { generatedAt: snapshot.generatedAt, algorithm: snapshot.algorithm }, simulation: simulateTwinFailure(snapshot, assetIds) };
