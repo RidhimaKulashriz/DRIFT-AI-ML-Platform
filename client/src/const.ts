@@ -8,7 +8,7 @@ export { COOKIE_NAME, ONE_YEAR_MS } from '@shared/const';
 // Vercel environment variable was omitted during deployment.
 export const DEFAULT_BACKEND_ORIGIN = "https://drift-node-api.onrender.com";
 export const getBackendOrigin = () =>
-  (import.meta.env.VITE_BACKEND_URL || (import.meta.env.PROD ? DEFAULT_BACKEND_ORIGIN : "")).replace(/\/$/, "");
+  (import.meta.env.VITE_BACKEND_URL || (typeof window !== "undefined" && window.location.hostname.endsWith(".manus.computer") ? "" : (import.meta.env.PROD ? DEFAULT_BACKEND_ORIGIN : ""))).replace(/\/$/, "");
 
 // Start the configured OAuth login. Call this from an event handler or effect at the
 // moment you want to navigate, e.g. `onClick={() => startLogin()}`.
