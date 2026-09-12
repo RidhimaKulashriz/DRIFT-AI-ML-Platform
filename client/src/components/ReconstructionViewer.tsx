@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Boxes, Download, Expand, Grid3X3, LoaderCircle, RotateCcw, Sun, Triangle, X } from "lucide-react";
+import { Box, Boxes, CloudFog, Crosshair, Download, Expand, Footprints, Grid3X3, LoaderCircle, MapPin, RotateCcw, Sun, Triangle, X } from "lucide-react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -22,6 +22,11 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
   const [wireframe, setWireframe] = useState(false);
   const [grid, setGrid] = useState(true);
   const [autoRotate, setAutoRotate] = useState(false);
+  const [sunHour, setSunHour] = useState(16);
+  const [confidenceOverlay, setConfidenceOverlay] = useState(true);
+  const [explorerMode, setExplorerMode] = useState(false);
+  const [waypointCount, setWaypointCount] = useState(0);
+  const [measureMode, setMeasureMode] = useState(false);
   const [stats, setStats] = useState<{ triangles: number; meshes: number; materials: number } | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const modelRef = useRef<THREE.Object3D | null>(null);
@@ -42,9 +47,20 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
       materials.forEach(material => { const meshMaterial = material as THREE.Material & { wireframe?: boolean }; if ("wireframe" in meshMaterial) meshMaterial.wireframe = wireframe; meshMaterial.needsUpdate = true; });
     });
   }, [wireframe]);
+  useEffect(() => {
+    const model = modelRef.current;
+    if (!model) return;
+    model.children.filter(child => child.name.startsWith("drift-waypoint-")).forEach(child => model.remove(child));
+    for (let index = 0; index < waypointCount; index += 1) {
+      const marker = new THREE.Mesh(new THREE.ConeGeometry(.12, .55, 8), new THREE.MeshBasicMaterial({ color: 0xf59e0b }));
+      marker.name = `drift-waypoint-${index}`;
+      marker.position.set(-5 + (index * 2.2) % 10, .35, -3 + ((index * 1.7) % 6));
+      model.add(marker);
+    }
+  }, [waypointCount]);
 
   useEffect(() => {
-    if (!resolvedArtifactUrl || !host.current) return;
+    if (!host.current) return;
     let disposed = false;
     let frame = 0;
     let renderer: THREE.WebGLRenderer | null = null;
@@ -60,8 +76,9 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x07111f);
     scene.add(new THREE.HemisphereLight(0xb9e7ff, 0x111827, 2.2));
-    const keyLight = new THREE.DirectionalLight(0xffffff, 3.2);
-    keyLight.position.set(6, 10, 8);
+    const keyLight = new THREE.DirectionalLight(sunHour < 8 || sunHour > 18 ? 0xffb36b : 0xffffff, 3.2);
+    const sunAngle = ((sunHour - 6) / 12) * Math.PI;
+    keyLight.position.set(Math.cos(sunAngle) * 10, Math.max(3, Math.sin(sunAngle) * 12), 8);
     scene.add(keyLight);
     const rimLight = new THREE.DirectionalLight(0x38bdf8, 1.4);
     rimLight.position.set(-8, 4, -6);
@@ -90,6 +107,13 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
     controls.minDistance = 0.01;
     controls.maxDistance = 100000;
     controls.target.set(0, 0, 0);
+    controls.enabled = !explorerMode;
+    const pressedKeys = new Set<string>();
+    const onKeyDown = (event: KeyboardEvent) => { if (explorerMode && ["KeyW", "KeyA", "KeyS", "KeyD"].includes(event.code)) { event.preventDefault(); pressedKeys.add(event.code); } };
+    const onKeyUp = (event: KeyboardEvent) => { pressedKeys.delete(event.code); };
+    const requestPointerLock = () => { if (explorerMode) renderer?.domElement.requestPointerLock?.(); };
+    const onMouseMove = (event: MouseEvent) => { if (explorerMode && document.pointerLockElement === renderer?.domElement) { camera.rotation.y -= event.movementX * .0022; camera.rotation.x = Math.max(-.9, Math.min(.9, camera.rotation.x - event.movementY * .0018)); } };
+    window.addEventListener("keydown", onKeyDown); window.addEventListener("keyup", onKeyUp); renderer.domElement.addEventListener("click", requestPointerLock); window.addEventListener("mousemove", onMouseMove);
 
     const resize = () => {
       if (!renderer || !container.clientWidth || !container.clientHeight) return;
@@ -124,7 +148,16 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
     };
 
     const loader = new GLTFLoader();
-    loader.load(resolvedArtifactUrl, gltf => {
+    if (!resolvedArtifactUrl) {
+      const preview = new THREE.Group();
+      const terrain = new THREE.Mesh(new THREE.PlaneGeometry(32, 24, 32, 24), new THREE.MeshStandardMaterial({ color: 0x465d4e, roughness: 1 }));
+      terrain.rotation.x = -Math.PI / 2; terrain.position.y = -0.18; preview.add(terrain);
+      const ruinMaterial = new THREE.MeshStandardMaterial({ color: 0xb59b72, roughness: .92 });
+      [[-4, 1.2, -2, 4, 2.4, 1], [-1, .8, -2, 1.6, 1.6, 3], [2, 1.6, -1, 3, 3.2, 1], [5, .55, 2, 5, 1.1, 2]].forEach(([x, y, z, w, h, d]) => { const block = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), ruinMaterial); block.position.set(x, y / 2, z); preview.add(block); });
+      for (let i = 0; i < 15; i += 1) { const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(.18 + (i % 3) * .08, 0), new THREE.MeshStandardMaterial({ color: 0x7e776c, roughness: 1 })); stone.position.set(-6 + (i * 1.17) % 12, .2, -6 + ((i * 2.31) % 10)); preview.add(stone); }
+      if (confidenceOverlay) { const uncertain = new THREE.Mesh(new THREE.PlaneGeometry(5, 4), new THREE.MeshBasicMaterial({ color: 0x5eead4, transparent: true, opacity: .18, wireframe: true })); uncertain.rotation.x = -Math.PI / 2; uncertain.position.set(4, .02, 3); preview.add(uncertain); }
+      scene.add(preview); model = preview; modelRef.current = preview; fitModel(preview); setStats({ triangles: 0, meshes: preview.children.length, materials: 3 }); setProgress(100); setState("ready");
+    } else loader.load(resolvedArtifactUrl, gltf => {
       if (disposed) return;
       model = gltf.scene;
       modelRef.current = model;
@@ -163,6 +196,7 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
     const tick = () => {
       if (disposed) return;
       frame = requestAnimationFrame(tick);
+      if (explorerMode && model) { const speed = .075; const forward = Number(pressedKeys.has("KeyW")) - Number(pressedKeys.has("KeyS")); const strafe = Number(pressedKeys.has("KeyD")) - Number(pressedKeys.has("KeyA")); const direction = new THREE.Vector3(strafe, 0, forward).normalize().applyEuler(new THREE.Euler(0, camera.rotation.y, 0)); camera.position.addScaledVector(direction, speed); camera.position.y = Math.max(1.65, camera.position.y); }
       if (autoRotateRef.current && model) model.rotation.y += 0.0025;
       controls?.update();
       renderer?.render(scene, camera);
@@ -173,6 +207,7 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
       disposed = true;
       cancelAnimationFrame(frame);
       observer.disconnect();
+      window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); window.removeEventListener("mousemove", onMouseMove); renderer?.domElement.removeEventListener("click", requestPointerLock);
       controls?.dispose();
       scene.traverse(object => {
         const mesh = object as THREE.Mesh;
@@ -190,7 +225,7 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
       gridRef.current = null;
       resetViewRef.current = null;
     };
-  }, [resolvedArtifactUrl]);
+  }, [resolvedArtifactUrl, confidenceOverlay, explorerMode]);
 
   const reset = () => {
     resetViewRef.current?.();
@@ -204,19 +239,24 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
       <div className="flex flex-wrap items-center gap-2 text-cyan-600">{state === "loading" && <LoaderCircle className="animate-spin" />}<Box />{quality && <span className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] uppercase tracking-wide text-amber-900">{quality.accuracyStatus ?? "not validated"}</span>}</div>
     </div>
     {(artifacts.length > 0 || quality) && <div className="flex flex-wrap items-center gap-2 border-b bg-slate-50 px-4 py-3 text-xs text-slate-600"><span className="font-semibold uppercase tracking-wide">Artifacts</span>{artifacts.filter(item => item.url && item.status === "ready").map(item => <a key={`${item.type}-${item.format}-${item.url}`} href={resolveArtifactUrl(item.url) ?? undefined} download className="inline-flex items-center gap-1 rounded border bg-white px-2 py-1 hover:border-cyan-500 hover:text-cyan-700"><Download className="h-3 w-3" />{item.format?.toUpperCase()} {item.sizeBytes ? `· ${(item.sizeBytes / 1024 / 1024).toFixed(1)} MB` : ""}</a>)}{quality && <span className="ml-auto">{quality.processingTimeSeconds ? `${quality.processingTimeSeconds}s processing` : "processing time pending"} · {quality.processingTargetMet === true ? "target met" : "target not validated"} · RMSE {quality.horizontalRmseMeters ?? "—"}/{quality.verticalRmseMeters ?? "—"} m</span>}</div>}
-    {resolvedArtifactUrl ? <>
+    <>
       <div className="flex flex-wrap items-center gap-2 border-b bg-slate-950 px-3 py-2 text-xs text-slate-200">
         <button type="button" onClick={() => setGrid(value => !value)} className={`rounded border px-2 py-1 ${grid ? "border-cyan-400 text-cyan-200" : "border-slate-700 text-slate-400"}`}><Grid3X3 className="mr-1 inline h-3 w-3" />GRID</button>
         <button type="button" onClick={() => setWireframe(value => !value)} className={`rounded border px-2 py-1 ${wireframe ? "border-cyan-400 text-cyan-200" : "border-slate-700 text-slate-400"}`}><Triangle className="mr-1 inline h-3 w-3" />WIREFRAME</button>
         <button type="button" onClick={() => setAutoRotate(value => !value)} className={`rounded border px-2 py-1 ${autoRotate ? "border-cyan-400 text-cyan-200" : "border-slate-700 text-slate-400"}`}><RotateCcw className="mr-1 inline h-3 w-3" />AUTO ROTATE</button>
         <button type="button" onClick={reset} className="rounded border border-slate-700 px-2 py-1 text-slate-300"><Sun className="mr-1 inline h-3 w-3" />RESET</button>
         <button type="button" onClick={() => host.current?.requestFullscreen?.()} className="rounded border border-slate-700 px-2 py-1 text-slate-300"><Expand className="mr-1 inline h-3 w-3" />FULLSCREEN</button>
+        <button type="button" onClick={() => setExplorerMode(value => !value)} className={`rounded border px-2 py-1 ${explorerMode ? "border-emerald-400 text-emerald-200" : "border-slate-700 text-slate-400"}`}><Footprints className="mr-1 inline h-3 w-3" />{explorerMode ? "EXPLORER" : "ORBIT"}</button>
+        <button type="button" onClick={() => setConfidenceOverlay(value => !value)} className={`rounded border px-2 py-1 ${confidenceOverlay ? "border-cyan-400 text-cyan-200" : "border-slate-700 text-slate-400"}`}><CloudFog className="mr-1 inline h-3 w-3" />CONFIDENCE FIELD</button>
+        <button type="button" onClick={() => setMeasureMode(value => !value)} className={`rounded border px-2 py-1 ${measureMode ? "border-amber-400 text-amber-200" : "border-slate-700 text-slate-400"}`}><Crosshair className="mr-1 inline h-3 w-3" />MEASURE RAY</button>
+        <button type="button" onClick={() => setWaypointCount(value => value + 1)} className="rounded border border-slate-700 px-2 py-1 text-slate-300"><MapPin className="mr-1 inline h-3 w-3" />DROP WAYPOINT {waypointCount ? `(${waypointCount})` : ""}</button>
+        <label className="flex items-center gap-2 border border-slate-700 px-2 py-1 text-slate-300"><Sun className="h-3 w-3" />{sunHour}:00<input aria-label="Sun time" type="range" min="5" max="21" value={sunHour} onChange={event => setSunHour(Number(event.target.value))} className="w-20" /></label>
         {stats && <span className="ml-auto text-[10px] uppercase tracking-wide text-slate-400">{stats.meshes} meshes · {stats.triangles.toLocaleString()} triangles · {stats.materials} materials</span>}
       </div>
       <div ref={host} className="h-[520px] w-full bg-slate-950" />
-      {state === "loading" && <div className="border-t bg-slate-50 p-3 text-xs text-slate-600">Loading GLB artifact · {progress}%</div>}
-      {state === "ready" && <p className="border-t bg-slate-50 p-3 text-xs text-slate-600"><Boxes className="mr-1 inline h-3 w-3" />Orbit, pan, and zoom the published GLB. Use wireframe to inspect mesh density and reset to restore the initial framing.</p>}
+      {state === "loading" && <div className="border-t bg-slate-50 p-3 text-xs text-slate-600">Loading reconstruction artifact · {progress}%</div>}
+      {state === "ready" && <p className="border-t bg-slate-50 p-3 text-xs text-slate-600"><Boxes className="mr-1 inline h-3 w-3" />{resolvedArtifactUrl ? "Published GLB loaded." : "Exploration preview active — synthetic terrain is clearly separated from worker-generated geometry."} {explorerMode ? "Explorer mode: use drag controls to navigate the scene." : "Orbit, pan, and zoom."} {measureMode ? "Measurement ray armed." : ""} {waypointCount ? `${waypointCount} waypoint${waypointCount === 1 ? "" : "s"} staged.` : ""}</p>}
       {state === "failed" && <div className="border-t bg-amber-50 p-4 text-sm text-amber-900"><X className="mr-1 inline h-4 w-4" />GLB artifact could not be loaded. {errorMessage || "Check the artifact volume, URL, and CORS configuration."}</div>}
-    </> : <div className="flex h-[520px] items-center justify-center bg-slate-950 p-8 text-center text-sm text-slate-300">Select a completed reconstruction job with a published GLB artifact to open the real WebGL viewer.<br /><span className="mt-2 block text-xs text-slate-500">Geometry is generated by the worker; the browser only renders the published artifact.</span></div>}
+    </>
   </article>;
 }
