@@ -43,8 +43,11 @@ async function startServer() {
   const server = createServer(app);
   app.use(createCorsMiddleware());
   // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
-  app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  // Reconstruction uploads are base64-encoded by the browser before reaching
+  // tRPC. Allow the documented 250 MB source-video limit plus encoding and
+  // JSON overhead; the procedure still enforces the decoded-byte limit.
+  app.use(express.json({ limit: "350mb" }));
+  app.use(express.urlencoded({ limit: "350mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
   app.get("/api/reconstruction/:jobKey/artifacts/:fileName", (req, res) => {
