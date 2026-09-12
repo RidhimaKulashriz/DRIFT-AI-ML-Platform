@@ -23,6 +23,10 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 POLL_SECONDS = int(os.getenv("RECONSTRUCTION_POLL_SECONDS", "10"))
 ODM_IMAGE = os.getenv("ODM_IMAGE", "opendronemap/odm:latest")
 ARTIFACT_ROOT = Path(os.getenv("RECONSTRUCTION_ARTIFACT_ROOT", "/var/lib/drift/reconstruction"))
+WORK_ROOT = Path(os.getenv("RECONSTRUCTION_WORK_ROOT", "/var/lib/drift/work"))
+# Docker is controlled by the host daemon, so its -v source must be the host
+# path corresponding to the worker container's work directory.
+ODM_HOST_WORK_ROOT = Path(os.getenv("RECONSTRUCTION_WORK_HOST_ROOT", str(WORK_ROOT)))
 MAX_FRAMES = int(os.getenv("RECONSTRUCTION_MAX_FRAMES", "900"))
 ODM_TIMEOUT_SECONDS = int(os.getenv("RECONSTRUCTION_ODM_TIMEOUT_SECONDS", "5400"))
 STAGE_NAMES = ["ingest", "metadata_validation", "frame_sampling", "visual_odometry", "sparse_cloud", "dense_cloud", "mesh_texturing", "semantic_layers", "georeference", "quality_gate", "publish_artifacts"]
@@ -158,7 +162,7 @@ def load_detection_adapter(frame_file: Path, frame_records: list[dict[str, Any]]
 def process(conn: psycopg.Connection, job: tuple[Any, ...]) -> None:
     key, name, file_name, metadata = job
     metadata = metadata or {}
-    work = Path(tempfile.mkdtemp(prefix=f"drift-{key}-"))
+    work = Path(tempfile.mkdtemp(prefix=f"drift-{key}-", dir=WORK_ROOT))
     output = ARTIFACT_ROOT / key
     output.mkdir(parents=True, exist_ok=True)
     stages = [{"stage": stage, "order": index + 1, "status": "pending"} for index, stage in enumerate(STAGE_NAMES)]
@@ -195,7 +199,10 @@ def process(conn: psycopg.Connection, job: tuple[Any, ...]) -> None:
         set_stage(stages, "visual_odometry", "processing")
         update(conn, key, "processing", stages)
 
-        run(["docker", "run", "--rm", "-v", f"{project}:/datasets", ODM_IMAGE, "--project-path", "/datasets", "drift", "--gltf", "--pc-las", "--orthophoto-resolution", "2", "--feature-quality", "high", "--pc-quality", "high", "--max-concurrency", os.getenv("ODM_MAX_CONCURRENCY", "4")], cwd=work, timeout=ODM_TIMEOUT_SECONDS)
+        project_host = ODM_HOST_WORK_ROOT / work.relative_to(WORK_ROOT)
+        if not project_host.is_dir():
+            raise RuntimeError(f"ODM host mount path does not exist: {project_host}")
+        run(["docker", "run", "--rm", "-v", f"{project_host}:/datasets", ODM_IMAGE, "--project-path", "/datasets", "drift", "--gltf", "--pc-las", "--orthophoto-resolution", "2", "--feature-quality", "high", "--pc-quality", "high", "--max-concurrency", os.getenv("ODM_MAX_CONCURRENCY", "4")], cwd=work, timeout=ODM_TIMEOUT_SECONDS)
         for stage in ["visual_odometry", "sparse_cloud", "dense_cloud", "mesh_texturing", "georeference"]:
             set_stage(stages, stage, "completed")
         pose_outputs = find_pose_outputs(project)
@@ -242,6 +249,7 @@ def process(conn: psycopg.Connection, job: tuple[Any, ...]) -> None:
 
 def main() -> None:
     ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
+    WORK_ROOT.mkdir(parents=True, exist_ok=True)
     while True:
         with psycopg.connect(DATABASE_URL) as conn:
             ensure_schema(conn)

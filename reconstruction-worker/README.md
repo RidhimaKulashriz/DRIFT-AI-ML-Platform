@@ -11,11 +11,12 @@ The host must provide Linux, Docker Engine with permission to use `/var/run/dock
 From the repository root:
 
 ```bash
-mkdir -p data/reconstruction
+mkdir -p data/reconstruction data/reconstruction-work
 cp reconstruction-worker/.env.example reconstruction-worker/.env
 # Edit RECONSTRUCTION_ARTIFACT_HOST_ROOT in reconstruction-worker/.env
 # to an absolute path, for example:
 # RECONSTRUCTION_ARTIFACT_HOST_ROOT=/home/ubuntu/DRIFT-AI-ML-Platform/data/reconstruction
+# RECONSTRUCTION_WORK_HOST_ROOT=/home/ubuntu/DRIFT-AI-ML-Platform/data/reconstruction-work
 
 reconstruction-worker/preflight.sh
 
@@ -23,7 +24,7 @@ docker compose --env-file reconstruction-worker/.env \
   -f reconstruction-worker/docker-compose.yml up --build -d
 ```
 
-The Compose stack starts PostgreSQL and the worker. PostgreSQL is exposed on port `5432` by default and persists in the `drift-postgres-data` volume. The worker polls `reconstruction_jobs` every ten seconds, uses the Docker socket to start `opendronemap/odm:latest`, and publishes files under the shared `RECONSTRUCTION_ARTIFACT_HOST_ROOT/<jobKey>/` directory. The application server must be started separately with the same database connection and with `RECONSTRUCTION_ARTIFACT_ROOT` set to that host directory so `/api/reconstruction/:jobKey/artifacts/:fileName` can serve the published files.
+The Compose stack starts PostgreSQL and the worker. PostgreSQL is exposed on port `5432` by default and persists in the `drift-postgres-data` volume. The worker polls `reconstruction_jobs` every ten seconds, uses the Docker socket to start `opendronemap/odm:latest`, and publishes files under the shared `RECONSTRUCTION_ARTIFACT_HOST_ROOT/<jobKey>/` directory. ODM is given the host-visible project path under `RECONSTRUCTION_WORK_HOST_ROOT`; this is required because the Docker daemon resolves `-v` source paths on the host, not inside the worker container. The application server must be started separately with the same database connection and with `RECONSTRUCTION_ARTIFACT_ROOT` set to that host directory so `/api/reconstruction/:jobKey/artifacts/:fileName` can serve the published files.
 
 For the host-side backend, use:
 
@@ -47,9 +48,10 @@ From Ubuntu/WSL, clone the repository into the Linux filesystem and run:
 cd ~
 git clone https://github.com/RidhimaKulashriz/DRIFT-AI-ML-Platform.git
 cd DRIFT-AI-ML-Platform
-mkdir -p data/reconstruction
+mkdir -p data/reconstruction data/reconstruction-work
 cp reconstruction-worker/.env.example reconstruction-worker/.env
 sed -i "s#^RECONSTRUCTION_ARTIFACT_HOST_ROOT=.*#RECONSTRUCTION_ARTIFACT_HOST_ROOT=$PWD/data/reconstruction#" reconstruction-worker/.env
+sed -i "s#^RECONSTRUCTION_WORK_HOST_ROOT=.*#RECONSTRUCTION_WORK_HOST_ROOT=$PWD/data/reconstruction-work#" reconstruction-worker/.env
 reconstruction-worker/preflight.sh
 docker compose --env-file reconstruction-worker/.env -f reconstruction-worker/docker-compose.yml up --build -d
 ```
@@ -83,6 +85,8 @@ With no `DRIFT_DETECTION_COMMAND`, detection status is `not_configured` and dete
 |---|---:|---|
 | `DATABASE_URL` | Yes for host backend | PostgreSQL connection used by the application. Compose derives the worker connection from the PostgreSQL service variables. |
 | `RECONSTRUCTION_ARTIFACT_HOST_ROOT` | Yes | Absolute host directory shared by the worker and backend. |
+| `RECONSTRUCTION_WORK_HOST_ROOT` | Yes | Absolute host directory shared by the worker container and host Docker daemon for ODM project inputs and outputs. |
+| `RECONSTRUCTION_WORK_ROOT` | No | Worker-container path corresponding to the host work directory; defaults to `/var/lib/drift/work`. |
 | `RECONSTRUCTION_ARTIFACT_ROOT` | Yes for host backend | Backend path to the same directory; defaults to `/var/lib/drift/reconstruction` in the worker container. |
 | `ODM_IMAGE` | No | ODM image, default `opendronemap/odm:latest`. |
 | `ODM_MAX_CONCURRENCY` | No | ODM concurrency, default `4`. Reduce for constrained hosts. |

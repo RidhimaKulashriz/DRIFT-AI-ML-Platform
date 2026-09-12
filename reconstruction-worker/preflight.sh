@@ -33,6 +33,15 @@ else
   printf 'OK   %-12s %s\n' artifact-root "$RECONSTRUCTION_ARTIFACT_HOST_ROOT"
 fi
 
+work_root="${RECONSTRUCTION_WORK_HOST_ROOT:-$(pwd)/data/reconstruction-work}"
+mkdir -p "$work_root"
+if [[ -d "$work_root" && -w "$work_root" ]]; then
+  printf 'OK   %-12s writable host ODM mount: %s\n' work-root "$work_root"
+else
+  printf 'FAIL %-12s not writable: %s\n' work-root "$work_root"
+  fail=1
+fi
+
 if [[ "$fail" -ne 0 ]]; then
   printf '\nPreflight failed. Install the missing host dependencies before starting the stack.\n' >&2
   exit 1
