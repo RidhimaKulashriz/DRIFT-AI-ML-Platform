@@ -42,7 +42,20 @@ export async function storagePut(
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream",
 ): Promise<{ key: string; url: string }> {
-  if (supabasePortableStorageConfigured()) return putInSupabaseEvidenceStorage(relKey, data, contentType);
+  if (supabasePortableStorageConfigured()) {
+    try {
+      return await putInSupabaseEvidenceStorage(relKey, data, contentType);
+    } catch (supabaseError) {
+      // Supabase buckets can have a narrower MIME allowlist than DRIFT's
+      // application contract (for example, rejecting video/webm). Keep the
+      // original bytes and MIME type, then try the primary Forge store rather
+      // than returning a false success or relabeling the media.
+      console.warn(
+        `[DRIFT Storage] Supabase upload failed; falling back to Forge storage for ${relKey}.`,
+        supabaseError instanceof Error ? supabaseError.message : supabaseError,
+      );
+    }
+  }
   const { forgeUrl, forgeKey } = getForgeConfig();
   const key = appendHashSuffix(normalizeKey(relKey));
 
