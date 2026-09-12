@@ -6,7 +6,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 type ViewerState = "idle" | "loading" | "ready" | "failed";
 
-type Props = { artifactUrl?: string | null; artifacts?: Array<{ type?: string; format?: string; url?: string; sizeBytes?: number; sha256?: string; status?: string }>; quality?: { accuracyStatus?: string; processingTimeSeconds?: number; processingTargetMet?: boolean; completenessRatio?: number | null; horizontalRmseMeters?: number | null; verticalRmseMeters?: number | null } | null };
+type Props = { artifactUrl?: string | null; sourceVideoUrl?: string | null; jobKey?: string | null; artifacts?: Array<{ type?: string; format?: string; url?: string; sizeBytes?: number; sha256?: string; status?: string }>; quality?: { accuracyStatus?: string; processingTimeSeconds?: number; processingTargetMet?: boolean; completenessRatio?: number | null; horizontalRmseMeters?: number | null; verticalRmseMeters?: number | null } | null };
 
 function resolveArtifactUrl(artifactUrl?: string | null) {
   if (!artifactUrl) return null;
@@ -15,7 +15,7 @@ function resolveArtifactUrl(artifactUrl?: string | null) {
   return `${backendOrigin}${artifactUrl.startsWith("/") ? artifactUrl : `/${artifactUrl}`}`;
 }
 
-export default function ReconstructionViewer({ artifactUrl, artifacts = [], quality }: Props) {
+export default function ReconstructionViewer({ artifactUrl, sourceVideoUrl, jobKey, artifacts = [], quality }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<ViewerState>("idle");
   const [progress, setProgress] = useState(0);
@@ -194,16 +194,7 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
     };
     const canOccupy = (position: THREE.Vector3) => { const capsule = new THREE.Box3(new THREE.Vector3(position.x - .28, position.y - 1.55, position.z - .28), new THREE.Vector3(position.x + .28, position.y + .15, position.z + .28)); return !collisionVolumes.some(box => box.intersectsBox(capsule)); };
     const loader = new GLTFLoader();
-    if (!resolvedArtifactUrl) {
-      const preview = new THREE.Group();
-      const terrain = new THREE.Mesh(new THREE.PlaneGeometry(32, 24, 32, 24), new THREE.MeshStandardMaterial({ color: 0x465d4e, roughness: 1 }));
-      terrain.rotation.x = -Math.PI / 2; terrain.position.y = -0.18; preview.add(terrain);
-      const ruinMaterial = new THREE.MeshStandardMaterial({ color: 0xb59b72, roughness: .92 });
-      [[-4, 1.2, -2, 4, 2.4, 1], [-1, .8, -2, 1.6, 1.6, 3], [2, 1.6, -1, 3, 3.2, 1], [5, .55, 2, 5, 1.1, 2]].forEach(([x, y, z, w, h, d]) => { const block = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), ruinMaterial); block.position.set(x, y / 2, z); preview.add(block); });
-      for (let i = 0; i < 15; i += 1) { const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(.18 + (i % 3) * .08, 0), new THREE.MeshStandardMaterial({ color: 0x7e776c, roughness: 1 })); stone.position.set(-6 + (i * 1.17) % 12, .2, -6 + ((i * 2.31) % 10)); preview.add(stone); }
-      if (confidenceOverlay) { const uncertain = new THREE.Mesh(new THREE.PlaneGeometry(5, 4), new THREE.MeshBasicMaterial({ color: 0x5eead4, transparent: true, opacity: .18, wireframe: true })); uncertain.rotation.x = -Math.PI / 2; uncertain.position.set(4, .02, 3); preview.add(uncertain); }
-      scene.add(preview); model = preview; modelRef.current = preview; fitModel(preview); refreshCollisionVolumes(preview); setStats({ triangles: 0, meshes: preview.children.length, materials: 3 }); setProgress(100); setState("ready");
-    } else loader.load(resolvedArtifactUrl, gltf => {
+    if (resolvedArtifactUrl) loader.load(resolvedArtifactUrl, gltf => {
       if (disposed) return;
       model = gltf.scene;
       modelRef.current = model;
@@ -239,6 +230,7 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
       setErrorMessage(error instanceof Error ? error.message : "The GLB artifact could not be decoded.");
       setState("failed");
     });
+    else setState("ready");
 
     const tick = () => {
       if (disposed) return;
@@ -304,8 +296,8 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
       </div>
       <div ref={host} className="h-[520px] w-full bg-slate-950" />
       {state === "loading" && <div className="border-t bg-slate-50 p-3 text-xs text-slate-600">Loading reconstruction artifact · {progress}%</div>}
-      {state === "ready" && <p className="border-t bg-slate-50 p-3 text-xs text-slate-600"><Boxes className="mr-1 inline h-3 w-3" />{resolvedArtifactUrl ? "Published GLB loaded." : "Exploration preview active — synthetic terrain is clearly separated from worker-generated geometry."} {explorerMode ? "WASD + mouse look active." : "Orbit, pan, and zoom."} {selectedObject !== "none" ? ` Selected: ${selectedObject}.` : " Click a surface to inspect it."} {measureMode ? " Measurement ray armed; click two surfaces." : ""} {measureDistance !== null ? ` Distance: ${measureDistance.toFixed(2)} scene metres.` : ""} {waypointCount ? `${waypointCount} waypoint${waypointCount === 1 ? "" : "s"} staged.` : ""} {scanState === "captured" ? " Inspection evidence captured locally; sync to a mission when connected." : ""}</p>}
+      {state === "ready" && <p className="border-t bg-slate-50 p-3 text-xs text-slate-600"><Boxes className="mr-1 inline h-3 w-3" />{resolvedArtifactUrl ? "Published GLB loaded as the reconstructed place." : `No published reconstruction artifact for ${jobKey ?? "this run"}; the scene is intentionally not fabricated. ${sourceVideoUrl ? "Source video is attached to the job; waiting for a worker-produced artifact." : "Attach source video metadata before reconstruction."}`} {resolvedArtifactUrl && (explorerMode ? "WASD + mouse look active." : "Orbit, pan, and zoom.")} {resolvedArtifactUrl && selectedObject !== "none" ? ` Selected: ${selectedObject}.` : ""} {resolvedArtifactUrl && measureMode ? " Measurement ray armed; click two surfaces." : ""} {measureDistance !== null ? ` Distance: ${measureDistance.toFixed(2)} scene metres.` : ""} {waypointCount ? `${waypointCount} waypoint${waypointCount === 1 ? "" : "s"} staged.` : ""} {scanState === "captured" ? " Inspection evidence captured locally; sync to a mission when connected." : ""}</p>}
       {state === "failed" && <div className="border-t bg-amber-50 p-4 text-sm text-amber-900"><X className="mr-1 inline h-4 w-4" />GLB artifact could not be loaded. {errorMessage || "Check the artifact volume, URL, and CORS configuration."}</div>}
     </>
   </article>;
-}
+    }
