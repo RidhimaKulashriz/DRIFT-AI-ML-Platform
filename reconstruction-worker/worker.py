@@ -68,10 +68,25 @@ def sha256(path: Path) -> str:
 
 
 def artifact_record(key: str, kind: str, source: Path, output: Path) -> dict[str, Any]:
+    validate_output(source, kind)
     target = output / source.name
     shutil.copy2(source, target)
     extension = "geotiff" if kind == "geotiff" else target.suffix.lstrip(".").lower()
     return {"type": kind, "format": extension, "fileName": target.name, "path": str(target), "url": f"/api/reconstruction/{key}/artifacts/{target.name}", "sizeBytes": target.stat().st_size, "sha256": sha256(target), "status": "ready"}
+
+
+def validate_output(path: Path, kind: str) -> None:
+    if not path.is_file() or path.stat().st_size == 0:
+        raise RuntimeError(f"Quality gate failed: {kind} output is missing or empty: {path.name}")
+    with path.open("rb") as stream:
+        header = stream.read(32)
+    suffix = path.suffix.lower()
+    if suffix == ".glb" and header[:4] != b"glTF":
+        raise RuntimeError(f"Quality gate failed: GLB header is invalid: {path.name}")
+    if suffix == ".ply" and not header.startswith(b"ply"):
+        raise RuntimeError(f"Quality gate failed: PLY header is invalid: {path.name}")
+    if suffix in {".las", ".laz"} and not header.startswith(b"LASF"):
+        raise RuntimeError(f"Quality gate failed: LAS/LAZ header is invalid: {path.name}")
 
 
 def write_json_artifact(key: str, kind: str, name: str, payload: Any, output: Path) -> dict[str, Any]:
