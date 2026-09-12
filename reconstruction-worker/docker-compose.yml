@@ -1,0 +1,40 @@
+services:
+  drift-postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-drift}
+      POSTGRES_USER: ${POSTGRES_USER:-drift}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-drift}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - drift-postgres-data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/001-reconstruction.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-drift} -d ${POSTGRES_DB:-drift}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  drift-reconstruction-worker:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      drift-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-drift}:${POSTGRES_PASSWORD:-drift}@drift-postgres:5432/${POSTGRES_DB:-drift}
+      RECONSTRUCTION_ARTIFACT_ROOT: /var/lib/drift/reconstruction
+      RECONSTRUCTION_POLL_SECONDS: ${RECONSTRUCTION_POLL_SECONDS:-10}
+      ODM_IMAGE: ${ODM_IMAGE:-opendronemap/odm:latest}
+      ODM_MAX_CONCURRENCY: ${ODM_MAX_CONCURRENCY:-4}
+      RECONSTRUCTION_MAX_FRAMES: ${RECONSTRUCTION_MAX_FRAMES:-900}
+      RECONSTRUCTION_ODM_TIMEOUT_SECONDS: ${RECONSTRUCTION_ODM_TIMEOUT_SECONDS:-5400}
+      DRIFT_DETECTION_COMMAND: ${DRIFT_DETECTION_COMMAND:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${RECONSTRUCTION_ARTIFACT_HOST_ROOT:-../data/reconstruction}:/var/lib/drift/reconstruction
+
+volumes:
+  drift-postgres-data:

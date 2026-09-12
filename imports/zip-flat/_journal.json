@@ -1,0 +1,39 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1787700068124,
+      "tag": "0000_light_queen_noir",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+<<<<<<< HEAD
+      "when": 1787704442326,
+      "tag": "0001_known_rocket_racer",
+=======
+      "when": 1787765171995,
+      "tag": "0001_nosy_big_bertha",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1787765419465,
+      "tag": "0002_absurd_amphibian",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1787766252775,
+      "tag": "0003_nifty_mercury",
+>>>>>>> 348dce1 (feat: add accountable contractor workflow and cited RAG)
+      "breakpoints": true
+    }
+  ]
+}

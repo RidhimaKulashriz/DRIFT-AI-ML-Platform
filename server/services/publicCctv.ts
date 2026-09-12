@@ -1,0 +1,53 @@
+export type PublicCamera = {
+  id: string; name: string; displayName: string; latitude: number; longitude: number; area: string;
+  locationPrecision: "exact" | "city_reference"; zoneLabel: string; city: string;
+  streamType: "hls" | "mjpeg" | "snapshot" | "webrtc" | "youtube" | "webcam_page";
+  streamUrl: string; sourceUrl: string; status: "live" | "offline" | "unknown"; lastChecked?: string; verifiedAt?: string;
+  provider: string; accessClassification: "authorized_public" | "public_webcam"; sourceKind: "authorized-live-stream" | "public-webcam-page";
+};
+type CameraConfig = Omit<PublicCamera, "status" | "lastChecked"> & { verifiedAt: string };
+type AustinRow = unknown[];
+type CaltransPayload = { data?: Array<{ cctv?: { inService?: string; location?: { latitude?: string; longitude?: string; locationName?: string; nearbyPlace?: string }; imageData?: { static?: { currentImageURL?: string } } } }> };
+type TflPlace = { id?: string; commonName?: string; lat?: number; lon?: number; additionalProperties?: Array<{ key?: string; value?: string }> };
+const EMPTY_MESSAGE = "Public CCTV images are loaded from official open-data camera APIs. Direct image feeds are shown inside God’s Eye; provider webpages and redirect links are not displayed.";
+const FETCH_TIMEOUT_MS = 15_000;
+const CACHE_MS = 15 * 60_000;
+const MAX_CAMERAS = 900;
+const AUSTIN_ROWS_URL = "https://data.austintexas.gov/api/views/b4k4-adkb/rows.json?accessType=DOWNLOAD";
+const CALTRANS_DISTRICTS = [3, 4, 7, 11];
+const TFL_JAMCAM_URL = "https://api.tfl.gov.uk/Place/Type/JamCam";
+const TFL_IMAGE_ORIGIN = "https://s3-eu-west-1.amazonaws.com/jamcams.tfl.gov.uk/";
+let cache: { expiresAt: number; cameras: PublicCamera[] } = { expiresAt: 0, cameras: [] };
+let inflight: Promise<PublicCamera[]> | null = null;
+function num(value: unknown) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : null; }
+function makeCamera(id: string, name: string, city: string, area: string, latitude: number, longitude: number, streamUrl: string, provider: string, sourceUrl: string): CameraConfig { return { id, name, displayName: name, city, area, latitude, longitude, locationPrecision: "exact", zoneLabel: `${city} · public traffic camera`, streamType: "snapshot", streamUrl, sourceUrl, provider, verifiedAt: new Date().toISOString(), accessClassification: "authorized_public", sourceKind: "authorized-live-stream" }; }
+function parsePoint(value: unknown) { const match = String(value ?? "").match(/POINT\s*\(\s*(-?[0-9.]+)\s+(-?[0-9.]+)\s*\)/i); if (!match) return null; const longitude = num(match[1]); const latitude = num(match[2]); return latitude !== null && longitude !== null ? { latitude, longitude } : null; }
+async function fetchJson<T>(url: string): Promise<T | null> { try { const response = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "DRIFT-public-cctv/1.0" }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }); if (!response.ok) return null; return await response.json() as T; } catch (error) { console.warn("[public-cctv] source fetch failed:", url, error instanceof Error ? error.message : error); return null; } }
+async function loadAustin(): Promise<CameraConfig[]> { const payload = await fetchJson<{ data?: AustinRow[] }>(AUSTIN_ROWS_URL); const rows = Array.isArray(payload?.data) ? payload.data : []; return rows.flatMap(row => { const point = parsePoint(row[33]); const id = String(row[8] ?? "").trim(); const name = String(row[9] ?? `Austin camera ${id}`).trim(); const streamUrl = String(row[31] ?? "").trim(); if (!point || !id || !streamUrl.startsWith("https://cctv.austinmobility.io/image/")) return []; return [makeCamera(`austin-${id}`, name, "Austin", name, point.latitude, point.longitude, streamUrl, "Austin Transportation & Public Works", AUSTIN_ROWS_URL)]; }); }
+async function loadCaltransDistrict(district: number): Promise<CameraConfig[]> { const url = `https://cwwp2.dot.ca.gov/data/d${district}/cctv/cctvStatusD${String(district).padStart(2, "0")}.json`; const payload = await fetchJson<CaltransPayload>(url); return (payload?.data ?? []).flatMap(item => { const cctv = item.cctv; const location = cctv?.location; const streamUrl = String(cctv?.imageData?.static?.currentImageURL ?? "").trim(); const latitude = num(location?.latitude); const longitude = num(location?.longitude); if (!cctv || String(cctv.inService).toLowerCase() !== "true" || latitude === null || longitude === null || !streamUrl.startsWith("https://cwwp2.dot.ca.gov/")) return []; const rawName = String(location?.locationName ?? `Caltrans District ${district} camera`).trim(); const idPart = rawName.split("--")[0]?.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "-") || "camera"; const city = String(location?.nearbyPlace ?? `California D${district}`); return [makeCamera(`caltrans-d${district}-${idPart}`, rawName, city, rawName, latitude, longitude, streamUrl, "Caltrans", url)]; }); }
+async function loadCaltrans(): Promise<CameraConfig[]> { return (await Promise.all(CALTRANS_DISTRICTS.map(loadCaltransDistrict))).flat(); }
+async function loadTfl(): Promise<CameraConfig[]> { const places = await fetchJson<TflPlace[]>(TFL_JAMCAM_URL); if (!Array.isArray(places)) return []; return places.flatMap(place => { const props = Object.fromEntries((place.additionalProperties ?? []).filter(item => item.key).map(item => [item.key!, item.value ?? ""])); const latitude = num(place.lat); const longitude = num(place.lon); const streamUrl = String(props.imageUrl ?? "").trim(); const id = String(place.id ?? "").replace(/^JamCams_/, ""); if (String(props.available).toLowerCase() !== "true" || latitude === null || longitude === null || !id || !streamUrl.startsWith(TFL_IMAGE_ORIGIN)) return []; const name = String(place.commonName ?? `TfL JamCam ${id}`); return [makeCamera(`tfl-${id}`, name, "London", name, latitude, longitude, streamUrl, "Transport for London", TFL_JAMCAM_URL)]; }); }
+function isValidConfig(value: unknown): value is CameraConfig { if (!value || typeof value !== "object") return false; const camera = value as Partial<CameraConfig>; return typeof camera.id === "string" && typeof camera.name === "string" && typeof camera.displayName === "string" && typeof camera.latitude === "number" && typeof camera.longitude === "number" && typeof camera.city === "string" && typeof camera.area === "string" && typeof camera.zoneLabel === "string" && ["hls", "mjpeg", "snapshot", "webrtc"].includes(String(camera.streamType)) && typeof camera.streamUrl === "string" && typeof camera.sourceUrl === "string" && camera.sourceUrl.startsWith("https://") && typeof camera.provider === "string" && typeof camera.verifiedAt === "string"; }
+function configuredCameras(): CameraConfig[] { const raw = process.env.DELHI_AUTHORIZED_CAMERAS_JSON?.trim(); if (!raw) return []; try { const parsed: unknown = JSON.parse(raw); return Array.isArray(parsed) ? parsed.filter(isValidConfig) : []; } catch (error) { console.warn("[public-cctv] configured cameras invalid:", error instanceof Error ? error.message : error); return []; } }
+function fallbackDelhiCameras(): CameraConfig[] {
+  return [{
+    id: "delhi-new-delhi-panoramic",
+    name: "New Delhi Panoramic View",
+    displayName: "New Delhi Panoramic View",
+    city: "Delhi",
+    area: "Parikrama The Revolving Restaurant, New Delhi",
+    latitude: 28.6286,
+    longitude: 77.2228,
+    locationPrecision: "city_reference",
+    zoneLabel: "New Delhi · public webcam",
+    streamType: "snapshot",
+    streamUrl: "https://www.worldcam.pl/images/webcams/840x472/69e63c69ad02b-nowe-delhi-panorama-cam.jpg",
+    sourceUrl: "https://worldcam.eu/webcams/asia/india/31023-new-delhi-panoramic-view",
+    provider: "AQI.in via WorldCam",
+    verifiedAt: "2026-09-08T00:00:00Z",
+    accessClassification: "public_webcam",
+    sourceKind: "public-webcam-page",
+  }];
+}
+export async function listPublicCctv(): Promise<PublicCamera[]> { if (cache.expiresAt > Date.now()) return cache.cameras; if (inflight) return inflight; inflight = Promise.all([loadAustin(), loadCaltrans(), loadTfl(), Promise.resolve([...fallbackDelhiCameras(), ...configuredCameras()])]).then(groups => groups.flat().slice(0, MAX_CAMERAS)).then(cameras => { const checkedAt = new Date().toISOString(); const catalog = cameras.map(camera => ({ ...camera, status: "unknown" as const, lastChecked: checkedAt })); cache = { cameras: catalog, expiresAt: Date.now() + CACHE_MS }; return catalog; }).catch(error => { console.warn("[public-cctv] camera refresh failed:", error instanceof Error ? error.message : error); cache = { cameras: [], expiresAt: Date.now() + CACHE_MS }; return []; }).finally(() => { inflight = null; }); return inflight; }
+export function publicCctvMessage() { return EMPTY_MESSAGE; }
