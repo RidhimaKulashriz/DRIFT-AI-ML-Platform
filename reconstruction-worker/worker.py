@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +74,52 @@ def artifact_record(key: str, kind: str, source: Path, output: Path) -> dict[str
     return {"type": kind, "format": extension, "fileName": target.name, "path": str(target), "url": f"/api/reconstruction/{key}/artifacts/{target.name}", "sizeBytes": target.stat().st_size, "sha256": sha256(target), "status": "ready"}
 
 
+def write_json_artifact(key: str, kind: str, name: str, payload: Any, output: Path) -> dict[str, Any]:
+    source = output / f".{name}.source"
+    source.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    target = output / name
+    shutil.copy2(source, target)
+    return {"type": kind, "format": "json", "fileName": target.name, "path": str(target), "url": f"/api/reconstruction/{key}/artifacts/{target.name}", "sizeBytes": target.stat().st_size, "sha256": sha256(target), "status": "ready"}
+
+
+def frame_manifest(images: Path, duration: float, sample_fps: float) -> list[dict[str, Any]]:
+    records = []
+    for index, image in enumerate(sorted(images.glob("*.jpg")), start=1):
+        records.append({"frameId": index, "fileName": image.name, "timestampSeconds": round((index - 1) / sample_fps, 6), "sha256": sha256(image), "cameraPoseStatus": "pending_from_reconstruction"})
+    return records
+
+
+def find_pose_outputs(project: Path) -> list[str]:
+    candidates = []
+    for pattern in ("**/reconstruction.json", "**/cameras.json", "**/shots.json", "**/poses.json"):
+        candidates.extend(str(path.relative_to(project)) for path in project.glob(pattern) if path.is_file())
+    return sorted(set(candidates))
+
+
+def load_detection_adapter(frame_file: Path, frame_records: list[dict[str, Any]], project: Path) -> tuple[list[dict[str, Any]], str]:
+    command = os.getenv("DRIFT_DETECTION_COMMAND", "").strip()
+    if not command:
+        return [], "not_configured"
+    output_file = project / "drift-detections.json"
+    env = {**os.environ, "DRIFT_FRAME_MANIFEST": str(frame_file), "DRIFT_DETECTION_OUTPUT": str(output_file)}
+    subprocess.run(command, shell=True, check=True, cwd=project, env=env, timeout=int(os.getenv("DRIFT_DETECTION_TIMEOUT_SECONDS", "1800")))
+    if not output_file.exists():
+        raise RuntimeError("Detection adapter completed without DRIFT_DETECTION_OUTPUT.")
+    raw = json.loads(output_file.read_text(encoding="utf-8"))
+    if not isinstance(raw, list):
+        raise RuntimeError("Detection adapter output must be a JSON array.")
+    valid_frames = {record["frameId"] for record in frame_records}
+    detections = []
+    for item in raw:
+        if not isinstance(item, dict) or item.get("frameId") not in valid_frames or not item.get("label"):
+            continue
+        confidence = float(item.get("confidence", 0))
+        if not 0 <= confidence <= 1:
+            continue
+        detections.append({"detectionId": item.get("detectionId") or str(uuid.uuid4()), "label": str(item["label"]), "confidence": confidence, "frameId": item["frameId"], "timestampSeconds": item.get("timestampSeconds"), "boundingBox": item.get("boundingBox"), "worldPosition": item.get("worldPosition"), "spatialStatus": "associated" if item.get("worldPosition") else "frame_only_uncertain", "evidence": item.get("evidence", [])})
+    return detections, "configured_validated"
+
+
 def process(conn: psycopg.Connection, job: tuple[Any, ...]) -> None:
     key, name, file_name, metadata = job
     metadata = metadata or {}
@@ -107,13 +154,18 @@ def process(conn: psycopg.Connection, job: tuple[Any, ...]) -> None:
         if frame_count < 20:
             raise RuntimeError(f"Only {frame_count} frames were extracted; at least 20 overlapping frames are required.")
         set_stage(stages, "frame_sampling", "completed", f"{frame_count} frames at {sample_fps:.3f} fps")
+        frame_records = frame_manifest(images, probe_data["durationSeconds"], sample_fps)
+        frame_manifest_path = project / "frame-manifest.json"
+        frame_manifest_path.write_text(json.dumps(frame_records, indent=2), encoding="utf-8")
         set_stage(stages, "visual_odometry", "processing")
         update(conn, key, "processing", stages)
 
         run(["docker", "run", "--rm", "-v", f"{project}:/datasets", ODM_IMAGE, "--project-path", "/datasets", "drift", "--gltf", "--pc-las", "--orthophoto-resolution", "2", "--feature-quality", "high", "--pc-quality", "high", "--max-concurrency", os.getenv("ODM_MAX_CONCURRENCY", "4")], cwd=work, timeout=ODM_TIMEOUT_SECONDS)
         for stage in ["visual_odometry", "sparse_cloud", "dense_cloud", "mesh_texturing", "georeference"]:
             set_stage(stages, stage, "completed")
-        set_stage(stages, "semantic_layers", "review_required", "Base geometry is available; semantic labels require a configured segmentation model.")
+        pose_outputs = find_pose_outputs(project)
+        detections, detection_status = load_detection_adapter(frame_manifest_path, frame_records, project)
+        set_stage(stages, "semantic_layers", "completed" if detection_status == "configured_validated" else "review_required", "Validated source-frame detections available" if detection_status == "configured_validated" else "No detection adapter configured; no detections fabricated")
         update(conn, key, "processing", stages)
 
         candidates = {"glb": list(project.rglob("*.glb")), "gltf": list(project.rglob("*.gltf")), "las": list(project.rglob("*.las")), "laz": list(project.rglob("*.laz")), "ply": list(project.rglob("*.ply")), "obj": list(project.rglob("*.obj")), "fbx": list(project.rglob("*.fbx")), "geotiff": list(project.rglob("*.tif")) + list(project.rglob("*.tiff"))}
@@ -125,6 +177,10 @@ def process(conn: psycopg.Connection, job: tuple[Any, ...]) -> None:
         for kind, paths in [("textured_mesh", candidates["glb"] or candidates["gltf"]), ("point_cloud", candidates["las"] or candidates["laz"] or candidates["ply"]), ("mesh_exchange", candidates["obj"]), ("mesh_exchange", candidates["fbx"]), ("orthomosaic", candidates["geotiff"])]:
             if paths:
                 artifacts.append(artifact_record(key, kind, paths[0], output))
+        artifacts.append(write_json_artifact(key, "provenance", "frame-manifest.json", frame_records, output))
+        artifacts.append(write_json_artifact(key, "spatial_metadata", "reconstruction-metadata.json", {"poseOutputs": pose_outputs, "cameraPoseStatus": "available_in_reconstruction_outputs" if pose_outputs else "computed_by_odm_not_exported", "depthStatus": "dense_cloud_generated", "coordinateReferenceSystem": "WGS84 / local ENU", "detectionStatus": detection_status}, output))
+        if detections:
+            artifacts.append(write_json_artifact(key, "detections", "detections.json", detections, output))
 
         set_stage(stages, "quality_gate", "processing")
         update(conn, key, "processing", stages)
@@ -134,10 +190,10 @@ def process(conn: psycopg.Connection, job: tuple[Any, ...]) -> None:
             raise RuntimeError("Quality gate failed: a checksummed textured mesh and point cloud are required.")
         elapsed = time.monotonic() - started
         target_met = probe_data["durationSeconds"] <= 600 and elapsed <= 900
-        quality_report = {"status": "review_required", "accuracyStatus": "not_validated", "horizontalRmseMeters": None, "verticalRmseMeters": None, "completenessRatio": None, "checkpointCount": 0, "targetSpatialAccuracyMeters": 1, "processingTimeSeconds": round(elapsed, 2), "processingTargetSeconds": 900, "processingTargetMet": target_met, "artifactCount": len(artifacts), "artifactIntegrity": "sha256_verified", "coverageStatus": "scene_geometry_available_semantic_layers_pending"}
+        quality_report = {"status": "review_required", "accuracyStatus": "not_validated", "horizontalRmseMeters": None, "verticalRmseMeters": None, "completenessRatio": None, "checkpointCount": 0, "targetSpatialAccuracyMeters": 1, "processingTimeSeconds": round(elapsed, 2), "processingTargetSeconds": 900, "processingTargetMet": target_met, "artifactCount": len(artifacts), "artifactIntegrity": "sha256_verified", "coverageStatus": "scene_geometry_available", "frameCount": frame_count, "cameraPoseStatus": "available_in_reconstruction_outputs" if pose_outputs else "computed_by_odm_not_exported", "depthStatus": "dense_cloud_generated", "detectionStatus": detection_status, "detectionCount": len(detections)}
         set_stage(stages, "quality_gate", "review_required", "Independent checkpoints/GCPs are required before claiming metric accuracy.")
         set_stage(stages, "publish_artifacts", "completed", f"{len(artifacts)} checksummed artifacts published")
-        manifest = {"jobKey": key, "name": name, "engine": "OpenDroneMap", "coordinateReferenceSystem": "WGS84 / local ENU", "origin": {"latitude": metadata.get("latitude"), "longitude": metadata.get("longitude"), "altitudeMeters": metadata.get("altitudeMeters")}, "quality": quality_report, "artifacts": artifacts, "processingMetrics": {"input": probe_data, "frameCount": frame_count, "sampleFps": sample_fps, "elapsedSeconds": round(elapsed, 2)}, "sourceProvenance": {"fileName": file_name, "sourceUrl": source, "metadata": metadata}}
+        manifest = {"jobKey": key, "name": name, "engine": "OpenDroneMap", "coordinateReferenceSystem": "WGS84 / local ENU", "origin": {"latitude": metadata.get("latitude"), "longitude": metadata.get("longitude"), "altitudeMeters": metadata.get("altitudeMeters")}, "quality": quality_report, "artifacts": artifacts, "detections": detections, "processingMetrics": {"input": probe_data, "frameCount": frame_count, "sampleFps": sample_fps, "elapsedSeconds": round(elapsed, 2)}, "sourceProvenance": {"fileName": file_name, "sourceUrl": source, "metadata": metadata, "frameManifest": "frame-manifest.json", "reconstructionMetadata": "reconstruction-metadata.json"}}
         update(conn, key, "review_required", stages, manifest)
         print("[worker] completed", key, json.dumps(quality_report), flush=True)
     except Exception as exc:
