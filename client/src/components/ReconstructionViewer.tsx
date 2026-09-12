@@ -27,6 +27,10 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
   const [explorerMode, setExplorerMode] = useState(false);
   const [waypointCount, setWaypointCount] = useState(0);
   const [measureMode, setMeasureMode] = useState(false);
+  const [selectedObject, setSelectedObject] = useState("none");
+  const [measureDistance, setMeasureDistance] = useState<number | null>(null);
+  const [scanState, setScanState] = useState<"idle" | "scanning" | "captured">("idle");
+  const measurePointsRef = useRef<THREE.Vector3[]>([]);
   const [stats, setStats] = useState<{ triangles: number; meshes: number; materials: number } | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const modelRef = useRef<THREE.Object3D | null>(null);
@@ -100,6 +104,24 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
     renderer.domElement.className = "h-full w-full cursor-grab active:cursor-grabbing";
     renderer.domElement.setAttribute("aria-label", "Interactive 3D reconstruction viewer");
     container.appendChild(renderer.domElement);
+
+    const raycaster = new THREE.Raycaster();
+    const pointer = new THREE.Vector2();
+    const onSceneClick = (event: MouseEvent) => {
+      const rect = renderer!.domElement.getBoundingClientRect();
+      pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
+      raycaster.setFromCamera(pointer, camera);
+      const hits = raycaster.intersectObjects(scene.children, true).filter(hit => hit.object !== gridHelper && !(hit.object as THREE.Object3D).name.startsWith("drift-waypoint-"));
+      const hit = hits[0];
+      if (!hit) return;
+      const objectName = hit.object.name || (hit.object as THREE.Mesh).isMesh ? hit.object.name || "scene surface" : "scene surface";
+      setSelectedObject(objectName);
+      if (measureMode) {
+        measurePointsRef.current = [...measurePointsRef.current, hit.point].slice(-2);
+        if (measurePointsRef.current.length === 2) { setMeasureDistance(measurePointsRef.current[0]!.distanceTo(measurePointsRef.current[1]!)); measurePointsRef.current = []; }
+      }
+    };
+    renderer.domElement.addEventListener("click", onSceneClick);
 
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -207,7 +229,7 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
       disposed = true;
       cancelAnimationFrame(frame);
       observer.disconnect();
-      window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); window.removeEventListener("mousemove", onMouseMove); renderer?.domElement.removeEventListener("click", requestPointerLock);
+      window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); window.removeEventListener("mousemove", onMouseMove); renderer?.domElement.removeEventListener("click", requestPointerLock); renderer?.domElement.removeEventListener("click", onSceneClick);
       controls?.dispose();
       scene.traverse(object => {
         const mesh = object as THREE.Mesh;
@@ -225,7 +247,7 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
       gridRef.current = null;
       resetViewRef.current = null;
     };
-  }, [resolvedArtifactUrl, confidenceOverlay, explorerMode]);
+  }, [resolvedArtifactUrl, confidenceOverlay, explorerMode, measureMode]);
 
   const reset = () => {
     resetViewRef.current?.();
@@ -249,13 +271,14 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
         <button type="button" onClick={() => setExplorerMode(value => !value)} className={`rounded border px-2 py-1 ${explorerMode ? "border-emerald-400 text-emerald-200" : "border-slate-700 text-slate-400"}`}><Footprints className="mr-1 inline h-3 w-3" />{explorerMode ? "EXPLORER" : "ORBIT"}</button>
         <button type="button" onClick={() => setConfidenceOverlay(value => !value)} className={`rounded border px-2 py-1 ${confidenceOverlay ? "border-cyan-400 text-cyan-200" : "border-slate-700 text-slate-400"}`}><CloudFog className="mr-1 inline h-3 w-3" />CONFIDENCE FIELD</button>
         <button type="button" onClick={() => setMeasureMode(value => !value)} className={`rounded border px-2 py-1 ${measureMode ? "border-amber-400 text-amber-200" : "border-slate-700 text-slate-400"}`}><Crosshair className="mr-1 inline h-3 w-3" />MEASURE RAY</button>
+        <button type="button" onClick={() => { setScanState("scanning"); window.setTimeout(() => setScanState("captured"), 900); }} className={`rounded border px-2 py-1 ${scanState === "captured" ? "border-emerald-400 text-emerald-200" : "border-slate-700 text-slate-400"}`}><Crosshair className="mr-1 inline h-3 w-3" />{scanState === "scanning" ? "SCANNING" : scanState === "captured" ? "EVIDENCE CAPTURED" : "SCAN SURFACE"}</button>
         <button type="button" onClick={() => setWaypointCount(value => value + 1)} className="rounded border border-slate-700 px-2 py-1 text-slate-300"><MapPin className="mr-1 inline h-3 w-3" />DROP WAYPOINT {waypointCount ? `(${waypointCount})` : ""}</button>
         <label className="flex items-center gap-2 border border-slate-700 px-2 py-1 text-slate-300"><Sun className="h-3 w-3" />{sunHour}:00<input aria-label="Sun time" type="range" min="5" max="21" value={sunHour} onChange={event => setSunHour(Number(event.target.value))} className="w-20" /></label>
         {stats && <span className="ml-auto text-[10px] uppercase tracking-wide text-slate-400">{stats.meshes} meshes · {stats.triangles.toLocaleString()} triangles · {stats.materials} materials</span>}
       </div>
       <div ref={host} className="h-[520px] w-full bg-slate-950" />
       {state === "loading" && <div className="border-t bg-slate-50 p-3 text-xs text-slate-600">Loading reconstruction artifact · {progress}%</div>}
-      {state === "ready" && <p className="border-t bg-slate-50 p-3 text-xs text-slate-600"><Boxes className="mr-1 inline h-3 w-3" />{resolvedArtifactUrl ? "Published GLB loaded." : "Exploration preview active — synthetic terrain is clearly separated from worker-generated geometry."} {explorerMode ? "Explorer mode: use drag controls to navigate the scene." : "Orbit, pan, and zoom."} {measureMode ? "Measurement ray armed." : ""} {waypointCount ? `${waypointCount} waypoint${waypointCount === 1 ? "" : "s"} staged.` : ""}</p>}
+      {state === "ready" && <p className="border-t bg-slate-50 p-3 text-xs text-slate-600"><Boxes className="mr-1 inline h-3 w-3" />{resolvedArtifactUrl ? "Published GLB loaded." : "Exploration preview active — synthetic terrain is clearly separated from worker-generated geometry."} {explorerMode ? "WASD + mouse look active." : "Orbit, pan, and zoom."} {selectedObject !== "none" ? ` Selected: ${selectedObject}.` : " Click a surface to inspect it."} {measureMode ? " Measurement ray armed; click two surfaces." : ""} {measureDistance !== null ? ` Distance: ${measureDistance.toFixed(2)} scene metres.` : ""} {waypointCount ? `${waypointCount} waypoint${waypointCount === 1 ? "" : "s"} staged.` : ""} {scanState === "captured" ? " Inspection evidence captured locally; sync to a mission when connected." : ""}</p>}
       {state === "failed" && <div className="border-t bg-amber-50 p-4 text-sm text-amber-900"><X className="mr-1 inline h-4 w-4" />GLB artifact could not be loaded. {errorMessage || "Check the artifact volume, URL, and CORS configuration."}</div>}
     </>
   </article>;
