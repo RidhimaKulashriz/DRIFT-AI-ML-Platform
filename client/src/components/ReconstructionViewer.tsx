@@ -173,9 +173,9 @@ export default function ReconstructionViewer({
     scene.add(rimLight);
     gridHelper = new THREE.GridHelper(20, 20, 0x164e63, 0x0f293d);
     gridRef.current = gridHelper;
-    gridHelper.visible = grid;
+    gridHelper.visible = grid && Boolean(resolvedArtifactUrl);
     scene.add(gridHelper);
-    scene.add(new THREE.AxesHelper(2));
+    if (resolvedArtifactUrl) scene.add(new THREE.AxesHelper(2));
 
     const camera = new THREE.PerspectiveCamera(42, 1, 0.01, 100000);
     camera.position.set(4, 3, 6);
@@ -748,6 +748,40 @@ export default function ReconstructionViewer({
             ref={host}
             className={`h-[520px] w-full bg-slate-950 ${explorerMode ? "cursor-crosshair" : ""}`}
           />
+          {!resolvedArtifactUrl && sourceVideoUrl && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-950 p-5">
+              <div className="w-full max-w-3xl overflow-hidden rounded-lg border border-cyan-900 bg-black shadow-2xl">
+                <video
+                  src={resolveArtifactUrl(sourceVideoUrl) ?? sourceVideoUrl}
+                  controls
+                  muted
+                  playsInline
+                  className="max-h-[420px] w-full object-contain"
+                />
+                <div className="border-t border-cyan-900 bg-slate-950 px-4 py-3 text-xs text-cyan-100">
+                  <b className="mr-2 uppercase tracking-widest text-cyan-300">
+                    SOURCE CAPTURE
+                  </b>
+                  Reconstruction is still processing. The published 3D world
+                  will replace this preview only after a real GLB artifact
+                  passes the worker quality gate.
+                </div>
+              </div>
+            </div>
+          )}
+          {!resolvedArtifactUrl && !sourceVideoUrl && (
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-950 p-6 text-center text-sm text-slate-300">
+              <div>
+                <b className="block uppercase tracking-[0.2em] text-cyan-300">
+                  NO WORLD PUBLISHED
+                </b>
+                <span className="mt-2 block">
+                  Select a reconstruction job or upload a source video. DRIFT
+                  will not generate a substitute scene.
+                </span>
+              </div>
+            </div>
+          )}
           <div className="pointer-events-none absolute left-4 top-4 max-w-[min(440px,calc(100%-2rem))] rounded border border-white/20 bg-black/60 px-3 py-2 text-xs text-white backdrop-blur">
             <b className="block uppercase tracking-[0.18em] text-emerald-300">
               {explorerMode

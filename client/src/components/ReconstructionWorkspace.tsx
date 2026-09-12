@@ -234,6 +234,95 @@ export default function ReconstructionWorkspace() {
           </p>
         </div>
       </div>
+      <article className="live-model-hero">
+        <div className="live-model-heading">
+          <div>
+            <span className="eyebrow">SOURCE-DRIVEN RECONSTRUCTION</span>
+            <h2>{file ? file.name : "Your real-world video appears here"}</h2>
+            <p>
+              {lastJob
+                ? `Job ${lastJob.jobKey} is queued for the persistent reconstruction worker.`
+                : "Select a real video to preview it here. The 3D world will appear only after a worker-produced GLB passes the quality gate."}
+            </p>
+          </div>
+          <div className="live-model-actions">
+            <span>
+              {selectedJob?.status?.toUpperCase() ?? "SOURCE WAITING"}
+            </span>
+            <button type="button" onClick={() => inputRef.current?.click()}>
+              SELECT VIDEO
+            </button>
+          </div>
+        </div>
+        <div className="live-model-grid">
+          <div className="live-source-preview">
+            {filePreviewUrl ? (
+              <video
+                src={filePreviewUrl}
+                controls
+                muted
+                playsInline
+                className="live-stream-video"
+              />
+            ) : (
+              <div className="live-source-empty">
+                <FileVideo />
+                <b>NO SOURCE SELECTED</b>
+                <span>
+                  Choose the exact video that should become the digital place.
+                </span>
+              </div>
+            )}
+            <div className="preview-stats">
+              <span>
+                INPUT
+                <strong>
+                  {file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "—"}
+                </strong>
+              </span>
+              <span>
+                RESOLUTION<strong>{resolution.toUpperCase()}</strong>
+              </span>
+              <span>
+                DURATION<strong>{duration}s</strong>
+              </span>
+              <span>
+                WORLD
+                <strong>{selectedArtifact ? "PUBLISHED" : "WAITING"}</strong>
+              </span>
+            </div>
+          </div>
+          <div className="live-model-output">
+            <div className="output-topline">
+              ● WORLD OUTPUT{" "}
+              <b>
+                {selectedArtifact ? "PUBLISHED GLB" : "NO SUBSTITUTE WORLD"}
+              </b>
+            </div>
+            <div className="model-canvas">
+              <span>
+                {selectedArtifact
+                  ? "THE PUBLISHED RECONSTRUCTION IS THE WORLD"
+                  : "SOURCE AVAILABLE · RECONSTRUCTION NOT YET PUBLISHED"}
+              </span>
+              <strong>
+                {selectedArtifact
+                  ? "Enter Explorer below"
+                  : "Waiting for worker artifact"}
+              </strong>
+              <div className="model-map model-map-honest">
+                <div className="map-grid" />
+                <div className="map-compass">N</div>
+              </div>
+              <label>
+                {selectedArtifact
+                  ? "REAL ARTIFACT · READY FOR EXPLORATION"
+                  : "NO FAKE BUILDINGS, DETECTIONS, OR TERRAIN ARE SHOWN"}
+              </label>
+            </div>
+          </div>
+        </div>
+      </article>
       <div className="grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
         <article className="panel p-5">
           <div className="panel-heading">
