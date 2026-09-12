@@ -83,6 +83,8 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
     const keyLight = new THREE.DirectionalLight(sunHour < 8 || sunHour > 18 ? 0xffb36b : 0xffffff, 3.2);
     const sunAngle = ((sunHour - 6) / 12) * Math.PI;
     keyLight.position.set(Math.cos(sunAngle) * 10, Math.max(3, Math.sin(sunAngle) * 12), 8);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(1024, 1024);
     scene.add(keyLight);
     const rimLight = new THREE.DirectionalLight(0x38bdf8, 1.4);
     rimLight.position.set(-8, 4, -6);
@@ -99,6 +101,8 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(container.clientWidth || 640, container.clientHeight || 440, false);
     renderer.domElement.className = "h-full w-full cursor-grab active:cursor-grabbing";
@@ -107,6 +111,15 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
+    const measurementGroup = new THREE.Group();
+    measurementGroup.name = "drift-measurement";
+    scene.add(measurementGroup);
+    const renderMeasurement = () => {
+      measurementGroup.clear();
+      const points = measurePointsRef.current;
+      points.forEach(point => { const marker = new THREE.Mesh(new THREE.SphereGeometry(.08, 12, 8), new THREE.MeshBasicMaterial({ color: 0xfbbf24 })); marker.position.copy(point); measurementGroup.add(marker); });
+      if (points.length === 2) { const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: 0xfbbf24 })); measurementGroup.add(line); }
+    };
     const onSceneClick = (event: MouseEvent) => {
       const rect = renderer!.domElement.getBoundingClientRect();
       pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
@@ -114,11 +127,12 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
       const hits = raycaster.intersectObjects(scene.children, true).filter(hit => hit.object !== gridHelper && !(hit.object as THREE.Object3D).name.startsWith("drift-waypoint-"));
       const hit = hits[0];
       if (!hit) return;
-      const objectName = hit.object.name || (hit.object as THREE.Mesh).isMesh ? hit.object.name || "scene surface" : "scene surface";
+      const objectName = hit.object.name || "scene surface";
       setSelectedObject(objectName);
       if (measureMode) {
-        measurePointsRef.current = [...measurePointsRef.current, hit.point].slice(-2);
-        if (measurePointsRef.current.length === 2) { setMeasureDistance(measurePointsRef.current[0]!.distanceTo(measurePointsRef.current[1]!)); measurePointsRef.current = []; }
+        measurePointsRef.current = [...measurePointsRef.current, hit.point.clone()].slice(-2);
+        renderMeasurement();
+        if (measurePointsRef.current.length === 2) setMeasureDistance(measurePointsRef.current[0]!.distanceTo(measurePointsRef.current[1]!));
       }
     };
     renderer.domElement.addEventListener("click", onSceneClick);
@@ -131,6 +145,10 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
     controls.target.set(0, 0, 0);
     controls.enabled = !explorerMode;
     const pressedKeys = new Set<string>();
+    const collisionVolumes: THREE.Box3[] = [];
+    const velocity = new THREE.Vector3();
+    let lastTime = performance.now();
+    let groundY = 0;
     const onKeyDown = (event: KeyboardEvent) => { if (explorerMode && ["KeyW", "KeyA", "KeyS", "KeyD"].includes(event.code)) { event.preventDefault(); pressedKeys.add(event.code); } };
     const onKeyUp = (event: KeyboardEvent) => { pressedKeys.delete(event.code); };
     const requestPointerLock = () => { if (explorerMode) renderer?.domElement.requestPointerLock?.(); };
@@ -150,6 +168,7 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
       const box = new THREE.Box3().setFromObject(object);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
+      groundY = box.min.y;
       const maxSize = Math.max(size.x, size.y, size.z, 0.01);
       const distance = (maxSize / (2 * Math.tan((camera.fov * Math.PI) / 360))) * 1.45;
       camera.near = Math.max(maxSize / 10000, 0.001);
@@ -169,6 +188,11 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
       };
     };
 
+    const refreshCollisionVolumes = (object: THREE.Object3D) => {
+      collisionVolumes.length = 0;
+      object.traverse(child => { const mesh = child as THREE.Mesh; if (!mesh.isMesh) return; const box = new THREE.Box3().setFromObject(mesh); const size = box.getSize(new THREE.Vector3()); if (size.y > .35 && size.length() < 60) collisionVolumes.push(box); });
+    };
+    const canOccupy = (position: THREE.Vector3) => { const capsule = new THREE.Box3(new THREE.Vector3(position.x - .28, position.y - 1.55, position.z - .28), new THREE.Vector3(position.x + .28, position.y + .15, position.z + .28)); return !collisionVolumes.some(box => box.intersectsBox(capsule)); };
     const loader = new GLTFLoader();
     if (!resolvedArtifactUrl) {
       const preview = new THREE.Group();
@@ -178,7 +202,7 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
       [[-4, 1.2, -2, 4, 2.4, 1], [-1, .8, -2, 1.6, 1.6, 3], [2, 1.6, -1, 3, 3.2, 1], [5, .55, 2, 5, 1.1, 2]].forEach(([x, y, z, w, h, d]) => { const block = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), ruinMaterial); block.position.set(x, y / 2, z); preview.add(block); });
       for (let i = 0; i < 15; i += 1) { const stone = new THREE.Mesh(new THREE.DodecahedronGeometry(.18 + (i % 3) * .08, 0), new THREE.MeshStandardMaterial({ color: 0x7e776c, roughness: 1 })); stone.position.set(-6 + (i * 1.17) % 12, .2, -6 + ((i * 2.31) % 10)); preview.add(stone); }
       if (confidenceOverlay) { const uncertain = new THREE.Mesh(new THREE.PlaneGeometry(5, 4), new THREE.MeshBasicMaterial({ color: 0x5eead4, transparent: true, opacity: .18, wireframe: true })); uncertain.rotation.x = -Math.PI / 2; uncertain.position.set(4, .02, 3); preview.add(uncertain); }
-      scene.add(preview); model = preview; modelRef.current = preview; fitModel(preview); setStats({ triangles: 0, meshes: preview.children.length, materials: 3 }); setProgress(100); setState("ready");
+      scene.add(preview); model = preview; modelRef.current = preview; fitModel(preview); refreshCollisionVolumes(preview); setStats({ triangles: 0, meshes: preview.children.length, materials: 3 }); setProgress(100); setState("ready");
     } else loader.load(resolvedArtifactUrl, gltf => {
       if (disposed) return;
       model = gltf.scene;
@@ -192,6 +216,7 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
       });
       scene.add(model);
       fitModel(model);
+      refreshCollisionVolumes(model);
       let triangles = 0;
       let meshes = 0;
       const materials = new Set<THREE.Material>();
@@ -218,7 +243,8 @@ export default function ReconstructionViewer({ artifactUrl, artifacts = [], qual
     const tick = () => {
       if (disposed) return;
       frame = requestAnimationFrame(tick);
-      if (explorerMode && model) { const speed = .075; const forward = Number(pressedKeys.has("KeyW")) - Number(pressedKeys.has("KeyS")); const strafe = Number(pressedKeys.has("KeyD")) - Number(pressedKeys.has("KeyA")); const direction = new THREE.Vector3(strafe, 0, forward).normalize().applyEuler(new THREE.Euler(0, camera.rotation.y, 0)); camera.position.addScaledVector(direction, speed); camera.position.y = Math.max(1.65, camera.position.y); }
+      const now = performance.now(); const dt = Math.min((now - lastTime) / 1000, .05); lastTime = now;
+      if (explorerMode && model) { const forward = Number(pressedKeys.has("KeyW")) - Number(pressedKeys.has("KeyS")); const strafe = Number(pressedKeys.has("KeyD")) - Number(pressedKeys.has("KeyA")); const input = new THREE.Vector3(strafe, 0, forward); if (input.lengthSq()) input.normalize().applyEuler(new THREE.Euler(0, camera.rotation.y, 0)); const targetSpeed = input.lengthSq() ? 3.2 : 0; velocity.x += (input.x * targetSpeed - velocity.x) * Math.min(1, dt * 10); velocity.z += (input.z * targetSpeed - velocity.z) * Math.min(1, dt * 10); velocity.y -= 9.81 * dt; const next = camera.position.clone().addScaledVector(velocity, dt); const floor = groundY + 1.65; if (next.y <= floor) { next.y = floor; velocity.y = 0; } if (canOccupy(new THREE.Vector3(next.x, next.y, camera.position.z))) camera.position.x = next.x; if (canOccupy(new THREE.Vector3(camera.position.x, next.y, next.z))) camera.position.z = next.z; camera.position.y = next.y; }
       if (autoRotateRef.current && model) model.rotation.y += 0.0025;
       controls?.update();
       renderer?.render(scene, camera);
