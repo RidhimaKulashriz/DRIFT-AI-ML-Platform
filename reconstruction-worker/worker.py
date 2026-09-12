@@ -233,6 +233,7 @@ def process(conn: psycopg.Connection, job: tuple[Any, ...]) -> None:
         print("[worker] completed", key, json.dumps(quality_report), flush=True)
     except Exception as exc:
         set_stage(stages, "quality_gate", "failed", str(exc))
+        shutil.rmtree(output, ignore_errors=True)
         update(conn, key, "failed", stages, error=str(exc))
         print("[worker] failed", key, exc, flush=True)
     finally:
