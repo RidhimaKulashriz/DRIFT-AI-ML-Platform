@@ -36,7 +36,6 @@ const coverage = [
   ["Measurements", "Ray intersections against the published mesh"],
   ["Uncertainty", "Occlusion, coverage, and accuracy remain explicit"],
 ];
-const demoSourceUrl = "/demo/drift-real-source-demo.mp4";
 
 export default function ReconstructionWorkspace() {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -239,11 +238,11 @@ export default function ReconstructionWorkspace() {
         <div className="live-model-heading">
           <div>
             <span className="eyebrow">SOURCE-DRIVEN RECONSTRUCTION</span>
-            <h2>{file ? file.name : "DRIFT REAL VIDEO DEMO"}</h2>
+            <h2>{file ? file.name : "REAL VIDEO → 3D WORLD"}</h2>
             <p>
               {lastJob
                 ? `Job ${lastJob.jobKey} is queued for the persistent reconstruction worker.`
-                : "This demo uses the real supplied capture. Select another video any time; the 3D world will appear after a worker-produced GLB passes the quality gate."}
+                : "The video is input data only. DRIFT will use it to produce a published reconstruction; the player enters the 3D world after the GLB passes the quality gate."}
             </p>
           </div>
           <div className="live-model-actions">
@@ -257,30 +256,23 @@ export default function ReconstructionWorkspace() {
         </div>
         <div className="live-model-grid">
           <div className="live-source-preview">
-            {filePreviewUrl || demoSourceUrl ? (
-              <video
-                src={filePreviewUrl || demoSourceUrl}
-                controls
-                muted
-                playsInline
-                className="live-stream-video"
-              />
-            ) : (
-              <div className="live-source-empty">
-                <FileVideo />
-                <b>REAL VIDEO DEMO</b>
-                <span>
-                  This is the real supplied capture that drives the demo.
-                </span>
-              </div>
-            )}
+            <div className="live-source-empty">
+              <FileVideo />
+              <b>{file ? "SOURCE VIDEO READY" : "SOURCE VIDEO REQUIRED"}</b>
+              <span>
+                {file
+                  ? `${file.name} · attached as reconstruction provenance`
+                  : "Choose the real capture that should drive frame extraction and 3D reconstruction."}
+              </span>
+              <small>
+                Video is processed as input; it is not the final experience.
+              </small>
+            </div>
             <div className="preview-stats">
               <span>
                 INPUT
                 <strong>
-                  {file
-                    ? `${(file.size / 1024 / 1024).toFixed(1)} MB`
-                    : "REAL DEMO"}
+                  {file ? `${(file.size / 1024 / 1024).toFixed(1)} MB` : "—"}
                 </strong>
               </span>
               <span>
@@ -624,9 +616,7 @@ export default function ReconstructionWorkspace() {
       <div className="mt-5">
         <ReconstructionViewer
           artifactUrl={selectedArtifact}
-          sourceVideoUrl={
-            selectedJob?.inputMetadata?.sourceUrl ?? demoSourceUrl
-          }
+          sourceVideoUrl={selectedJob?.inputMetadata?.sourceUrl ?? null}
           jobKey={selectedJob?.jobKey ?? null}
           artifacts={selectedJob?.artifactManifest?.artifacts ?? []}
           quality={
