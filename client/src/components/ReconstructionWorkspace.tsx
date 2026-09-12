@@ -309,11 +309,11 @@ export default function ReconstructionWorkspace() {
                 <div className="map-grid" />
                 <div className="map-compass">N</div>
               </div>
-              <label>
+              <div>
                 {selectedArtifact
                   ? "REAL ARTIFACT · READY FOR EXPLORATION"
                   : "NO FAKE BUILDINGS, DETECTIONS, OR TERRAIN ARE SHOWN"}
-              </label>
+              </div>
             </div>
           </div>
         </div>
@@ -335,7 +335,7 @@ export default function ReconstructionWorkspace() {
           <div className="space-y-4">
             <label>
               Mission name
-              <input value={name} onChange={e => setName(e.target.value)} />
+              <input id="reconstructionworkspace-field-1" name="reconstructionworkspace-field-1" value={name} onChange={e => setName(e.target.value)} />
             </label>
             <button
               type="button"
@@ -355,7 +355,7 @@ export default function ReconstructionWorkspace() {
                 </span>
               )}
             </button>
-            <input
+            <input id="reconstructionworkspace-field-2" name="reconstructionworkspace-field-2"
               ref={inputRef}
               hidden
               type="file"
@@ -384,7 +384,7 @@ export default function ReconstructionWorkspace() {
             )}
             <label>
               Secure HTTPS source URL (alternative to local upload)
-              <input
+              <input id="reconstructionworkspace-field-3" name="reconstructionworkspace-field-3"
                 value={sourceUrl}
                 onChange={e => setSourceUrl(e.target.value)}
                 placeholder="https://storage.example.org/capture.mp4"
@@ -393,22 +393,22 @@ export default function ReconstructionWorkspace() {
             <div className="grid grid-cols-2 gap-3">
               <label>
                 Latitude
-                <input value={lat} onChange={e => setLat(e.target.value)} />
+                <input id="reconstructionworkspace-field-4" name="reconstructionworkspace-field-4" value={lat} onChange={e => setLat(e.target.value)} />
               </label>
               <label>
                 Longitude
-                <input value={lng} onChange={e => setLng(e.target.value)} />
+                <input id="reconstructionworkspace-field-5" name="reconstructionworkspace-field-5" value={lng} onChange={e => setLng(e.target.value)} />
               </label>
               <label>
                 Altitude (m)
-                <input
+                <input id="reconstructionworkspace-field-6" name="reconstructionworkspace-field-6"
                   value={altitude}
                   onChange={e => setAltitude(e.target.value)}
                 />
               </label>
               <label>
                 Duration (sec)
-                <input
+                <input id="reconstructionworkspace-field-7" name="reconstructionworkspace-field-7"
                   value={duration}
                   onChange={e => setDuration(e.target.value)}
                 />
@@ -416,7 +416,7 @@ export default function ReconstructionWorkspace() {
             </div>
             <label>
               Capture metadata
-              <textarea
+              <textarea id="reconstructionworkspace-field-8" name="reconstructionworkspace-field-8"
                 value={flightMetadata}
                 onChange={e => setFlightMetadata(e.target.value)}
                 rows={2}
@@ -426,7 +426,7 @@ export default function ReconstructionWorkspace() {
             <div className="grid grid-cols-2 gap-3">
               <label>
                 Camera model
-                <input
+                <input id="reconstructionworkspace-field-9" name="reconstructionworkspace-field-9"
                   value={cameraModel}
                   onChange={e => setCameraModel(e.target.value)}
                   placeholder="Optional"
@@ -434,7 +434,7 @@ export default function ReconstructionWorkspace() {
               </label>
               <label>
                 Resolution
-                <select
+                <select id="reconstructionworkspace-field-10" name="reconstructionworkspace-field-10"
                   value={resolution}
                   onChange={e =>
                     setResolution(e.target.value as "1080p" | "4k")
@@ -458,7 +458,7 @@ export default function ReconstructionWorkspace() {
                   key={key}
                   className="flex flex-row items-center gap-2 rounded-lg border bg-slate-50 p-3"
                 >
-                  <input
+                  <input id={`reconstructionworkspace-sensor-${key}`} name={`sensor-${key}`}
                     type="checkbox"
                     checked={sensors[key]}
                     onChange={e =>

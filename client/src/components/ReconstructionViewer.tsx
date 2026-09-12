@@ -726,7 +726,7 @@ export default function ReconstructionViewer({
           <label className="flex items-center gap-2 border border-slate-700 px-2 py-1 text-slate-300">
             <Sun className="h-3 w-3" />
             {sunHour}:00
-            <input
+            <input id="reconstructionviewer-field-1" name="reconstructionviewer-field-1"
               aria-label="Sun time"
               type="range"
               min="5"

@@ -442,6 +442,8 @@ export function AIChatBox({
           {!recordingSupported && <span className="text-[9px] text-muted-foreground">MIC NOT AVAILABLE</span>}
         </div>}
         <Textarea
+          id="ai-chat-message"
+          name="ai-chat-message"
           ref={textareaRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
