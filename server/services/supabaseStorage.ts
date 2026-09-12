@@ -51,7 +51,12 @@ export async function putInSupabaseEvidenceStorage(relKey: string, data: Buffer 
   const config = configuration();
   if (!config) throw new Error("Portable evidence storage is not configured.");
   const objectKey = keyWithSuffix(relKey);
-  const { error } = await clientFor(config).storage.from(config.bucket).upload(objectKey, data, { contentType, upsert: false });
+  // Some Supabase buckets reject video/webm at the MIME allowlist layer even
+  // though the bytes are valid. Store those bytes as opaque binary; the object
+  // key remains .webm and the reconstruction API still returns the original
+  // MIME type to its caller.
+  const storageContentType = contentType.toLowerCase() === "video/webm" ? "application/octet-stream" : contentType;
+  const { error } = await clientFor(config).storage.from(config.bucket).upload(objectKey, data, { contentType: storageContentType, upsert: false });
   if (error) throw new Error(`Supabase evidence upload failed: ${error.message}`);
   const { data: signed, error: signError } = await clientFor(config).storage.from(config.bucket).createSignedUrl(objectKey, SIGNED_URL_TTL_SECONDS);
   if (signError || !signed?.signedUrl) throw new Error("Supabase evidence upload completed but a signed access URL could not be created.");
