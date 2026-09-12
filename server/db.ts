@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { desc, eq, getTableColumns, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { alerts, assets, auditEvents, authorities, cameraSources, contractorTicketEvidence, contractorTicketNotes, contractorTickets, contractorUserAssignments, contractors, cctvCandidates, defects, dsiAssessments, evidence, handoffPackages, inspectionCorrelations, InsertUser, knowledgeChunks, knowledgeDocuments, knowledgeRetrievalRuns, missions, publicStatusPublications, repairEstimates, reports, reviews, routingDecisions, routingRules, securityObservations, severityHistory, slaRules, telemetry, uavFollowUpRecommendations, users } from "../drizzle/schema";
+import { alerts, assets, auditEvents, authorities, cameraSources, contractorTicketEvidence, contractorTicketNotes, contractorTickets, contractorUserAssignments, contractors, cctvCandidates, defects, dsiAssessments, evidence, handoffPackages, inspectionCorrelations, InsertUser, knowledgeChunks, knowledgeDocuments, knowledgeRetrievalRuns, missions, publicStatusPublications, reconstructionJobs, reconstructionSourceUploads, repairEstimates, reports, reviews, routingDecisions, routingRules, securityObservations, severityHistory, slaRules, telemetry, uavFollowUpRecommendations, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { resolveReviewState } from "./services/reviewState";
 import { summarizeSeverity, toMapMarker } from "./services/reportPresentation";
@@ -174,6 +174,13 @@ CREATE TABLE IF NOT EXISTS "reconstruction_jobs" (
 );
 CREATE INDEX IF NOT EXISTS reconstruction_jobs_status_idx ON "reconstruction_jobs"("status");
 CREATE INDEX IF NOT EXISTS reconstruction_jobs_created_at_idx ON "reconstruction_jobs"("createdAt");
+CREATE TABLE IF NOT EXISTS "reconstruction_source_uploads" (
+  "storageKey" varchar(220) PRIMARY KEY,
+  "fileName" varchar(260) NOT NULL,
+  "mimeType" varchar(120) NOT NULL,
+  "attachmentData" bytea NOT NULL,
+  "createdAt" timestamptz NOT NULL DEFAULT now()
+);
 `;
 const CAMPUS_MIGRATION_SQL = `
 DO $$ BEGIN
@@ -680,6 +687,8 @@ export async function getDatabaseAttachment(storageKey: string) {
     const isPdf = typeof reportRow.inspectionScope === "object" && reportRow.inspectionScope !== null && (reportRow.inspectionScope as Record<string, unknown>).format === "application/pdf";
     return { data: Buffer.from(reportRow.data), mimeType: isPdf ? "application/pdf" : "text/markdown; charset=utf-8", fileName: `${reportRow.title.replace(/[^a-zA-Z0-9._-]+/g, "-")}.${isPdf ? "pdf" : "md"}` };
   }
+  const reconstructionRow = (await db.select({ data: reconstructionSourceUploads.attachmentData, mimeType: reconstructionSourceUploads.mimeType, fileName: reconstructionSourceUploads.fileName }).from(reconstructionSourceUploads).where(eq(reconstructionSourceUploads.storageKey, storageKey)).limit(1))[0];
+  if (reconstructionRow?.data) return { data: Buffer.from(reconstructionRow.data), mimeType: reconstructionRow.mimeType, fileName: reconstructionRow.fileName };
   return undefined;
 }
 export async function createAssetRecord(input: { name: string; assetType: "bridge" | "road" | "rail" | "building" | "utility"; locality: string; latitude: string; longitude: string; criticality: number }) { const db = await getDb(); if (!db) throw new Error("Database is unavailable."); const result = await db.insert(assets).values({ ...input, status: "operational" }).returning({ id: assets.id }); return { id: insertId(result) }; }

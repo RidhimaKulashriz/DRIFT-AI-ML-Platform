@@ -270,6 +270,14 @@ export const reconstructionJobs = pgTable("reconstruction_jobs", {
   updatedAt: updatedAt(),
 });
 
+export const reconstructionSourceUploads = pgTable("reconstruction_source_uploads", {
+  storageKey: varchar("storageKey", { length: 220 }).primaryKey(),
+  fileName: varchar("fileName", { length: 260 }).notNull(),
+  mimeType: varchar("mimeType", { length: 120 }).notNull(),
+  attachmentData: bytea("attachmentData").notNull(),
+  createdAt: createdAt(),
+});
+
 export const auditEvents = pgTable("auditEvents", {
   id: serial("id").primaryKey(),
   missionId: integer("missionId"),
