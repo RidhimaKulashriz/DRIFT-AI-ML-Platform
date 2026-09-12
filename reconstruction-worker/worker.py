@@ -26,6 +26,20 @@ ARTIFACT_ROOT = Path(os.getenv("RECONSTRUCTION_ARTIFACT_ROOT", "/var/lib/drift/r
 MAX_FRAMES = int(os.getenv("RECONSTRUCTION_MAX_FRAMES", "900"))
 ODM_TIMEOUT_SECONDS = int(os.getenv("RECONSTRUCTION_ODM_TIMEOUT_SECONDS", "5400"))
 STAGE_NAMES = ["ingest", "metadata_validation", "frame_sampling", "visual_odometry", "sparse_cloud", "dense_cloud", "mesh_texturing", "semantic_layers", "georeference", "quality_gate", "publish_artifacts"]
+SCHEMA_SQL = '''
+CREATE TABLE IF NOT EXISTS "reconstruction_jobs" (
+  "id" serial PRIMARY KEY, "jobKey" varchar(80) NOT NULL UNIQUE, "name" varchar(220) NOT NULL,
+  "status" varchar(32) NOT NULL DEFAULT 'queued', "inputFileName" varchar(260) NOT NULL,
+  "inputMimeType" varchar(120) NOT NULL, "inputSizeBytes" integer NOT NULL,
+  "latitude" varchar(32) NOT NULL, "longitude" varchar(32) NOT NULL, "altitudeMeters" integer NOT NULL,
+  "inputMetadata" jsonb NOT NULL, "qualityReport" jsonb NOT NULL, "stages" jsonb NOT NULL,
+  "artifactManifest" jsonb, "errorMessage" text, "createdBy" integer,
+  "startedAt" timestamptz, "completedAt" timestamptz,
+  "createdAt" timestamptz NOT NULL DEFAULT now(), "updatedAt" timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS reconstruction_jobs_status_idx ON "reconstruction_jobs"("status");
+CREATE INDEX IF NOT EXISTS reconstruction_jobs_created_at_idx ON "reconstruction_jobs"("createdAt");
+'''
 
 
 def run(cmd: list[str], cwd: Path | None = None, timeout: int | None = None) -> subprocess.CompletedProcess[str]:
@@ -49,6 +63,12 @@ def update(conn: psycopg.Connection, key: str, status: str, stages: list[dict[st
             '''UPDATE reconstruction_jobs SET status=%s, stages=COALESCE(%s, stages), "artifactManifest"=COALESCE(%s, "artifactManifest"), "errorMessage"=%s, "startedAt"=COALESCE("startedAt", CASE WHEN %s IN ('processing','review_required','completed') THEN now() ELSE "startedAt" END), "completedAt"=CASE WHEN %s IN ('completed','failed','review_required') THEN now() ELSE "completedAt" END, "updatedAt"=now() WHERE "jobKey"=%s''',
             (status, json.dumps(stages) if stages is not None else None, json.dumps(manifest) if manifest is not None else None, error, status, status, key),
         )
+    conn.commit()
+
+
+def ensure_schema(conn: psycopg.Connection) -> None:
+    with conn.cursor() as cur:
+        cur.execute(SCHEMA_SQL)
     conn.commit()
 
 
@@ -223,6 +243,7 @@ def main() -> None:
     ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
     while True:
         with psycopg.connect(DATABASE_URL) as conn:
+            ensure_schema(conn)
             with conn.cursor() as cur:
                 cur.execute('SELECT "jobKey", name, "inputFileName", "inputMetadata" FROM reconstruction_jobs WHERE status=\'queued\' ORDER BY "createdAt" LIMIT 1 FOR UPDATE SKIP LOCKED')
                 job = cur.fetchone()
