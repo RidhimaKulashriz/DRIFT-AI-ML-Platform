@@ -44,7 +44,7 @@ function inferContentType(relKey: string, contentType: string) {
     pdf: "application/pdf",
     json: "application/json",
   };
-  return byExtension[extension] ?? normalized || "application/octet-stream";
+  return byExtension[extension] ?? (normalized || "application/octet-stream");
 }
 
 export function supabasePortableStorageConfigured() {
