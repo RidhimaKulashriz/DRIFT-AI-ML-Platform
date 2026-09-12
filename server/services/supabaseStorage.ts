@@ -24,6 +24,29 @@ function keyWithSuffix(key: string) {
   return dot === -1 ? `${normalized}_${suffix}` : `${normalized.slice(0, dot)}_${suffix}${normalized.slice(dot)}`;
 }
 
+function inferContentType(relKey: string, contentType: string) {
+  const normalized = (contentType || "").trim().toLowerCase();
+  if (normalized && normalized !== "application/octet-stream") return normalized;
+
+  const extension = relKey.toLowerCase().split("?")[0].split(".").pop() ?? "";
+  const byExtension: Record<string, string> = {
+    webm: "video/webm",
+    mp4: "video/mp4",
+    mov: "video/quicktime",
+    m4v: "video/x-m4v",
+    avi: "video/x-msvideo",
+    mkv: "video/x-matroska",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+    heic: "image/heic",
+    pdf: "application/pdf",
+    json: "application/json",
+  };
+  return byExtension[extension] ?? normalized || "application/octet-stream";
+}
+
 export function supabasePortableStorageConfigured() {
   return process.env.DRIFT_SUPABASE_STORAGE_ENABLED === "true" && Boolean(configuration());
 }
@@ -51,11 +74,7 @@ export async function putInSupabaseEvidenceStorage(relKey: string, data: Buffer 
   const config = configuration();
   if (!config) throw new Error("Portable evidence storage is not configured.");
   const objectKey = keyWithSuffix(relKey);
-  // Some Supabase buckets reject video/webm at the MIME allowlist layer even
-  // though the bytes are valid. Store those bytes as opaque binary; the object
-  // key remains .webm and the reconstruction API still returns the original
-  // MIME type to its caller.
-  const storageContentType = contentType.toLowerCase() === "video/webm" ? "application/octet-stream" : contentType;
+  const storageContentType = inferContentType(relKey, contentType);
   const { error } = await clientFor(config).storage.from(config.bucket).upload(objectKey, data, { contentType: storageContentType, upsert: false });
   if (error) throw new Error(`Supabase evidence upload failed: ${error.message}`);
   const { data: signed, error: signError } = await clientFor(config).storage.from(config.bucket).createSignedUrl(objectKey, SIGNED_URL_TTL_SECONDS);
