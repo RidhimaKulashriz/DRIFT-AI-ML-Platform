@@ -68,6 +68,10 @@ export default function ReconstructionViewer({
   const [sunHour, setSunHour] = useState(16);
   const [confidenceOverlay, setConfidenceOverlay] = useState(true);
   const [explorerMode, setExplorerMode] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [interactionHint, setInteractionHint] = useState(
+    "Enter Explorer to walk the published place"
+  );
   const [waypointCount, setWaypointCount] = useState(0);
   const [waypointMode, setWaypointMode] = useState(false);
   const [measureMode, setMeasureMode] = useState(false);
@@ -87,12 +91,16 @@ export default function ReconstructionViewer({
   const modelRef = useRef<THREE.Object3D | null>(null);
   const gridRef = useRef<THREE.GridHelper | null>(null);
   const autoRotateRef = useRef(false);
+  const audioEnabledRef = useRef(false);
   const resetViewRef = useRef<(() => void) | null>(null);
   const resolvedArtifactUrl = resolveArtifactUrl(artifactUrl);
 
   useEffect(() => {
     autoRotateRef.current = autoRotate;
   }, [autoRotate]);
+  useEffect(() => {
+    audioEnabledRef.current = audioEnabled;
+  }, [audioEnabled]);
   useEffect(() => {
     gridRef.current && (gridRef.current.visible = grid);
   }, [grid]);
@@ -237,6 +245,22 @@ export default function ReconstructionViewer({
       if (!hit) return;
       const objectName = hit.object.name || "scene surface";
       setSelectedObject(objectName);
+      setInteractionHint(`Inspecting published surface: ${objectName}`);
+      if (audioEnabledRef.current) {
+        const context = new AudioContext();
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        oscillator.frequency.value = 560;
+        gain.gain.setValueAtTime(0.025, context.currentTime);
+        gain.gain.exponentialRampToValueAtTime(
+          0.001,
+          context.currentTime + 0.08
+        );
+        oscillator.connect(gain).connect(context.destination);
+        oscillator.start();
+        oscillator.stop(context.currentTime + 0.08);
+        window.setTimeout(() => void context.close(), 120);
+      }
       if (waypointMode) {
         waypointPointsRef.current = [
           ...waypointPointsRef.current,
@@ -273,6 +297,7 @@ export default function ReconstructionViewer({
     const velocity = new THREE.Vector3();
     let lastTime = performance.now();
     let groundY = 0;
+    let footstepClock = 0;
     const onKeyDown = (event: KeyboardEvent) => {
       if (
         explorerMode &&
@@ -460,6 +485,30 @@ export default function ReconstructionViewer({
         if (canOccupy(new THREE.Vector3(camera.position.x, next.y, next.z)))
           camera.position.z = next.z;
         camera.position.y = next.y;
+        if (input.lengthSq()) {
+          footstepClock += dt;
+          if (footstepClock > 0.42) {
+            footstepClock = 0;
+            setInteractionHint(
+              "Exploring source geometry · click a surface to inspect"
+            );
+            if (audioEnabledRef.current) {
+              const context = new AudioContext();
+              const oscillator = context.createOscillator();
+              const gain = context.createGain();
+              oscillator.frequency.value = 95;
+              gain.gain.setValueAtTime(0.018, context.currentTime);
+              gain.gain.exponentialRampToValueAtTime(
+                0.001,
+                context.currentTime + 0.07
+              );
+              oscillator.connect(gain).connect(context.destination);
+              oscillator.start();
+              oscillator.stop(context.currentTime + 0.07);
+              window.setTimeout(() => void context.close(), 110);
+            }
+          }
+        } else footstepClock = 0;
       }
       if (autoRotateRef.current && model) model.rotation.y += 0.0025;
       controls?.update();
@@ -610,11 +659,28 @@ export default function ReconstructionViewer({
           </button>
           <button
             type="button"
-            onClick={() => setExplorerMode(value => !value)}
+            onClick={() => {
+              const next = !explorerMode;
+              setExplorerMode(next);
+              setInteractionHint(
+                next
+                  ? "WASD to walk · mouse to look · click a surface to inspect"
+                  : "Orbit mode active"
+              );
+            }}
+            disabled={!resolvedArtifactUrl}
             className={`rounded border px-2 py-1 ${explorerMode ? "border-emerald-400 text-emerald-200" : "border-slate-700 text-slate-400"}`}
           >
             <Footprints className="mr-1 inline h-3 w-3" />
             {explorerMode ? "EXPLORER" : "ORBIT"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setAudioEnabled(value => !value)}
+            disabled={!resolvedArtifactUrl}
+            className={`rounded border px-2 py-1 ${audioEnabled ? "border-sky-400 text-sky-200" : "border-slate-700 text-slate-400"}`}
+          >
+            {audioEnabled ? "AUDIO ON" : "ENABLE AUDIO"}
           </button>
           <button
             type="button"
@@ -677,7 +743,32 @@ export default function ReconstructionViewer({
             </span>
           )}
         </div>
-        <div ref={host} className="h-[520px] w-full bg-slate-950" />
+        <div className="relative">
+          <div
+            ref={host}
+            className={`h-[520px] w-full bg-slate-950 ${explorerMode ? "cursor-crosshair" : ""}`}
+          />
+          <div className="pointer-events-none absolute left-4 top-4 max-w-[min(440px,calc(100%-2rem))] rounded border border-white/20 bg-black/60 px-3 py-2 text-xs text-white backdrop-blur">
+            <b className="block uppercase tracking-[0.18em] text-emerald-300">
+              {explorerMode
+                ? "DIGITAL PLACE · EXPLORER"
+                : "DIGITAL PLACE · INSPECTOR"}
+            </b>
+            <span>
+              {resolvedArtifactUrl
+                ? interactionHint
+                : "No published reconstruction: source is available, world is not yet published"}
+            </span>
+            {explorerMode && resolvedArtifactUrl && (
+              <span className="mt-1 block text-white/60">
+                Human-scale movement · grounded collision · source geometry only
+              </span>
+            )}
+          </div>
+          {explorerMode && resolvedArtifactUrl && (
+            <div className="pointer-events-none absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/80" />
+          )}
+        </div>
         {state === "loading" && (
           <div className="border-t bg-slate-50 p-3 text-xs text-slate-600">
             Loading reconstruction artifact · {progress}%
