@@ -52,7 +52,7 @@ function fallbackInference(input: InferenceInput): InferenceResult {
   return { model: input.demo ? "DRIFT-CV simulator adapter v1" : "DRIFT-CV deterministic fallback v1", label, confidence, boundingBox: { x: 18 + (seed % 22), y: 20 + (seed % 17), width: 38, height: 29 }, severityInput: { confidence, assetCriticality: input.assetCriticality, priorOpenDefects: input.priorOpenDefects }, score, annotationNote: `Detected ${label} candidate from ${input.demo ? "reproducible simulator evidence" : "fallback inference"}; manual engineer review is required before work-order release.`, source: "deterministic-fallback", coveragePercent: input.captureZone === "confined" || input.captureZone === "low-light" ? 35 : 72, uncertainty: { reason: "Single-frame visual inference without calibrated site baseline; zone and coverage penalties applied", requiresHumanReview: true }, calibrationVersion: "DRIFT-calibration-v1" };
 }
 
-async function callProductionCv(input: InferenceInput): Promise<z.infer<typeof cvResponseSchema> | null> {
+async function callProductionCv(input: InferenceInput): Promise<Array<z.infer<typeof cvResponseSchema>> | null> {
   // Never contact an implicit or stale deployment. Production CV is opt-in through
   // an explicitly configured endpoint; otherwise the deterministic fallback is
   // immediate and remains available for local tests, demos, and offline operation.
@@ -75,22 +75,19 @@ async function callProductionCv(input: InferenceInput): Promise<z.infer<typeof c
     // Accept the canonical DRIFT envelope and the flat production-CV contract.
     if (raw && typeof raw.model === "string" && typeof raw.label === "string" && typeof raw.confidence === "number" && raw.boundingBox) {
       const parsed = cvResponseSchema.safeParse({ model: raw.model, label: mapDefectLabel(raw.label), confidence: raw.confidence, boundingBox: raw.boundingBox, coveragePercent: raw.coveragePercent, uncertainty: raw.uncertainty, calibrationVersion: raw.calibrationVersion });
-      if (parsed.success) return parsed.data;
+      if (parsed.success) return [parsed.data];
     }
     // Hitakshi's server returns { success, detections: [{model, label, confidence, boundingBox, severity}] }
     if (raw && raw.success && Array.isArray(raw.detections) && raw.detections.length > 0) {
-      // Take the highest-confidence detection
-      const best = raw.detections.sort((a: any, b: any) => (b.confidence ?? 0) - (a.confidence ?? 0))[0];
-      const mappedLabel = mapDefectLabel(best.label);
-      return {
-        model: raw.model || best.model || "hitakshi-ml",
-        label: mappedLabel,
-        confidence: typeof best.confidence === "number" ? best.confidence : 0.5,
-        boundingBox: best.boundingBox || { x: 10, y: 10, width: 30, height: 30 },
+      return raw.detections.map((detection: any) => ({
+        model: raw.model || detection.model || "hitakshi-ml",
+        label: mapDefectLabel(String(detection.label ?? "crack")),
+        confidence: typeof detection.confidence === "number" ? detection.confidence : 0.5,
+        boundingBox: detection.boundingBox || { x: 10, y: 10, width: 30, height: 30 },
         coveragePercent: 85,
         uncertainty: { reason: "Hitakshi multi-model pipeline (CRACK+ROAD+RAILWAY+RUST)", requiresHumanReview: true },
         calibrationVersion: "hitakshi-v1",
-      };
+      })).filter((detection: any) => cvResponseSchema.safeParse(detection).success);
     }
     return null;
   } catch (err) {
@@ -121,9 +118,19 @@ function mapDefectLabel(label: string): DefectKind {
 }
 
 export async function runVisionInference(input: InferenceInput): Promise<InferenceResult | null> {
-  const production = await callProductionCv(input);
+  const production = (await callProductionCv(input))?.[0];
   if (!production) return input.productionOnly ? null : fallbackInference(input);
   const calibratedConfidence = calibrateConfidence(production.confidence, input);
   const score = scoreZeroError({ defectType: production.label, confidence: calibratedConfidence, latitude: input.latitude, longitude: input.longitude, assetCriticality: input.assetCriticality, priorOpenDefects: input.priorOpenDefects, observationCount: 1 });
   return { ...production, confidence: calibratedConfidence, coveragePercent: production.coveragePercent ?? 72, uncertainty: production.uncertainty ?? { reason: "Model response omitted uncertainty metadata; server calibration applied", requiresHumanReview: true }, calibrationVersion: production.calibrationVersion ?? "DRIFT-calibration-v1", severityInput: { confidence: calibratedConfidence, assetCriticality: input.assetCriticality, priorOpenDefects: input.priorOpenDefects }, score, annotationNote: `Detected ${production.label} candidate using ${production.model}; ZeroError prioritization is advisory and requires human review.`, source: "production-cv" };
+}
+
+export async function runVisionDetections(input: InferenceInput): Promise<InferenceResult[]> {
+  const production = await callProductionCv(input);
+  if (!production?.length) return input.productionOnly ? [] : [fallbackInference(input)];
+  return production.map(item => {
+    const calibratedConfidence = calibrateConfidence(item.confidence, input);
+    const score = scoreZeroError({ defectType: item.label, confidence: calibratedConfidence, latitude: input.latitude, longitude: input.longitude, assetCriticality: input.assetCriticality, priorOpenDefects: input.priorOpenDefects, observationCount: 1 });
+    return { ...item, confidence: calibratedConfidence, coveragePercent: item.coveragePercent ?? 72, uncertainty: item.uncertainty ?? { reason: "Model response omitted uncertainty metadata; server calibration applied", requiresHumanReview: true }, calibrationVersion: item.calibrationVersion ?? "DRIFT-calibration-v1", severityInput: { confidence: calibratedConfidence, assetCriticality: input.assetCriticality, priorOpenDefects: input.priorOpenDefects }, score, annotationNote: `Detected ${item.label} candidate using ${item.model}; ZeroError prioritization is advisory and requires human review.`, source: "production-cv" as const };
+  });
 }

@@ -23,7 +23,7 @@ export function LiveDetectionPanel({ missionId }: { missionId: number }) {
     setStatus("waiting");
     const source = new EventSource(`${backendOrigin}/api/drift/live/events?missionId=${encodeURIComponent(missionId)}`);
     source.onopen = () => setStatus("live");
-    source.onmessage = message => { try { const next = JSON.parse(message.data) as LiveEvent; if (next.imageUrl) setEvents(previous => [next, ...previous.filter(item => item.frameId !== next.frameId)].slice(0, 6)); setStatus("live"); } catch { setStatus("error"); } };
+    source.onmessage = message => { try { const next = JSON.parse(message.data) as LiveEvent; if (next.imageUrl) setEvents(previous => { const eventKey = next.frameId ?? `${next.fileName ?? "frame"}-${next.occurredAt ?? Date.now()}`; const withoutDuplicate = previous.filter(item => (item.frameId ?? `${item.fileName ?? "frame"}-${item.occurredAt ?? ""}`) !== eventKey); return [next, ...withoutDuplicate].slice(0, 100); }); setStatus("live"); } catch { setStatus("error"); } };
     source.onerror = () => setStatus("error");
     return () => source.close();
   }, [missionId]);

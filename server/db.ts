@@ -432,7 +432,6 @@ export async function getPublicMissionOverview() {
 export async function createDemoMissionRecord(input: { name: string; createdBy?: number | null; simulator: Awaited<ReturnType<typeof import("./services/simulator").buildSimulatorMission>> }) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable. Configure DATABASE_URL before creating persistent missions.");
-  if (!supabasePortableStorageConfigured()) throw new Error("Portable evidence storage is required before creating a persistent simulator mission.");
   const assetResult = await db.insert(assets).values({ name: "Rajpath Viaduct · North span", assetType: "bridge", locality: "New Delhi demo sector", latitude: "28.6139", longitude: "77.2090", criticality: 5, status: "watch" }).returning({ id: assets.id });
   const assetId = insertId(assetResult);
   const missionResult = await db.insert(missions).values({ assetId, createdBy: input.createdBy ?? null, name: input.name, mode: "demo", status: "completed", startedAt: new Date(input.simulator.startedAt), completedAt: new Date() }).returning({ id: missions.id });
@@ -481,7 +480,6 @@ export async function createDemoMissionRecord(input: { name: string; createdBy?:
 export async function createHardwareCaptureMission(input: { name: string; createdBy?: number | null; aircraftProfile: string; adapter: "mavlink-bridge" | "http-webhook" | "rtsp-media"; latitude: number; longitude: number; operatorNote?: string }) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable. Configure DATABASE_URL before creating a UAV capture mission.");
-  if (!supabasePortableStorageConfigured()) throw new Error("Portable evidence storage is required before creating a hardware capture mission.");
   const assetResult = await db.insert(assets).values({ name: `${input.name} · UAV capture asset`, assetType: "bridge", locality: "Operator-supplied capture location", latitude: input.latitude.toFixed(6), longitude: input.longitude.toFixed(6), criticality: 3, status: "watch" }).returning({ id: assets.id });
   const assetId = insertId(assetResult);
   const missionResult = await db.insert(missions).values({ assetId, createdBy: input.createdBy ?? null, name: input.name, mode: "hardware", status: "preflight", hardwareAdapter: input.adapter, operatorNote: input.operatorNote ?? "Operator-created UAV capture mission. No aircraft command is issued by DRIFT.", inspectionProfile: { aircraftProfile: input.aircraftProfile, mediaProvenance: "operator-captured-original-required", bridgeContract: input.adapter } }).returning({ id: missions.id });
@@ -572,7 +570,19 @@ async function refreshEvidenceUrls<T extends { storageKey: string; storageUrl: s
 export async function listMissionEvidence(missionId: number) {
   const db = await getDb();
   if (!db) return [];
-  return refreshEvidenceUrls(await db.select(evidenceListColumns).from(evidence).where(eq(evidence.missionId, missionId)).orderBy(desc(evidence.createdAt)));
+  const [evidenceRows, detectionRows] = await Promise.all([
+    db.select(evidenceListColumns).from(evidence).where(eq(evidence.missionId, missionId)).orderBy(desc(evidence.createdAt)),
+    db.select({ id: defects.id, evidenceId: defects.evidenceId, label: defects.label, defectType: defects.defectType, severity: defects.severity, confidencePercent: defects.confidencePercent, latitude: defects.latitude, longitude: defects.longitude, reviewState: defects.reviewState, explanation: defects.explanation, boundingBox: defects.boundingBox, inferenceModel: defects.inferenceModel, inferenceSource: defects.inferenceSource, createdAt: defects.createdAt }).from(defects).where(eq(defects.missionId, missionId)).orderBy(desc(defects.createdAt)),
+  ]);
+  const detectionsByEvidence = new Map<number, typeof detectionRows>();
+  for (const detection of detectionRows) {
+    if (!detection.evidenceId) continue;
+    const detections = detectionsByEvidence.get(detection.evidenceId) ?? [];
+    detections.push(detection);
+    detectionsByEvidence.set(detection.evidenceId, detections);
+  }
+  const refreshedRows = await refreshEvidenceUrls(evidenceRows);
+  return refreshedRows.map(row => ({ ...row, detections: detectionsByEvidence.get(row.id) ?? [] }));
 }
 export async function listDemoEvidence(missionId: number) {
   const db = await getDb();

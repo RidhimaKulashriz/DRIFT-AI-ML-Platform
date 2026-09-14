@@ -81,7 +81,7 @@ function loadGoogleMaps(apiKey: string) {
     // Use the script load event and constructor check as the single readiness path.
     // Use Google's recommended async loading mode, but omit the global callback.
     // Readiness is driven by the script load event and constructor check below.
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async&libraries=marker`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async`;
     script.async = true;
     script.defer = true;
     script.onload = onReady;
@@ -247,15 +247,23 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
   const [mapState, setMapState] = useState<"loading" | "ready" | "missing-key" | "error">("loading");
   const [streetViewStatus, setStreetViewStatus] = useState<"idle" | "checking" | "open" | "unavailable">("idle");
   const [telemetryVisible, setTelemetryVisible] = useState(false);
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim();
+  const googleMapsEnabled = import.meta.env.VITE_ENABLE_GOOGLE_MAPS === "true";
+  const apiKey = googleMapsEnabled ? import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() : undefined;
   const validDefects = useMemo(() => defects.map(defect => ({ defect, point: asCoordinates(defect) })).filter((item): item is { defect: MapDefect; point: { lat: number; lng: number } } => Boolean(item.point)), [defects]);
   const validTelemetry = useMemo(() => telemetry.map(asCoordinates).filter((point): point is { lat: number; lng: number } => Boolean(point)), [telemetry]);
   const shouldShowTelemetry = telemetryVisible || validDefects.length === 0;
   const severityCounts = useMemo(() => (Object.keys(colors) as Severity[]).map(severity => ({ severity, count: validDefects.filter(item => item.defect.severity === severity).length })), [validDefects]);
   const selectedDefect = useMemo(() => validDefects.find(item => item.defect.id === selectedId) ?? null, [selectedId, validDefects]);
   const transientDefects = useMemo(() => validDefects.filter(item => item.defect.isTransient === true || item.defect.id < 0), [validDefects]);
+  const isValidLatLngLiteral = (value: unknown): value is google.maps.LatLngLiteral => {
+    if (!value || typeof value !== "object") return false;
+    const { lat, lng } = value as Partial<{ lat: number; lng: number }>;
+    const safeLat = typeof lat === "number" ? lat : Number.NaN;
+    const safeLng = typeof lng === "number" ? lng : Number.NaN;
+    return Number.isFinite(safeLat) && Number.isFinite(safeLng) && safeLat >= -90 && safeLat <= 90 && safeLng >= -180 && safeLng <= 180;
+  };
 
-  const [useLeaflet, setUseLeaflet] = useState(!apiKey);
+  const [useLeaflet, setUseLeaflet] = useState(true);
 
   // Google Maps path
   useEffect(() => {
@@ -272,7 +280,7 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     window.gm_authFailure = handleAuthFailure;
     setMapState("loading");
     setUseLeaflet(false);
-    loadGoogleMaps(apiKey).then(() => {
+    loadGoogleMaps(apiKey).then(async () => {
       if (cancelled || !mapElement.current) return;
       const center = validDefects[0]?.point ?? { lat: 28.6139, lng: 77.209 };
       // Detect billing-not-enabled or any other Maps runtime error and fall back to Leaflet.
@@ -303,23 +311,32 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     const bounds = new window.google.maps.LatLngBounds();
     const infoWindow = new window.google.maps.InfoWindow();
 
-    const createMarker = (options: { position: google.maps.LatLngLiteral; title?: string; label?: string; color: string; size: number; opacity?: number; zIndex?: number }) => {
-      const content = document.createElement("div");
-      content.textContent = options.label ?? "";
-      Object.assign(content.style, {
-        width: `${options.size}px`, height: `${options.size}px`, borderRadius: "50%",
-        display: "grid", placeItems: "center", boxSizing: "border-box",
-        background: options.color, opacity: String(options.opacity ?? 1),
-        border: "2px solid #ffffff", color: "#ffffff", font: "700 10px Arial, sans-serif",
-        textAlign: "center", whiteSpace: "nowrap", transform: "translate(-50%, -50%)",
+    const createMarker = (options: { position: google.maps.LatLngLiteral | null | undefined; title?: string; label?: string; color: string; size: number; opacity?: number; zIndex?: number }) => {
+      if (!isValidLatLngLiteral(options.position)) return null;
+      const safePosition = options.position;
+      const marker = new window.google.maps.Marker({
+        map,
+        position: safePosition,
+        title: options.title,
+        label: options.label ? { text: options.label, color: "#ffffff", fontSize: "10px", fontWeight: "700" } : undefined,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: Math.max(7, options.size / 3),
+          fillColor: options.color,
+          fillOpacity: options.opacity ?? 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+        },
+        zIndex: options.zIndex,
       });
-      return new window.google.maps.marker.AdvancedMarkerElement({ map, position: options.position, title: options.title, content, zIndex: options.zIndex });
+      return marker as unknown as google.maps.marker.AdvancedMarkerElement;
     };
 
     validDefects.forEach(({ defect, point }, index) => {
       const isTransient = defect.isTransient === true || defect.id < 0;
       const selected = selectedId === defect.id;
       const marker = createMarker({ position: point, title: defect.label, label: isTransient ? String(index + 1) : defect.severity[0]!.toUpperCase(), color: colors[defect.severity], size: selected ? 30 : 20, zIndex: selected ? 1100 : 1000 });
+      if (!marker) return;
       marker.addEventListener("gmp-click", () => {
         onSelect(defect.id);
         setStreetViewStatus("idle");
@@ -333,6 +350,7 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
     if (shouldShowTelemetry) {
       validTelemetry.forEach(point => {
         const marker = createMarker({ position: point, color: "#16b7d4", size: 8, opacity: .55 });
+        if (!marker) return;
         projectOverlays.current.push(marker);
         if (!validDefects.length) bounds.extend(point);
       });
@@ -340,15 +358,19 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
 
     // Official campus reference points plus a clearly approximate context radius.
     const igdtuwMarker = createMarker({ position: { lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude }, title: CAMPUS_MAP_DATA.IGDTUW.name, label: "IGDTUW", color: CAMPUS_MAP_DATA.IGDTUW.color, size: 20, zIndex: 100 });
-    igdtuwMarker.addEventListener("gmp-click", () => { infoWindow.setContent(campusPopupHtml(CAMPUS_MAP_DATA.IGDTUW)); infoWindow.open({ map, anchor: igdtuwMarker }); });
-    projectOverlays.current.push(igdtuwMarker);
+    if (igdtuwMarker) {
+      igdtuwMarker.addEventListener("gmp-click", () => { infoWindow.setContent(campusPopupHtml(CAMPUS_MAP_DATA.IGDTUW)); infoWindow.open({ map, anchor: igdtuwMarker }); });
+      projectOverlays.current.push(igdtuwMarker);
+    }
     const igdtuwCircle = new window.google.maps.Circle({ map, center: { lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude }, radius: CAMPUS_REFERENCE_RADIUS_METERS, strokeColor: CAMPUS_MAP_DATA.IGDTUW.color, strokeOpacity: 0.65, strokeWeight: 1, fillColor: CAMPUS_MAP_DATA.IGDTUW.color, fillOpacity: 0.08, clickable: false });
     projectOverlays.current.push(igdtuwCircle);
     if (!validDefects.length || validDefects.some(({ point }) => isNearCampus(point, VERIFIED_CAMPUS_COORDINATES.IGDTUW))) bounds.extend({ lat: VERIFIED_CAMPUS_COORDINATES.IGDTUW.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IGDTUW.longitude });
 
     const iiitdMarker = createMarker({ position: { lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude }, title: CAMPUS_MAP_DATA.IIIT_DELHI.name, label: "IIIT-D", color: CAMPUS_MAP_DATA.IIIT_DELHI.color, size: 20, zIndex: 100 });
-    iiitdMarker.addEventListener("gmp-click", () => { infoWindow.setContent(campusPopupHtml(CAMPUS_MAP_DATA.IIIT_DELHI)); infoWindow.open({ map, anchor: iiitdMarker }); });
-    projectOverlays.current.push(iiitdMarker);
+    if (iiitdMarker) {
+      iiitdMarker.addEventListener("gmp-click", () => { infoWindow.setContent(campusPopupHtml(CAMPUS_MAP_DATA.IIIT_DELHI)); infoWindow.open({ map, anchor: iiitdMarker }); });
+      projectOverlays.current.push(iiitdMarker);
+    }
     const iiitdCircle = new window.google.maps.Circle({ map, center: { lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude }, radius: CAMPUS_REFERENCE_RADIUS_METERS, strokeColor: CAMPUS_MAP_DATA.IIIT_DELHI.color, strokeOpacity: 0.65, strokeWeight: 1, fillColor: CAMPUS_MAP_DATA.IIIT_DELHI.color, fillOpacity: 0.08, clickable: false });
     projectOverlays.current.push(iiitdCircle);
     if (!validDefects.length || validDefects.some(({ point }) => isNearCampus(point, VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI))) bounds.extend({ lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude });
