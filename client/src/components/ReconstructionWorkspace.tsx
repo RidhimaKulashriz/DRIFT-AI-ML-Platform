@@ -63,7 +63,6 @@ export default function ReconstructionWorkspace() {
     refetchInterval: 10000,
     retry: false,
   });
-  const uploadSource = trpc.drift.reconstruction.uploadSource.useMutation();
   const create = trpc.drift.reconstruction.create.useMutation({
     onSuccess: data => {
       setLastJob(data);
@@ -141,19 +140,20 @@ export default function ReconstructionWorkspace() {
         sourceUrl: sourceUrl.trim(),
       };
       if (file) {
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        let binary = "";
-        for (let i = 0; i < bytes.length; i += 0x8000)
-          binary += String.fromCharCode(
-            ...Array.from(bytes.subarray(i, Math.min(i + 0x8000, bytes.length)))
-          );
-        uploaded = await uploadSource.mutateAsync({
-          fileName: file.name,
-          mimeType: file.type || "video/mp4",
-          base64: btoa(binary),
+        const response = await fetch("/api/reconstruction/upload", {
+          method: "POST",
+          headers: {
+            "Content-Type": file.type || "video/mp4",
+            "X-File-Name": file.name,
+            "X-File-Type": file.type || "video/mp4",
+          },
+          body: file,
         });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `Video upload failed (${response.status}).`);
+        uploaded = payload;
       }
-      create.mutate({
+      await create.mutateAsync({
         name,
         ...input,
         fileName: uploaded.fileName,
@@ -474,15 +474,12 @@ export default function ReconstructionWorkspace() {
               className="primary-action w-full"
               disabled={
                 create.isPending ||
-                uploadSource.isPending ||
                 (!file && !isRealSourceUrl)
               }
               onClick={submit}
             >
               <Play />
-              {uploadSource.isPending
-                ? "UPLOADING SOURCE"
-                : create.isPending
+              {create.isPending
                   ? "QUEUING RECONSTRUCTION"
                   : "START RECONSTRUCTION"}
             </button>
