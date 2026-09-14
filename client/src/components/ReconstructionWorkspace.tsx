@@ -67,7 +67,7 @@ export default function ReconstructionWorkspace() {
     onSuccess: data => {
       setLastJob(data);
       jobs.refetch();
-      toast.success("Source video accepted; reconstruction queued");
+      toast.success("3D reconstruction started from your uploaded video");
     },
     onError: error => toast.error(error.message),
   });
@@ -480,7 +480,7 @@ export default function ReconstructionWorkspace() {
             >
               <Play />
               {create.isPending
-                  ? "QUEUING RECONSTRUCTION"
+                ? "STARTING 3D RECONSTRUCTION"
                   : "START RECONSTRUCTION"}
             </button>
           </div>
