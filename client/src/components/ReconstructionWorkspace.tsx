@@ -577,8 +577,8 @@ export default function ReconstructionWorkspace() {
         {lastJob && (
           <div className="mb-4 rounded-lg border border-cyan-200 bg-cyan-50 p-4">
             <CheckCircle2 className="mr-2 inline text-cyan-700" />
-            Queued <b>{lastJob.name}</b> · {lastJob.jobKey} · waiting for the
-            persistent reconstruction worker.
+            3D reconstruction processing <b>{lastJob.name}</b> · {lastJob.jobKey} ·
+            the worker is processing the uploaded capture.
           </div>
         )}
         <div className="space-y-2">
