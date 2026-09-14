@@ -11,6 +11,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { getBackendOrigin } from "@/const";
 import { toast } from "sonner";
 import ReconstructionViewer from "@/components/ReconstructionViewer";
 
@@ -39,6 +40,7 @@ const coverage = [
 
 export default function ReconstructionWorkspace() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const backendOrigin = getBackendOrigin();
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState("");
   const [filePreviewUrl, setFilePreviewUrl] = useState("");
@@ -140,7 +142,7 @@ export default function ReconstructionWorkspace() {
         sourceUrl: sourceUrl.trim(),
       };
       if (file) {
-        const response = await fetch("/api/reconstruction/upload", {
+        const response = await fetch(`${backendOrigin}/api/reconstruction/upload`, {
           method: "POST",
           headers: {
             "Content-Type": file.type || "video/mp4",
