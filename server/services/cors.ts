@@ -1,9 +1,9 @@
 import type { NextFunction, Request, Response } from "express";
 
 const DEPLOYED_VERCEL_ORIGIN = "https://drift-ai-ml-platform.vercel.app";
-// Vercel exposes immutable deployment URLs in this project/team namespace. Keep
-// this narrowly scoped instead of allowing every `*.vercel.app` origin.
-const PROJECT_VERCEL_PREVIEW_ORIGIN = /^https:\/\/drift-ai-ml-platform(?:-[a-z0-9-]+)?-sckulashri-7163s-projects\.vercel\.app$/i;
+// Vercel exposes immutable deployment URLs with this project prefix. Keep this
+// narrowly scoped instead of allowing every `*.vercel.app` origin.
+const PROJECT_VERCEL_PREVIEW_ORIGIN = /^https:\/\/drift-ai-ml-platform(?:-[a-z0-9-]+)?\.vercel\.app$/i;
 
 function splitOrigins(value: string) {
   return value.split(",").map(origin => origin.trim()).filter(Boolean);

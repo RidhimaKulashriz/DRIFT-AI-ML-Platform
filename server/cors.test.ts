@@ -45,6 +45,15 @@ describe("split-host CORS middleware", () => {
     expect(next).toHaveBeenCalledOnce();
   });
 
+  it("allows the current generated Vercel deployment hostname", () => {
+    const res = response();
+    const next = vi.fn();
+    const previewOrigin = "https://drift-ai-ml-platform-gz39.vercel.app";
+    createCorsMiddleware("")(request(previewOrigin), res as any, next);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(previewOrigin);
+    expect(next).toHaveBeenCalledOnce();
+  });
+
   it("allows the configured frontend app URL", () => {
     const res = response();
     const next = vi.fn();
