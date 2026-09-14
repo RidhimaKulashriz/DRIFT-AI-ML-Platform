@@ -6,7 +6,11 @@ const DEPLOYED_VERCEL_ORIGIN = "https://drift-ai-ml-platform.vercel.app";
 const PROJECT_VERCEL_PREVIEW_ORIGIN = /^https:\/\/drift-ai-ml-platform(?:-[a-z0-9-]+)?\.vercel\.app$/i;
 
 function splitOrigins(value: string) {
-  return value.split(",").map(origin => origin.trim()).filter(Boolean);
+  return value.split(",").map(origin => normalizeOrigin(origin)).filter(Boolean);
+}
+
+function normalizeOrigin(origin: string) {
+  return origin.trim().replace(/\/+$/, "");
 }
 
 function isProjectVercelPreviewOrigin(origin: string) {
@@ -21,7 +25,7 @@ export function createCorsMiddleware(
     DEPLOYED_VERCEL_ORIGIN,
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    frontendAppUrl.trim(),
+    normalizeOrigin(frontendAppUrl),
     ...splitOrigins(allowedOriginsValue),
   ].filter(Boolean));
   return (req: Request, res: Response, next: NextFunction) => {

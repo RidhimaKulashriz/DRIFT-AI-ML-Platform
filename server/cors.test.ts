@@ -35,6 +35,14 @@ describe("split-host CORS middleware", () => {
     expect(next).toHaveBeenCalledOnce();
   });
 
+  it("normalizes configured origin slashes and whitespace", () => {
+    const res = response();
+    const next = vi.fn();
+    createCorsMiddleware(" https://drift-preview.example/ , http://localhost:3000/")(request("https://drift-preview.example"), res as any, next);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://drift-preview.example");
+    expect(next).toHaveBeenCalledOnce();
+  });
+
   it("allows the project-scoped Vercel preview origin from the production console error", () => {
     const res = response();
     const next = vi.fn();
