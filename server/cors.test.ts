@@ -86,5 +86,7 @@ describe("split-host CORS middleware", () => {
     expect(res.sendStatus).toHaveBeenCalledWith(204);
     expect(res.headers.get("Access-Control-Allow-Methods")).toContain("POST");
     expect(res.headers.get("Access-Control-Allow-Headers")).toContain("Authorization");
+    expect(res.headers.get("Access-Control-Allow-Headers")).toContain("X-File-Name");
+    expect(res.headers.get("Access-Control-Allow-Headers")).toContain("X-File-Type");
   });
 });
