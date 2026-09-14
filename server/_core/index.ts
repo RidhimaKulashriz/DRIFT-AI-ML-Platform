@@ -47,6 +47,26 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  // Keep large videos out of tRPC JSON. Base64 inflates the payload and
+  // causes upstream proxies to return an HTML 413 before tRPC can respond.
+  app.post("/api/reconstruction/upload", express.raw({ type: ["video/*", "application/octet-stream"], limit: "300mb" }), async (req, res) => {
+    try {
+      const fileName = String(req.headers["x-file-name"] ?? "source-video.mp4");
+      const mimeType = String(req.headers["x-file-type"] ?? req.headers["content-type"] ?? "video/mp4");
+      const bytes = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body ?? []);
+      if (!bytes.length || bytes.length > 250 * 1024 * 1024) return res.status(413).json({ error: "Video upload must be between 1 byte and 250 MB." });
+      const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const stored = await (await import("../storage")).storagePut(`drift/reconstruction/source/${Date.now()}-${safeName}`, bytes, mimeType);
+      const configuredOrigin = process.env.PUBLIC_BACKEND_URL?.replace(/\/$/, "");
+      const forwardedProto = String(req.headers["x-forwarded-proto"] ?? req.protocol ?? "https").split(",")[0];
+      const forwardedHost = String(req.headers["x-forwarded-host"] ?? req.headers.host ?? "");
+      const origin = configuredOrigin || `${forwardedProto}://${forwardedHost}`;
+      return res.status(201).json({ sourceUrl: stored.url.startsWith("http") ? stored.url : `${origin}${stored.url}`, storageKey: stored.key, fileName, mimeType, sizeBytes: bytes.length });
+    } catch (error) {
+      console.error("[DRIFT] Reconstruction video upload failed", error);
+      return res.status(503).json({ error: error instanceof Error ? error.message : "Video upload failed." });
+    }
+  });
   app.get("/api/reconstruction/:jobKey/artifacts/:fileName", (req, res) => {
     const jobKey = String(req.params.jobKey ?? "");
     const fileName = path.basename(String(req.params.fileName ?? ""));

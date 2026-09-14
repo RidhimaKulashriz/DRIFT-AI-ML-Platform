@@ -1,0 +1,7 @@
+
+> drift-inspection-platform@1.0.0 dev /Users/risharastogi/Desktop/DRIFT-AI-ML-Platform
+> cross-env NODE_ENV=development tsx watch server/_core/index.ts
+
+[OAuth] External provider is not configured; public mode remains available and protected actions stay disabled.
+Port 3000 is busy, using port 3003 instead
+Server running on http://localhost:3003/

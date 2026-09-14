@@ -35,6 +35,14 @@ describe("split-host CORS middleware", () => {
     expect(next).toHaveBeenCalledOnce();
   });
 
+  it("normalizes configured origin slashes and whitespace", () => {
+    const res = response();
+    const next = vi.fn();
+    createCorsMiddleware(" https://drift-preview.example/ , http://localhost:3000/")(request("https://drift-preview.example"), res as any, next);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://drift-preview.example");
+    expect(next).toHaveBeenCalledOnce();
+  });
+
   it("allows the project-scoped Vercel preview origin from the production console error", () => {
     const res = response();
     const next = vi.fn();
@@ -42,6 +50,15 @@ describe("split-host CORS middleware", () => {
     createCorsMiddleware("")(request(previewOrigin), res as any, next);
     expect(res.headers.get("Access-Control-Allow-Origin")).toBe(previewOrigin);
     expect(res.headers.get("Access-Control-Allow-Credentials")).toBe("true");
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it("allows the current generated Vercel deployment hostname", () => {
+    const res = response();
+    const next = vi.fn();
+    const previewOrigin = "https://drift-ai-ml-platform-gz39.vercel.app";
+    createCorsMiddleware("")(request(previewOrigin), res as any, next);
+    expect(res.headers.get("Access-Control-Allow-Origin")).toBe(previewOrigin);
     expect(next).toHaveBeenCalledOnce();
   });
 
@@ -77,5 +94,7 @@ describe("split-host CORS middleware", () => {
     expect(res.sendStatus).toHaveBeenCalledWith(204);
     expect(res.headers.get("Access-Control-Allow-Methods")).toContain("POST");
     expect(res.headers.get("Access-Control-Allow-Headers")).toContain("Authorization");
+    expect(res.headers.get("Access-Control-Allow-Headers")).toContain("X-File-Name");
+    expect(res.headers.get("Access-Control-Allow-Headers")).toContain("X-File-Type");
   });
 });

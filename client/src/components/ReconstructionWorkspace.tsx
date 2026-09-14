@@ -11,6 +11,7 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { getBackendOrigin } from "@/const";
 import { toast } from "sonner";
 import ReconstructionViewer from "@/components/ReconstructionViewer";
 
@@ -39,6 +40,7 @@ const coverage = [
 
 export default function ReconstructionWorkspace() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const backendOrigin = getBackendOrigin();
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState("");
   const [filePreviewUrl, setFilePreviewUrl] = useState("");
@@ -63,12 +65,11 @@ export default function ReconstructionWorkspace() {
     refetchInterval: 10000,
     retry: false,
   });
-  const uploadSource = trpc.drift.reconstruction.uploadSource.useMutation();
   const create = trpc.drift.reconstruction.create.useMutation({
     onSuccess: data => {
       setLastJob(data);
       jobs.refetch();
-      toast.success("Source video accepted; reconstruction queued");
+      toast.success("3D reconstruction started from your uploaded video");
     },
     onError: error => toast.error(error.message),
   });
@@ -141,19 +142,20 @@ export default function ReconstructionWorkspace() {
         sourceUrl: sourceUrl.trim(),
       };
       if (file) {
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        let binary = "";
-        for (let i = 0; i < bytes.length; i += 0x8000)
-          binary += String.fromCharCode(
-            ...Array.from(bytes.subarray(i, Math.min(i + 0x8000, bytes.length)))
-          );
-        uploaded = await uploadSource.mutateAsync({
-          fileName: file.name,
-          mimeType: file.type || "video/mp4",
-          base64: btoa(binary),
+        const response = await fetch(`${backendOrigin}/api/reconstruction/upload`, {
+          method: "POST",
+          headers: {
+            "Content-Type": file.type || "video/mp4",
+            "X-File-Name": file.name,
+            "X-File-Type": file.type || "video/mp4",
+          },
+          body: file,
         });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `Video upload failed (${response.status}).`);
+        uploaded = payload;
       }
-      create.mutate({
+      await create.mutateAsync({
         name,
         ...input,
         fileName: uploaded.fileName,
@@ -474,16 +476,13 @@ export default function ReconstructionWorkspace() {
               className="primary-action w-full"
               disabled={
                 create.isPending ||
-                uploadSource.isPending ||
                 (!file && !isRealSourceUrl)
               }
               onClick={submit}
             >
               <Play />
-              {uploadSource.isPending
-                ? "UPLOADING SOURCE"
-                : create.isPending
-                  ? "QUEUING RECONSTRUCTION"
+              {create.isPending
+                ? "STARTING 3D RECONSTRUCTION"
                   : "START RECONSTRUCTION"}
             </button>
           </div>
@@ -578,8 +577,8 @@ export default function ReconstructionWorkspace() {
         {lastJob && (
           <div className="mb-4 rounded-lg border border-cyan-200 bg-cyan-50 p-4">
             <CheckCircle2 className="mr-2 inline text-cyan-700" />
-            Queued <b>{lastJob.name}</b> · {lastJob.jobKey} · waiting for the
-            persistent reconstruction worker.
+            3D reconstruction processing <b>{lastJob.name}</b> · {lastJob.jobKey} ·
+            the worker is processing the uploaded capture.
           </div>
         )}
         <div className="space-y-2">

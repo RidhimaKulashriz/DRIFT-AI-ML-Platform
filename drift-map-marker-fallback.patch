@@ -1,0 +1,29 @@
+diff --git a/client/src/components/InspectionMap.tsx b/client/src/components/InspectionMap.tsx
+index e578c81..f68b89d 100644
+--- a/client/src/components/InspectionMap.tsx
++++ b/client/src/components/InspectionMap.tsx
+@@ -298,6 +298,7 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
+   useEffect(() => {
+     const map = mapRef.current;
+     if (!map || mapState !== "ready" || !window.google?.maps) return;
++    try {
+     projectOverlays.current.forEach(overlay => { if ("setMap" in overlay) overlay.setMap(null); else overlay.map = null; });
+     projectOverlays.current = [];
+     const bounds = new window.google.maps.LatLngBounds();
+@@ -354,6 +355,16 @@ export function InspectionMap({ defects, telemetry, selectedId, streetViewReques
+     if (!validDefects.length || validDefects.some(({ point }) => isNearCampus(point, VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI))) bounds.extend({ lat: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.latitude, lng: VERIFIED_CAMPUS_COORDINATES.IIIT_DELHI.longitude });
+ 
+     if (validDefects.length || (shouldShowTelemetry && validTelemetry.length)) map.fitBounds(bounds, 54);
++    } catch (err) {
++      // AdvancedMarkerElement throws if the API key's Map lacks Advanced Markers
++      // provisioning (or is referrer-restricted) — degrade to the Leaflet map
++      // instead of leaving a half-drawn map with an uncaught console error.
++      console.warn("[InspectionMap] Google Maps marker rendering failed, falling back to Leaflet:", err);
++      projectOverlays.current.forEach(overlay => { if ("setMap" in overlay) overlay.setMap(null); else overlay.map = null; });
++      projectOverlays.current = [];
++      setUseLeaflet(true);
++      setMapState("error");
++    }
+   }, [mapState, onSelect, selectedId, shouldShowTelemetry, validDefects, validTelemetry]);
+ 
+   useEffect(() => {

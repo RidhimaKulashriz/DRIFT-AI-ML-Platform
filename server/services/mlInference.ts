@@ -26,6 +26,7 @@ export type InferenceResult = {
   coveragePercent: number;
   uncertainty: { reason: string; requiresHumanReview: boolean };
   calibrationVersion: string;
+  detections?: Array<{ label: string; confidence: number; boundingBox: { x: number; y: number; width: number; height: number } }>;
 };
 
 const cvResponseSchema = z.object({
@@ -37,6 +38,8 @@ const cvResponseSchema = z.object({
   uncertainty: z.object({ reason: z.string().max(500), requiresHumanReview: z.boolean() }).optional(),
   calibrationVersion: z.string().max(80).optional(),
 });
+const detectionSchema = z.object({ label: z.string().min(1).max(80), confidence: z.number().min(0).max(1), boundingBox: z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100), width: z.number().min(0).max(100), height: z.number().min(0).max(100) }) });
+type ProductionCvResponse = z.infer<typeof cvResponseSchema> & { detections?: Array<{ label: string; confidence: number; boundingBox: { x: number; y: number; width: number; height: number } }> };
 
 function calibrateConfidence(raw: number, input: InferenceInput) {
   const zonePenalty = input.captureZone === "low-light" || input.captureZone === "confined" ? 0.14 : input.captureZone === "under-bridge" || input.captureZone === "tunnel" ? 0.07 : 0;
@@ -49,10 +52,11 @@ function fallbackInference(input: InferenceInput): InferenceResult {
   const seed = Array.from(input.fileName).reduce((acc, char) => acc + char.charCodeAt(0), 0);
   const confidence = calibrateConfidence(Math.min(0.97, 0.76 + (seed % 20) / 100), input);
   const score = scoreZeroError({ defectType: label, confidence, latitude: input.latitude, longitude: input.longitude, assetCriticality: input.assetCriticality, priorOpenDefects: input.priorOpenDefects, observationCount: 1 + (seed % 3) });
-  return { model: input.demo ? "DRIFT-CV simulator adapter v1" : "DRIFT-CV deterministic fallback v1", label, confidence, boundingBox: { x: 18 + (seed % 22), y: 20 + (seed % 17), width: 38, height: 29 }, severityInput: { confidence, assetCriticality: input.assetCriticality, priorOpenDefects: input.priorOpenDefects }, score, annotationNote: `Detected ${label} candidate from ${input.demo ? "reproducible simulator evidence" : "fallback inference"}; manual engineer review is required before work-order release.`, source: "deterministic-fallback", coveragePercent: input.captureZone === "confined" || input.captureZone === "low-light" ? 35 : 72, uncertainty: { reason: "Single-frame visual inference without calibrated site baseline; zone and coverage penalties applied", requiresHumanReview: true }, calibrationVersion: "DRIFT-calibration-v1" };
+  const boundingBox = { x: 18 + (seed % 22), y: 20 + (seed % 17), width: 38, height: 29 };
+  return { model: input.demo ? "DRIFT-CV simulator adapter v1" : "DRIFT-CV deterministic fallback v1", label, confidence, boundingBox, detections: [{ label, confidence, boundingBox }], severityInput: { confidence, assetCriticality: input.assetCriticality, priorOpenDefects: input.priorOpenDefects }, score, annotationNote: `Detected ${label} candidate from ${input.demo ? "reproducible simulator evidence" : "fallback inference"}; manual engineer review is required before work-order release.`, source: "deterministic-fallback", coveragePercent: input.captureZone === "confined" || input.captureZone === "low-light" ? 35 : 72, uncertainty: { reason: "Single-frame visual inference without calibrated site baseline; zone and coverage penalties applied", requiresHumanReview: true }, calibrationVersion: "DRIFT-calibration-v1" };
 }
 
-async function callProductionCv(input: InferenceInput): Promise<Array<z.infer<typeof cvResponseSchema>> | null> {
+async function callProductionCv(input: InferenceInput): Promise<ProductionCvResponse[] | null> {
   // Never contact an implicit or stale deployment. Production CV is opt-in through
   // an explicitly configured endpoint; otherwise the deterministic fallback is
   // immediate and remains available for local tests, demos, and offline operation.
@@ -75,7 +79,10 @@ async function callProductionCv(input: InferenceInput): Promise<Array<z.infer<ty
     // Accept the canonical DRIFT envelope and the flat production-CV contract.
     if (raw && typeof raw.model === "string" && typeof raw.label === "string" && typeof raw.confidence === "number" && raw.boundingBox) {
       const parsed = cvResponseSchema.safeParse({ model: raw.model, label: mapDefectLabel(raw.label), confidence: raw.confidence, boundingBox: raw.boundingBox, coveragePercent: raw.coveragePercent, uncertainty: raw.uncertainty, calibrationVersion: raw.calibrationVersion });
-      if (parsed.success) return [parsed.data];
+      if (parsed.success) {
+        const detections = Array.isArray(raw.detections) ? raw.detections.map((item: any) => { const candidate = { label: String(item.label ?? "object"), confidence: Number(item.confidence ?? 0), boundingBox: item.boundingBox }; return detectionSchema.safeParse(candidate).success ? candidate : null; }).filter(Boolean) as Array<{ label: string; confidence: number; boundingBox: { x: number; y: number; width: number; height: number } }> : undefined;
+    return [{ ...parsed.data, detections }];
+      }
     }
     // Hitakshi's server returns { success, detections: [{model, label, confidence, boundingBox, severity}] }
     if (raw && raw.success && Array.isArray(raw.detections) && raw.detections.length > 0) {
@@ -87,7 +94,8 @@ async function callProductionCv(input: InferenceInput): Promise<Array<z.infer<ty
         coveragePercent: 85,
         uncertainty: { reason: "Hitakshi multi-model pipeline (CRACK+ROAD+RAILWAY+RUST)", requiresHumanReview: true },
         calibrationVersion: "hitakshi-v1",
-      })).filter((detection: any) => cvResponseSchema.safeParse(detection).success);
+    detections: Array.isArray(raw.detections) ? raw.detections.map((item: any) => detectionSchema.safeParse({ label: String(item.label ?? "object"), confidence: Number(item.confidence ?? 0), boundingBox: item.boundingBox }).success ? { label: String(item.label ?? "object"), confidence: Number(item.confidence ?? 0), boundingBox: item.boundingBox } : null).filter(Boolean) as Array<{ label: string; confidence: number; boundingBox: { x: number; y: number; width: number; height: number } }> : undefined,
+  })).filter((detection: any) => cvResponseSchema.safeParse(detection).success);
     }
     return null;
   } catch (err) {

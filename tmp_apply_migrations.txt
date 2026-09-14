@@ -1,0 +1,100 @@
+== applying /tmp/drizzle-postgres/0000_light_queen_noir.sql
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+== applying /tmp/drizzle-postgres/0001_known_rocket_racer.sql
+ALTER TABLE
+ALTER TABLE
+== applying /tmp/drizzle-postgres/0002_perfect_speedball.sql
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TYPE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+== applying /tmp/drizzle-postgres/0003_shiny_puma.sql
+CREATE TYPE
+ALTER TYPE
+ALTER TYPE
+ALTER TYPE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+== applying /tmp/drizzle-postgres/0004_cooing_vulture.sql
+CREATE TYPE
+CREATE TYPE
+CREATE TABLE
+== applying /tmp/drizzle-postgres/0005_campuses_seed.sql
+CREATE TYPE
+CREATE TABLE
+CREATE TABLE
+ALTER TABLE
+ALTER TABLE
+INSERT 0 1
+INSERT 0 1
+INSERT 0 3
+INSERT 0 3
+== applying /tmp/drizzle-postgres/0006_reconstruction_jobs.sql
+CREATE TABLE
+psql:/tmp/drizzle-postgres/0006_reconstruction_jobs.sql:22: NOTICE:  relation "reconstruction_jobs" already exists, skipping
+psql:/tmp/drizzle-postgres/0006_reconstruction_jobs.sql:23: NOTICE:  relation "reconstruction_jobs_status_idx" already exists, skipping
+CREATE INDEX
+psql:/tmp/drizzle-postgres/0006_reconstruction_jobs.sql:24: NOTICE:  relation "reconstruction_jobs_created_at_idx" already exists, skipping
+CREATE INDEX

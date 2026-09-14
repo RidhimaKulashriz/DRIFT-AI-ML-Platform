@@ -6,7 +6,7 @@ import { ENV } from "./_core/env";
 import { resolveReviewState } from "./services/reviewState";
 import { summarizeSeverity, toMapMarker } from "./services/reportPresentation";
 import { storageGetSignedUrl, storagePutWithFallback } from "./storage";
-import { browserStorageUrl, isSupabaseStorageKey, supabasePortableStorageConfigured } from "./services/supabaseStorage";
+import { browserStorageUrl, getSupabaseEvidenceSignedUrl, isSupabaseStorageKey, supabasePortableStorageConfigured } from "./services/supabaseStorage";
 import { renderInspectionPdf } from "./services/reportPdf";
 import { rankApprovedKnowledge, type KnowledgeCitation } from "./services/rag";
 import type { InferenceResult } from "./services/mlInference";
@@ -18,6 +18,17 @@ import { analyzeDefectEvolution, analyzeModelDisagreement, buildCausalHypotheses
 import { analyzeGraphImpact, buildNextBestActions, buildWorldGraph, diffWorldGraphs, findInformationGaps, graphCentrality, queryWorldGraph, simulateCounterfactual, type GraphNodeKind, type GraphEdge } from "./services/graphEngine";
 
 let _db: ReturnType<typeof drizzle> | null = null;
+
+export function buildDatabaseConfig(databaseUrl?: string) {
+  const value = databaseUrl ?? process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? process.env.POSTGRESQL_URL ?? "";
+  if (!value || !/^(postgres|postgresql):\/\//i.test(value)) return null;
+
+  const isRenderPostgres = /render\.com|\.postgres\.render\.com/i.test(value);
+  return {
+    connectionString: value,
+    ...(isRenderPostgres ? { ssl: { rejectUnauthorized: false } } : {}),
+  };
+}
 
 async function recordDomainEvent(input: { type: DomainEventType; actorId?: number | null; missionId?: number | null; assetId?: number | null; defectId?: number | null; evidenceId?: number | null; payload: Record<string, unknown> }) {
   const event = createDomainEvent(input);
@@ -31,15 +42,14 @@ const { attachmentData: _evidenceAttachmentData, ...evidenceListColumns } = getT
 const { attachmentData: _reportAttachmentData, ...reportListColumns } = getTableColumns(reports);
 
 function postgresDatabaseUrl() {
-  const value = process.env.DATABASE_URL;
-  return value?.startsWith("postgres://") || value?.startsWith("postgresql://") ? value : undefined;
+  return buildDatabaseConfig()?.connectionString;
 }
 
 export async function getDb() {
-  const databaseUrl = postgresDatabaseUrl();
-  if (!_db && databaseUrl) {
+  const config = buildDatabaseConfig();
+  if (!_db && config) {
     try {
-      _db = drizzle(databaseUrl);
+      _db = drizzle({ connection: config });
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -65,7 +75,7 @@ export async function ensureReportsColumns(db: any): Promise<void> {
 
     // Use a fresh direct connection to run the migration
     const { Client } = await import("pg");
-    const client = new Client({ connectionString: databaseUrl });
+    const client = new Client(buildDatabaseConfig(databaseUrl) ?? { connectionString: databaseUrl });
     await client.connect();
     try {
       const colCheck = await client.query<{ column_name: string }>(
@@ -503,6 +513,14 @@ export async function createEvidenceRecord(input: { missionId: number; uploadedB
   return { id: evidenceId };
 }
 
+export async function updateEvidenceDetections(evidenceId: number, detections: Array<{ label: string; confidence: number; boundingBox: { x: number; y: number; width: number; height: number } }>) {
+  const db = await getDb();
+  if (!db) return;
+  const row = (await db.select({ provenance: evidence.provenance }).from(evidence).where(eq(evidence.id, evidenceId)).limit(1))[0];
+  const previous = row?.provenance && typeof row.provenance === "object" ? row.provenance as Record<string, unknown> : {};
+  await db.update(evidence).set({ provenance: { ...previous, detections } }).where(eq(evidence.id, evidenceId));
+}
+
 export async function persistInferenceDefect(input: { missionId: number; assetId: number; evidenceId: number; latitude: number; longitude: number; inference: InferenceResult; inspectionDomain?: string; correlationKey?: string; createdBy?: number | null }) {
   const db = await getDb();
   if (!db) throw new Error("Database is unavailable.");
@@ -532,15 +550,21 @@ export async function generateMissionReport(input: { missionId: number; generate
   const geoRoute = primaryFinding ? lookupContractorForLocation(Number(primaryFinding.latitude), Number(primaryFinding.longitude), primaryFinding.inspectionDomain ?? "roads") : null;
   const primaryTicket = ticketRows[0];
   const evidenceForPdf = await Promise.all(evidenceRows.map(async row => {
-    if (row.attachmentData && row.mimeType.startsWith("image/")) return { ...row, imageBuffer: Buffer.from(row.attachmentData) };
-    if (!row.mimeType.startsWith("image/") || !row.storageKey) return row;
-    try {
-      const response = await fetch(await storageGetSignedUrl(row.storageKey));
-      if (!response.ok) return row;
-      return { ...row, imageBuffer: Buffer.from(await response.arrayBuffer()) };
-    } catch {
-      return row;
+    if (!row.mimeType.startsWith("image/")) return row;
+    if (row.attachmentData) return { ...row, imageBuffer: Buffer.from(row.attachmentData) };
+    const candidates: string[] = [];
+    if (row.storageKey) {
+      try { candidates.push(isSupabaseStorageKey(row.storageKey) ? await getSupabaseEvidenceSignedUrl(row.storageKey) : await storageGetSignedUrl(row.storageKey)); } catch { /* try the persisted URL below */ }
     }
+    if (row.storageUrl && /^https?:\/\//i.test(row.storageUrl)) candidates.push(row.storageUrl);
+    for (const url of candidates) {
+      try {
+        const response = await fetch(url);
+        if (response.ok) return { ...row, imageBuffer: Buffer.from(await response.arrayBuffer()) };
+      } catch { /* continue to the next storage URL */ }
+    }
+    console.warn(`[DRIFT PDF] Image bytes unavailable for evidence ${row.id} (${row.fileName}); metadata will remain visible.`);
+    return row;
   }));
   const title = `${mission.name} · Evidence-linked inspection report`;
   const severityCounts = summarizeSeverity(defectRows);

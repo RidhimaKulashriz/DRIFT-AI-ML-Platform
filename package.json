@@ -4,10 +4,14 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
+    "predev": "node scripts/ensure-local-dependencies.mjs",
     "dev": "cross-env NODE_ENV=development tsx watch server/_core/index.ts",
+    "prebuild": "node scripts/ensure-local-dependencies.mjs",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "start": "cross-env NODE_ENV=production node dist/index.js",
+    "precheck": "node scripts/ensure-local-dependencies.mjs",
     "check": "tsc --noEmit",
+    "pretypecheck": "node scripts/ensure-local-dependencies.mjs",
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
@@ -123,6 +127,7 @@
     "vitest": "^2.1.4"
   },
   "packageManager": "pnpm@10.4.1+sha512.c753b6c3ad7afa13af388fa6d808035a008e30ea9993f58c6663e2bc5ff21679aa834db094987129aa4d488b86df57f7b634981b2f827cdcacc698cc0cfb88af",
+  "private": true,
   "pnpm": {
     "patchedDependencies": {
       "wouter@3.7.1": "patches/wouter@3.7.1.patch"

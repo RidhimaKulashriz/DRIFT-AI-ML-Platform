@@ -224,7 +224,7 @@ def main() -> None:
     while True:
         with psycopg.connect(DATABASE_URL) as conn:
             with conn.cursor() as cur:
-                cur.execute('SELECT "jobKey", name, "inputFileName", "inputMetadata" FROM reconstruction_jobs WHERE status=\'queued\' ORDER BY "createdAt" LIMIT 1 FOR UPDATE SKIP LOCKED')
+                cur.execute('SELECT "jobKey", name, "inputFileName", "inputMetadata" FROM reconstruction_jobs WHERE status=\'processing\' ORDER BY "createdAt" LIMIT 1 FOR UPDATE SKIP LOCKED')
                 job = cur.fetchone()
                 if job:
                     process(conn, job)
