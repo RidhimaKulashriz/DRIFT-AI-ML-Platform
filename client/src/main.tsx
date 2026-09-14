@@ -9,7 +9,21 @@ import App from "./App";
 import { getSupabaseAccessToken, isSupabaseAuthConfigured, isSupabaseTokenUsable } from "./lib/supabase";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 3,
+      retryDelay: attempt => Math.min(1000 * 2 ** attempt, 5000),
+    },
+    mutations: {
+      // Render can briefly return 502/503 while the free-tier service wakes.
+      // The transport below retries only those transient failures; validation
+      // and authorization errors are never retried.
+      retry: 2,
+      retryDelay: attempt => Math.min(1000 * 2 ** attempt, 4000),
+    },
+  },
+});
 
 const redirectToLoginIfUnauthorized = (_error: unknown) => {
   // Public demo mode must not redirect to an unconfigured external OAuth provider.
@@ -75,7 +89,19 @@ const trpcClient = trpc.createClient({
         const requestInit = { ...(init ?? {}), credentials: "include" as const };
         const firstHeaders = new Headers(requestInit.headers);
         Object.assign(firstHeaders, await authHeaders());
-        const firstResponse = await globalThis.fetch(input, { ...requestInit, headers: firstHeaders });
+        let firstResponse: Response | undefined;
+        let lastError: unknown;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            firstResponse = await globalThis.fetch(input, { ...requestInit, headers: firstHeaders });
+            if (![502, 503, 504].includes(firstResponse.status) || attempt === 2) break;
+          } catch (error) {
+            lastError = error;
+            if (attempt === 2) throw error;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1000 * 2 ** attempt));
+        }
+        if (!firstResponse) throw lastError ?? new Error("API request failed.");
         if (!(await isExpiredJwtResponse(firstResponse))) return firstResponse;
 
         // A token can expire between header creation and the server check.
