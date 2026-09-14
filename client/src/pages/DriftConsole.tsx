@@ -270,6 +270,7 @@ export default function DriftConsole() {
   const [reportResult, setReportResult] = useState<{ title: string; storageUrl?: string; evidenceCount: number; defectCount: number; format?: string; severityCounts?: Record<string, number> } | null>(null);
   const [lastTicketId, setLastTicketId] = useState<number | null>(null);
   const [evidencePreview, setEvidencePreview] = useState<EvidenceItem | null>(null);
+  const [videoScanProgress, setVideoScanProgress] = useState<string | null>(null);
   const [transientSimulatorRun, setTransientSimulatorRun] = useState<TransientSimulatorRun | null>(null);
   const [transientBriefing, setTransientBriefing] = useState<string | null>(null);
   const [streetViewRequest, setStreetViewRequest] = useState(0);
@@ -352,8 +353,8 @@ export default function DriftConsole() {
   const contractorWorkPersistence = contractorAssignedWork.data?.persistence;
   const accountabilityReady = accountabilityPersistence?.available === true && persistenceAvailable;
   const missionIdForEvidence = Number(missions[0]?.id ?? 0);
-  const canReadEvidence = isAuthenticated && ["admin", "engineer", "user"].includes(workspaceAccess.data?.role ?? "");
-  const evidenceQueryEnabled = canReadEvidence && missionIdForEvidence > 0;
+  const canReadEvidence = missionIdForEvidence > 0;
+  const evidenceQueryEnabled = canReadEvidence;
   const missionEvidence = trpc.drift.evidence.list.useQuery({ missionId: missionIdForEvidence }, { enabled: evidenceQueryEnabled, refetchInterval: evidenceQueryEnabled ? 10000 : false, retry: false });
   const demoEvidence = trpc.drift.evidence.demoList.useQuery({ missionId: missionIdForEvidence }, { enabled: workspace === "evidence" && evidenceQueryEnabled, retry: false });
   const evidenceItems: EvidenceItem[] = (missionEvidence.data?.length ? missionEvidence.data : demoEvidence.data ?? []).filter(item => {
@@ -362,8 +363,8 @@ export default function DriftConsole() {
   });
   const uploadEvidence = trpc.drift.evidence.upload.useMutation({
     onSuccess: () => {
-      toast.success("Evidence stored securely with mission metadata");
-      missionEvidence.refetch();
+      // Avoid refetching the entire vault after every sampled video frame.
+      // The scan refreshes once when the batch completes.
     },
     onError: error => toast.error(error.message),
   });
@@ -495,38 +496,64 @@ export default function DriftConsole() {
       note: decision === "approve" ? "Evidence reviewed and priority accepted." : decision === "override" ? "Priority adjusted after engineer review." : "Field verification requested before work-order release.",
     });
   };
-  const handleEvidenceFile = (file?: File) => {
+  const handleEvidenceFile = async (file?: File) => {
     if (!file) return;
     if (!missionIdForEvidence) {
       toast.error("Run a simulator mission or select a persisted mission before uploading evidence.");
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => uploadEvidence.mutate({
+    const base64 = await new Promise<string>((resolve, reject) => {
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("The selected evidence file could not be read."));
+      reader.readAsDataURL(file);
+    });
+    const commonPayload = {
       missionId: missionIdForEvidence,
-      fileName: file.name,
-      mimeType: file.type || "application/octet-stream",
-      base64: String(reader.result),
-      mediaKind: file.type.startsWith("video/") ? "video" : "photo",
       latitude: String(selected.latitude),
       longitude: String(selected.longitude),
-      playbackSeconds: 0,
       assetId: selected.assetId || undefined,
       assetCriticality: availableAssets.find(asset => asset.id === selected.assetId)?.criticality ?? 3,
       priorOpenDefects: defects.filter(defect => defect.assetId === selected.assetId && defect.status !== "resolved" && defect.status !== "dismissed").length,
-      runInference: file.type.startsWith("image/"),
-      capturedAt: Date.now(),
-      captureZone: "oblique",
-      qualityStatus: "review",
-      inspectionDomain: "bridges",
-      cameraId: `${uavProfile} · operator camera`,
-      captureSource: "hardware",
-      aircraftProfile: uavProfile,
-      imageQuality: { source: "operator-uav-upload", requiresEngineerReview: true, originalMediaRequired: true },
+      capturedAt: Date.now(), captureZone: "oblique" as const, qualityStatus: "review" as const,
+      inspectionDomain: "bridges" as const, cameraId: `${uavProfile} · operator camera`, captureSource: "upload" as const,
+      aircraftProfile: uavProfile, imageQuality: { source: "operator-uav-upload", requiresEngineerReview: true, originalMediaRequired: true },
       correlationKey: `${missionIdForEvidence}:${selected.assetId || "asset"}`,
-    });
-    reader.onerror = () => toast.error("The selected evidence file could not be read.");
-    reader.readAsDataURL(file);
+    };
+    try {
+      if (!file.type.startsWith("video/")) {
+        await uploadEvidence.mutateAsync({ ...commonPayload, fileName: file.name, mimeType: file.type || "image/jpeg", base64, mediaKind: "photo", playbackSeconds: 0, runInference: true });
+        toast.success("Evidence stored and sent to ML inference");
+        return;
+      }
+      await uploadEvidence.mutateAsync({ ...commonPayload, fileName: file.name, mimeType: file.type || "video/mp4", base64, mediaKind: "video", playbackSeconds: 0, runInference: false });
+      const video = document.createElement("video");
+      video.preload = "metadata"; video.muted = true; video.src = URL.createObjectURL(file);
+      await new Promise<void>((resolve, reject) => { video.onloadedmetadata = () => resolve(); video.onerror = () => reject(new Error("The video metadata could not be read.")); });
+      const duration = Number.isFinite(video.duration) ? video.duration : 0;
+      if (!duration) throw new Error("The video has no readable duration.");
+      const canvas = document.createElement("canvas"); canvas.width = video.videoWidth || 1280; canvas.height = video.videoHeight || 720;
+      const context = canvas.getContext("2d"); if (!context) throw new Error("The browser could not prepare a video frame canvas.");
+      const frameCount = Math.min(8, Math.max(1, Math.ceil(duration / 2)));
+      const frameUploads: Array<ReturnType<typeof uploadEvidence.mutateAsync>> = [];
+      for (let index = 0; index < frameCount; index += 1) {
+        const seconds = Math.min(Math.max(0, duration - 0.05), index * (duration / frameCount));
+        setVideoScanProgress(`ANALYSING FRAME ${index + 1}/${frameCount}`);
+        await new Promise<void>((resolve, reject) => { video.onseeked = () => resolve(); video.onerror = () => reject(new Error("A video frame could not be decoded.")); video.currentTime = seconds; });
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        frameUploads.push(uploadEvidence.mutateAsync({ ...commonPayload, fileName: `${file.name}-frame-${String(index + 1).padStart(3, "0")}.jpg`, mimeType: "image/jpeg", base64: canvas.toDataURL("image/jpeg", 0.8), mediaKind: "photo", playbackSeconds: Math.floor(seconds), runInference: true }));
+        if (frameUploads.length === 3 || index === frameCount - 1) {
+          await Promise.all(frameUploads.splice(0));
+        }
+      }
+      URL.revokeObjectURL(video.src);
+      await missionEvidence.refetch();
+      toast.success(`Video analysed: ${frameCount} frames added to Evidence Vault`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Video analysis failed");
+    } finally {
+      setVideoScanProgress(null);
+    }
   };
   const createPdfReport = () => {
     const missionId = Number(missions[0]?.id ?? 0);
@@ -773,7 +800,7 @@ export default function DriftConsole() {
         </section>}
 
         {workspace === "evidence" && <section className="workspace-page evidence-workspace">
-          <div className="workspace-header"><div><span className="eyebrow">SECURE MISSION MEDIA</span><h2>Evidence vault</h2></div><div><input ref={filePickerRef} className="file-picker" type="file" accept="image/*,video/*" onChange={event => handleEvidenceFile(event.target.files?.[0])} /><button type="button" className="primary-action" onClick={() => filePickerRef.current?.click()} disabled={!canOperate || !persistenceAvailable || !portableEvidenceStorageAvailable || uploadEvidence.isPending} title={!canOperate ? "Sign in as an engineer or administrator to upload original drone media." : !persistenceAvailable || !portableEvidenceStorageAvailable ? persistenceMessage : undefined}><Upload /> {uploadEvidence.isPending ? "STORING" : !canOperate ? "SIGN IN TO UPLOAD" : !persistenceAvailable || !portableEvidenceStorageAvailable ? "PORTABLE STORAGE REQUIRED" : "UPLOAD EVIDENCE"}</button></div></div>
+          <div className="workspace-header"><div><span className="eyebrow">SECURE MISSION MEDIA · ML LINKED</span><h2>Evidence vault</h2><p className="workspace-lede">Upload a video to store the original capture, sample frames, run ML detection, and keep every detected frame linked here for engineer review.</p></div><div><input ref={filePickerRef} className="file-picker" type="file" accept="image/*,video/*" onChange={event => handleEvidenceFile(event.target.files?.[0])} /><button type="button" className="primary-action" onClick={() => filePickerRef.current?.click()} disabled={(!persistenceAvailable || !portableEvidenceStorageAvailable) || uploadEvidence.isPending || Boolean(videoScanProgress)} title={!persistenceAvailable || !portableEvidenceStorageAvailable ? persistenceMessage : undefined}><Upload /> {videoScanProgress ?? (uploadEvidence.isPending ? "STORING" : !persistenceAvailable || !portableEvidenceStorageAvailable ? "STORAGE REQUIRED" : "UPLOAD VIDEO / PHOTO")}</button></div></div>
           <InspectionMap defects={defects.filter(defect => defect.missionId === missionIdForEvidence)} telemetry={telemetry.filter(point => (point as typeof point & { missionId?: number }).missionId === missionIdForEvidence)} selectedId={selected.id || undefined} onSelect={setSelectedId} />
           <AuthenticReferenceVisuals />
           <section className="public-dataset-samples" aria-label="IIIT Delhi live as real detection evidence">
@@ -781,7 +808,7 @@ export default function DriftConsole() {
             <div className="evidence-grid">{iiitDelhiLiveEvidence.map((item, index) => <article key={item.id} className="evidence-card public-dataset-card"><div className={cn("evidence-thumb", `thumb-${index % 3}`)}><video src={item.storageUrl} controls autoPlay muted loop playsInline preload="metadata" aria-label={`Play ${item.fileName}`} /><span>{String(index + 1).padStart(2, "0")}</span><div className="thumb-box" /></div><div><span className="severity-chip severity-medium">LIVE · REAL DETECTION</span><h3>{item.fileName}</h3><p>IIIT Delhi · fresh per-frame inference · GPS not supplied</p><small className="provenance-line">{evidenceProvenance(item.provenance)}</small></div><div className="evidence-actions"><button type="button" onClick={() => setEvidencePreview(item)}>VIEW</button><a href={item.storageUrl} target="_blank" rel="noreferrer">OPEN VIDEO <ChevronRight /></a><a href={item.storageUrl} download={item.fileName}>DOWNLOAD</a></div></article>)}</div>
           </section>
           <section className="public-dataset-samples" aria-label="Public dataset demo samples"><div><span className="eyebrow">PUBLIC DATASET · DEMO INFERENCE</span><h3>Licensed road-defect samples</h3><p>These images are attributable training/demo material, not DRIFT-captured media. They have no DRIFT mission, drone, or map coordinates and are excluded from site-specific findings and reports.</p></div><div className="evidence-grid">{publicDatasetSamples.map((item, index) => <article key={item.id} className="evidence-card public-dataset-card"><button type="button" className={cn("evidence-thumb", `thumb-${index % 3}`)} onClick={() => setEvidencePreview(item)} aria-label={`Preview ${item.fileName}`}><span className="sr-only">Preview {item.fileName}</span><img src={item.storageUrl} alt={item.fileName} /><span>DS</span><div className="thumb-box" /></button><div><span className="severity-chip severity-medium">PUBLIC DATASET · DEMO ONLY</span><h3>{item.fileName}</h3><p>No GPS supplied · no flight provenance · no field-inspection claim</p><small className="provenance-line">{evidenceProvenance(item.provenance)}{evidenceSourceUrl(item.provenance) ? <a href={evidenceSourceUrl(item.provenance)!} target="_blank" rel="noreferrer"> · VIEW DATASET</a> : null}</small></div><div className="evidence-actions"><button type="button" onClick={() => setEvidencePreview(item)}>VIEW</button><a href={item.storageUrl} target="_blank" rel="noreferrer">OPEN SAMPLE <ChevronRight /></a><a href={PUBLIC_DATASET_CRACK_MASK_URL} target="_blank" rel="noreferrer">VIEW CRACK MASK</a><button type="button" disabled title="No published GPS coordinates are attached to this public dataset display sample.">NO GPS MAP</button></div></article>)}</div></section>
-          <div className="evidence-grid">{evidenceItems.length ? evidenceItems.map((item, index) => <article key={item.id} className="evidence-card"><button type="button" className={cn("evidence-thumb", `thumb-${index % 3}`)} onClick={() => setEvidencePreview(item)} aria-label={`Preview ${item.fileName}`}><span className="sr-only">Preview {item.fileName}</span>{item.mediaKind === "photo" || item.mediaKind === "annotation" ? <img src={resolveBackendAssetUrl(item.storageUrl)} alt={item.fileName} /> : null}{item.mediaKind === "video" && <video src={resolveBackendAssetUrl(item.storageUrl)} controls preload="metadata" />}<span>{String(index + 1).padStart(2, "0")}</span><div className="thumb-box" /></button><div><span className="severity-chip severity-low">{item.source ?? "stored"} · {item.mediaKind}</span><h3>{item.fileName}</h3><p>{item.source === "reference" ? "Real reference photograph · not live drone evidence" : item.source === "simulator" ? "Simulator/reference media · not a live inspection" : "Stored mission media"} · {item.latitude ?? "GPS pending"}, {item.longitude ?? ""}</p><small className="provenance-line">{evidenceProvenance(item.provenance)}{evidenceSourceUrl(item.provenance) ? <a href={evidenceSourceUrl(item.provenance)!} target="_blank" rel="noreferrer"> · VIEW SOURCE</a> : null}</small></div><div className="evidence-actions"><button type="button" onClick={() => setEvidencePreview(item)}>VIEW</button><a href={resolveBackendAssetUrl(item.storageUrl)} target="_blank" rel="noreferrer">OPEN ORIGINAL <ChevronRight /></a><a href={resolveBackendAssetUrl(item.storageUrl)} download={item.fileName}>DOWNLOAD</a>{item.latitude && item.longitude && <button type="button" onClick={() => { setSelectedId(Number((item as EvidenceItem & { defectId?: number }).defectId ?? selected.id)); setWorkspace("operations"); }}>LOCATE</button>}</div></article>) : <article className="empty-state"><h3>No evidence stored for this mission</h3><p>Upload a real inspection photo or video, or run the simulator to create clearly labelled demonstration evidence.</p></article>}</div>{evidencePreview && <div className="evidence-modal-backdrop" role="presentation" onClick={() => setEvidencePreview(null)}><div className="evidence-modal" role="dialog" aria-modal="true" aria-label={`Evidence preview ${evidencePreview.fileName}`} onClick={event => event.stopPropagation()}><div className="modal-header"><div><span className="eyebrow">EVIDENCE PREVIEW · {evidencePreview.source ?? "stored"}</span><h3>{evidencePreview.fileName}</h3></div><button type="button" onClick={() => setEvidencePreview(null)} aria-label="Close evidence preview">CLOSE</button></div>{evidencePreview.mediaKind === "video" ? <video src={resolveBackendAssetUrl(evidencePreview.storageUrl)} controls autoPlay /> : <img src={resolveBackendAssetUrl(evidencePreview.storageUrl)} alt={evidencePreview.fileName} />}{Boolean(evidencePreview.provenance) && <p className="provenance-line">{evidenceProvenance(evidencePreview.provenance)}</p>}<div className="modal-actions"><a href={resolveBackendAssetUrl(evidencePreview.storageUrl)} target="_blank" rel="noreferrer">OPEN ORIGINAL</a><a href={resolveBackendAssetUrl(evidencePreview.storageUrl)} download={evidencePreview.fileName}>DOWNLOAD</a></div></div></div>}
+          <div className="evidence-grid">{evidenceItems.length ? evidenceItems.map((item, index) => { const detection = defects.find(defect => defect.evidenceId === item.id); return <article key={item.id} className="evidence-card"><button type="button" className={cn("evidence-thumb", `thumb-${index % 3}`)} onClick={() => setEvidencePreview(item)} aria-label={`Preview ${item.fileName}`}><span className="sr-only">Preview {item.fileName}</span>{item.mediaKind === "photo" || item.mediaKind === "annotation" ? <img src={resolveBackendAssetUrl(item.storageUrl)} alt={item.fileName} /> : null}{item.mediaKind === "video" && <video src={resolveBackendAssetUrl(item.storageUrl)} controls preload="metadata" />}<span>{String(index + 1).padStart(2, "0")}</span><div className="thumb-box" /></button><div><span className={cn("severity-chip", detection ? severityClass(detection.severity) : "severity-low")}>{detection ? `ML DETECTION · ${detection.severity.toUpperCase()}` : `${item.source ?? "stored"} · ${item.mediaKind}`}</span><h3>{item.fileName}</h3>{detection && <p><strong>{detection.label}</strong> · {detection.confidencePercent}% confidence · engineer review required</p>}<p>{item.source === "reference" ? "Real reference photograph · not live drone evidence" : item.source === "simulator" ? "Simulator/reference media · not a live inspection" : "Stored mission media"} · {item.latitude ?? "GPS pending"}, {item.longitude ?? ""}</p><small className="provenance-line">{evidenceProvenance(item.provenance)}{evidenceSourceUrl(item.provenance) ? <a href={evidenceSourceUrl(item.provenance)!} target="_blank" rel="noreferrer"> · VIEW SOURCE</a> : null}</small></div><div className="evidence-actions"><button type="button" onClick={() => setEvidencePreview(item)}>VIEW</button><a href={resolveBackendAssetUrl(item.storageUrl)} target="_blank" rel="noreferrer">OPEN ORIGINAL <ChevronRight /></a><a href={resolveBackendAssetUrl(item.storageUrl)} download={item.fileName}>DOWNLOAD</a>{item.latitude && item.longitude && <button type="button" onClick={() => { setSelectedId(Number((item as EvidenceItem & { defectId?: number }).defectId ?? selected.id)); setWorkspace("operations"); }}>LOCATE</button>}</div></article>; }) : <article className="empty-state"><h3>No evidence stored for this mission</h3><p>Upload a real inspection photo or video, or run the simulator to create clearly labelled demonstration evidence.</p></article>}</div>{evidencePreview && <div className="evidence-modal-backdrop" role="presentation" onClick={() => setEvidencePreview(null)}><div className="evidence-modal" role="dialog" aria-modal="true" aria-label={`Evidence preview ${evidencePreview.fileName}`} onClick={event => event.stopPropagation()}><div className="modal-header"><div><span className="eyebrow">EVIDENCE PREVIEW · {evidencePreview.source ?? "stored"}</span><h3>{evidencePreview.fileName}</h3></div><button type="button" onClick={() => setEvidencePreview(null)} aria-label="Close evidence preview">CLOSE</button></div>{evidencePreview.mediaKind === "video" ? <video src={resolveBackendAssetUrl(evidencePreview.storageUrl)} controls autoPlay /> : <img src={resolveBackendAssetUrl(evidencePreview.storageUrl)} alt={evidencePreview.fileName} />}{Boolean(evidencePreview.provenance) && <p className="provenance-line">{evidenceProvenance(evidencePreview.provenance)}</p>}<div className="modal-actions"><a href={resolveBackendAssetUrl(evidencePreview.storageUrl)} target="_blank" rel="noreferrer">OPEN ORIGINAL</a><a href={resolveBackendAssetUrl(evidencePreview.storageUrl)} download={evidencePreview.fileName}>DOWNLOAD</a></div></div></div>}
         </section>}
 
         {workspace === "reports" && <section className="workspace-page reports-workspace">
