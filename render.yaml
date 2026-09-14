@@ -28,6 +28,12 @@ services:
         sync: false
       - key: SUPABASE_PUBLISHABLE_KEY
         sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_EVIDENCE_BUCKET
+        value: drift-evidence
+      - key: DRIFT_SUPABASE_STORAGE_ENABLED
+        value: "true"
       - key: VITE_EXTERNAL_OAUTH_ENABLED
         value: "false"
       - key: DRIFT_EXTERNAL_OAUTH_ENABLED
