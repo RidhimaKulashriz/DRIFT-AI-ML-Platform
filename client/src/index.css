@@ -290,6 +290,9 @@ button { cursor: pointer; }
 .mission-app-header { align-items: flex-start; gap: 20px; }
 .mission-app-header h2 { max-width: 760px; }
 .mission-live-badge { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #9ca9a0; background: #eef3ef; color: #25443b; padding: 9px 11px; font-size: 9px; font-weight: 900; letter-spacing: .1em; white-space: nowrap; }
+.mission-badge-stack { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.mission-live-badge.synced { border-color: #2f7a52; background: #e7f5ec; color: #1f5b3b; }
+.mission-live-badge.unsynced { border-color: #b08b3a; background: #fbf3e0; color: #6b4f16; }
 .mission-pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--mission-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--mission-accent) 16%, transparent); }
 .mission-kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 18px 0; }
 .mission-kpi { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; min-height: 83px; border: 1px solid #c9cec8; background: #f7f8f4; padding: 14px; }

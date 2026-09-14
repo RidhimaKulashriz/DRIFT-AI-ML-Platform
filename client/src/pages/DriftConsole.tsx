@@ -812,7 +812,7 @@ export default function DriftConsole() {
         </section>}
 
         {workspace === "reconstruction" && <ReconstructionWorkspace />}
-        {(workspace === "border" || workspace === "disaster" || workspace === "urban" || workspace === "construction" || workspace === "archaeology" || workspace === "digital-twin" || workspace === "military") && <MissionApplicationsWorkspace modeKey={workspace} />}
+        {(workspace === "border" || workspace === "disaster" || workspace === "urban" || workspace === "construction" || workspace === "archaeology" || workspace === "digital-twin" || workspace === "military") && <MissionApplicationsWorkspace modeKey={workspace} missionId={missionIdForEvidence || undefined} />}
         {workspace === "godseye" && <GodsEyeMap />}
         {workspace === "hardware" && <section className="workspace-page hardware-workspace">
           <div className="workspace-header"><div><span className="eyebrow">OPERATOR-CONTROLLED INTEGRATION</span><h2>Hardware bridge</h2></div><span className={cn("hardware-status", connectedStatus)}>{connectedStatus}</span></div>

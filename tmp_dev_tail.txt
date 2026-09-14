@@ -1,0 +1,200 @@
+	"sourceUrl" text,
+	"createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+	"updatedAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "campusLocations" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"campusId" integer NOT NULL,
+	"name" varchar(200) NOT NULL,
+	"description" text,
+	"locationType" varchar(80),
+	"latitude" varchar(32) NOT NULL,
+	"longitude" varchar(32) NOT NULL,
+	"address" varchar(300),
+	"sourceUrl" text,
+	"createdAt" timestamp with time zone DEFAULT now() NOT NULL,
+	"updatedAt" timestamp with time zone DEFAULT now() NOT NULL
+);
+
+ALTER TABLE "assets" ADD COLUMN IF NOT EXISTS "campusId" integer;
+ALTER TABLE "evidence" ADD COLUMN IF NOT EXISTS "locationSource" "location_source" DEFAULT 'unknown';
+
+-- Reports table columns for production PDF/email pipeline
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "pdfBase64" text;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "pdfSizeBytes" integer;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "pdfPages" integer;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "findingCount" integer DEFAULT 0;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailStatus" varchar(20);
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailMessageId" text;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailedAt" timestamp with time zone;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailError" text;
+ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "updatedAt" timestamp with time zone DEFAULT now();
+
+INSERT INTO "campuses" ("id", "name", "shortName", "description", "address", "city", "state", "country", "latitude", "longitude", "website", "defaultImageUrl", "sourceUrl", "createdAt", "updatedAt")
+VALUES (
+  1, 'Indira Gandhi Delhi Technical University for Women', 'IGDTUW',
+  'A premier women''s technical university in Delhi established in 1998 (formerly IGITW), located at Kashmere Gate, Delhi. Offers B.Tech, M.Tech, and PhD programs in engineering, technology, and applied sciences.',
+  'Kashmere Gate, Near St. James Church', 'New Delhi', 'Delhi', 'India',
+  '28.6647', '77.2325', 'https://www.igdtuw.ac.in/',
+  'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/IGDTUW_New_Delhi.jpg/800px-IGDTUW_New_Delhi.jpg',
+  'https://en.wikipedia.org/wiki/Indira_Gandhi_Delhi_Technical_University_for_Women',
+  NOW(), NOW()
+) ON CONFLICT ("id") DO UPDATE SET
+  "name" = EXCLUDED.name, "shortName" = EXCLUDED."shortName", "description" = EXCLUDED.description,
+  "address" = EXCLUDED.address, "latitude" = EXCLUDED.latitude, "longitude" = EXCLUDED.longitude,
+  "website" = EXCLUDED.website, "defaultImageUrl" = EXCLUDED."defaultImageUrl", "sourceUrl" = EXCLUDED."sourceUrl",
+  "updatedAt" = NOW();
+
+INSERT INTO "campuses" ("id", "name", "shortName", "description", "address", "city", "state", "country", "latitude", "longitude", "website", "defaultImageUrl", "sourceUrl", "createdAt", "updatedAt")
+VALUES (
+  2, 'Indraprastha Institute of Information Technology Delhi', 'IIIT-Delhi',
+  'A State University by the Government of NCT of Delhi, established in 2008. Focuses on Information Technology research and education. Located in Okhla Phase III, New Delhi.',
+  'Okhla Phase III, Near Govindpuri Metro Station', 'New Delhi', 'Delhi', 'India',
+  '28.5444', '77.2725', 'https://www.iiitd.ac.in/',
+  'https://upload.wikimedia.org/wikipedia/commons/thumb/8/89/IIIT-Delhi_Entrance.jpg/800px-IIIT-Delhi_Entrance.jpg',
+  'https://en.wikipedia.org/wiki/IIIT-Delhi',
+  NOW(), NOW()
+) ON CONFLICT ("id") DO UPDATE SET
+  "name" = EXCLUDED.name, "shortName" = EXCLUDED."shortName", "description" = EXCLUDED.description,
+  "address" = EXCLUDED.address, "latitude" = EXCLUDED.latitude, "longitude" = EXCLUDED.longitude,
+  "website" = EXCLUDED.website, "defaultImageUrl" = EXCLUDED."defaultImageUrl", "sourceUrl" = EXCLUDED."sourceUrl",
+  "updatedAt" = NOW();
+
+INSERT INTO "campusLocations" ("id", "campusId", "name", "description", "locationType", "latitude", "longitude", "address", "sourceUrl", "createdAt", "updatedAt") VALUES
+  (1, 1, 'IGDTUW Main Gate', 'Primary entrance to IGDTUW campus on Kashmere Gate road', 'entrance', '28.6880', '77.2108', 'Kashmere Gate, New Delhi', 'https://www.igdtuw.ac.in/', NOW(), NOW()),
+  (2, 1, 'IGDTUW Main Building', 'Central academic and administrative building', 'building', '28.6643', '77.2320', 'IGDTUW Campus, Kashmere Gate', 'https://www.igdtuw.ac.in/', NOW(), NOW()),
+  (3, 1, 'IGDTUW Internal Road', 'Internal campus road connecting main gate to academic blocks', 'road', '28.6647', '77.2328', 'IGDTUW Campus', 'https://www.igdtuw.ac.in/', NOW(), NOW()),
+  (4, 2, 'IIIT-Delhi Main Entrance', 'Primary entrance to IIIT-Delhi campus in Okhla Phase III', 'entrance', '28.5452', '77.2755', 'Okhla Phase III, New Delhi', 'https://www.iiitd.ac.in/', NOW(), NOW()),
+  (5, 2, 'IIIT-Delhi Academic Block', 'Main academic block housing lecture halls and labs', 'building', '28.5445', '77.2748', 'IIIT-Delhi Campus, Okhla Phase III', 'https://www.iiitd.ac.in/', NOW(), NOW()),
+  (6, 2, 'IIIT-Delhi Library Bridge', 'Connecting bridge between academic block and library', 'bridge', '28.5440', '77.2752', 'IIIT-Delhi Campus', 'https://www.iiitd.ac.in/', NOW(), NOW())
+ON CONFLICT ("id") DO UPDATE SET
+  "name" = EXCLUDED.name, "description" = EXCLUDED.description,
+  "latitude" = EXCLUDED.latitude, "longitude" = EXCLUDED.longitude, "updatedAt" = NOW();
+
+params: 
+    at NodePgPreparedQuery.queryWithCache (/Users/risharastogi/Desktop/DRIFT-AI-ML-Platform/node_modules/.pnpm/drizzle-orm@0.44.6_@types+pg@8.23.1_mysql2@3.15.1_pg@8.23.0/node_modules/src/pg-core/session.ts:73:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+    at async ensureCampusSchema (/Users/risharastogi/Desktop/DRIFT-AI-ML-Platform/server/db.ts:145:5)
+    at async startServer (/Users/risharastogi/Desktop/DRIFT-AI-ML-Platform/server/_core/index.ts:235:3) {
+  query: '\n' +
+    'DO $$ BEGIN\n' +
+    `  CREATE TYPE "public"."location_source" AS ENUM('image_exif', 'device_gps', 'verified_campus', 'user_selected', 'geocoded', 'unknown');\n` +
+    'EXCEPTION WHEN duplicate_object THEN null; END $$;\n' +
+    '\n' +
+    'CREATE TABLE IF NOT EXISTS "campuses" (\n' +
+    '\t"id" serial PRIMARY KEY NOT NULL,\n' +
+    '\t"name" varchar(220) NOT NULL UNIQUE,\n' +
+    '\t"shortName" varchar(40) NOT NULL UNIQUE,\n' +
+    '\t"description" text,\n' +
+    '\t"address" varchar(300),\n' +
+    '\t"city" varchar(80),\n' +
+    '\t"state" varchar(80),\n' +
+    `\t"country" varchar(80) DEFAULT 'India' NOT NULL,\n` +
+    '\t"latitude" varchar(32) NOT NULL,\n' +
+    '\t"longitude" varchar(32) NOT NULL,\n' +
+    '\t"website" varchar(300),\n' +
+    '\t"defaultImageUrl" text,\n' +
+    '\t"sourceUrl" text,\n' +
+    '\t"createdAt" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+    '\t"updatedAt" timestamp with time zone DEFAULT now() NOT NULL\n' +
+    ');\n' +
+    '\n' +
+    'CREATE TABLE IF NOT EXISTS "campusLocations" (\n' +
+    '\t"id" serial PRIMARY KEY NOT NULL,\n' +
+    '\t"campusId" integer NOT NULL,\n' +
+    '\t"name" varchar(200) NOT NULL,\n' +
+    '\t"description" text,\n' +
+    '\t"locationType" varchar(80),\n' +
+    '\t"latitude" varchar(32) NOT NULL,\n' +
+    '\t"longitude" varchar(32) NOT NULL,\n' +
+    '\t"address" varchar(300),\n' +
+    '\t"sourceUrl" text,\n' +
+    '\t"createdAt" timestamp with time zone DEFAULT now() NOT NULL,\n' +
+    '\t"updatedAt" timestamp with time zone DEFAULT now() NOT NULL\n' +
+    ');\n' +
+    '\n' +
+    'ALTER TABLE "assets" ADD COLUMN IF NOT EXISTS "campusId" integer;\n' +
+    `ALTER TABLE "evidence" ADD COLUMN IF NOT EXISTS "locationSource" "location_source" DEFAULT 'unknown';\n` +
+    '\n' +
+    '-- Reports table columns for production PDF/email pipeline\n' +
+    'ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "pdfBase64" text;\n' +
+    'ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "pdfSizeBytes" integer;\n' +
+    'ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "pdfPages" integer;\n' +
+    'ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "findingCount" integer DEFAULT 0;\n' +
+    'ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailStatus" varchar(20);\n' +
+    'ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailMessageId" text;\n' +
+    'ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailedAt" timestamp with time zone;\n' +
+    'ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "emailError" text;\n' +
+    'ALTER TABLE "reports" ADD COLUMN IF NOT EXISTS "updatedAt" timestamp with time zone DEFAULT now();\n' +
+    '\n' +
+    'INSERT INTO "campuses" ("id", "name", "shortName", "description", "address", "city", "state", "country", "latitude", "longitude", "website", "defaultImageUrl", "sourceUrl", "createdAt", "updatedAt")\n' +
+    'VALUES (\n' +
+    "  1, 'Indira Gandhi Delhi Technical University for Women', 'IGDTUW',\n" +
+    "  'A premier women''s technical university in Delhi established in 1998 (formerly IGITW), located at Kashmere Gate, Delhi. Offers B.Tech, M.Tech, and PhD programs in engineering, technology, and applied sciences.',\n" +
+    "  'Kashmere Gate, Near St. James Church', 'New Delhi', 'Delhi', 'India',\n" +
+    "  '28.6647', '77.2325', 'https://www.igdtuw.ac.in/',\n" +
+    "  'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9f/IGDTUW_New_Delhi.jpg/800px-IGDTUW_New_Delhi.jpg',\n" +
+    "  'https://en.wikipedia.org/wiki/Indira_Gandhi_Delhi_Technical_University_for_Women',\n" +
+    '  NOW(), NOW()\n' +
+    ') ON CONFLICT ("id") DO UPDATE SET\n' +
+    '  "name" = EXCLUDED.name, "shortName" = EXCLUDED."shortName", "description" = EXCLUDED.description,\n' +
+    '  "address" = EXCLUDED.address, "latitude" = EXCLUDED.latitude, "longitude" = EXCLUDED.longitude,\n' +
+    '  "website" = EXCLUDED.website, "defaultImageUrl" = EXCLUDED."defaultImageUrl", "sourceUrl" = EXCLUDED."sourceUrl",\n' +
+    '  "updatedAt" = NOW();\n' +
+    '\n' +
+    'INSERT INTO "campuses" ("id", "name", "shortName", "description", "address", "city", "state", "country", "latitude", "longitude", "website", "defaultImageUrl", "sourceUrl", "createdAt", "updatedAt")\n' +
+    'VALUES (\n' +
+    "  2, 'Indraprastha Institute of Information Technology Delhi', 'IIIT-Delhi',\n" +
+    "  'A State University by the Government of NCT of Delhi, established in 2008. Focuses on Information Technology research and education. Located in Okhla Phase III, New Delhi.',\n" +
+    "  'Okhla Phase III, Near Govindpuri Metro Station', 'New Delhi', 'Delhi', 'India',\n" +
+    "  '28.5444', '77.2725', 'https://www.iiitd.ac.in/',\n" +
+    "  'https://upload.wikimedia.org/wikipedia/commons/thumb/8/89/IIIT-Delhi_Entrance.jpg/800px-IIIT-Delhi_Entrance.jpg',\n" +
+    "  'https://en.wikipedia.org/wiki/IIIT-Delhi',\n" +
+    '  NOW(), NOW()\n' +
+    ') ON CONFLICT ("id") DO UPDATE SET\n' +
+    '  "name" = EXCLUDED.name, "shortName" = EXCLUDED."shortName", "description" = EXCLUDED.description,\n' +
+    '  "address" = EXCLUDED.address, "latitude" = EXCLUDED.latitude, "longitude" = EXCLUDED.longitude,\n' +
+    '  "website" = EXCLUDED.website, "defaultImageUrl" = EXCLUDED."defaultImageUrl", "sourceUrl" = EXCLUDED."sourceUrl",\n' +
+    '  "updatedAt" = NOW();\n' +
+    '\n' +
+    'INSERT INTO "campusLocations" ("id", "campusId", "name", "description", "locationType", "latitude", "longitude", "address", "sourceUrl", "createdAt", "updatedAt") VALUES\n' +
+    "  (1, 1, 'IGDTUW Main Gate', 'Primary entrance to IGDTUW campus on Kashmere Gate road', 'entrance', '28.6880', '77.2108', 'Kashmere Gate, New Delhi', 'https://www.igdtuw.ac.in/', NOW(), NOW()),\n" +
+    "  (2, 1, 'IGDTUW Main Building', 'Central academic and administrative building', 'building', '28.6643', '77.2320', 'IGDTUW Campus, Kashmere Gate', 'https://www.igdtuw.ac.in/', NOW(), NOW()),\n" +
+    "  (3, 1, 'IGDTUW Internal Road', 'Internal campus road connecting main gate to academic blocks', 'road', '28.6647', '77.2328', 'IGDTUW Campus', 'https://www.igdtuw.ac.in/', NOW(), NOW()),\n" +
+    "  (4, 2, 'IIIT-Delhi Main Entrance', 'Primary entrance to IIIT-Delhi campus in Okhla Phase III', 'entrance', '28.5452', '77.2755', 'Okhla Phase III, New Delhi', 'https://www.iiitd.ac.in/', NOW(), NOW()),\n" +
+    "  (5, 2, 'IIIT-Delhi Academic Block', 'Main academic block housing lecture halls and labs', 'building', '28.5445', '77.2748', 'IIIT-Delhi Campus, Okhla Phase III', 'https://www.iiitd.ac.in/', NOW(), NOW()),\n" +
+    "  (6, 2, 'IIIT-Delhi Library Bridge', 'Connecting bridge between academic block and library', 'bridge', '28.5440', '77.2752', 'IIIT-Delhi Campus', 'https://www.iiitd.ac.in/', NOW(), NOW())\n" +
+    'ON CONFLICT ("id") DO UPDATE SET\n' +
+    '  "name" = EXCLUDED.name, "description" = EXCLUDED.description,\n' +
+    '  "latitude" = EXCLUDED.latitude, "longitude" = EXCLUDED.longitude, "updatedAt" = NOW();\n',
+  params: [],
+  cause: error: relation "assets" does not exist
+      at /Users/risharastogi/Desktop/DRIFT-AI-ML-Platform/node_modules/.pnpm/pg-pool@3.14.0_pg@8.23.0/node_modules/pg-pool/index.js:45:11
+      at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+      at async <anonymous> (/Users/risharastogi/Desktop/DRIFT-AI-ML-Platform/node_modules/.pnpm/drizzle-orm@0.44.6_@types+pg@8.23.1_mysql2@3.15.1_pg@8.23.0/node_modules/src/node-postgres/session.ts:149:14)
+      at async NodePgPreparedQuery.queryWithCache (/Users/risharastogi/Desktop/DRIFT-AI-ML-Platform/node_modules/.pnpm/drizzle-orm@0.44.6_@types+pg@8.23.1_mysql2@3.15.1_pg@8.23.0/node_modules/src/pg-core/session.ts:71:12)
+      at async ensureCampusSchema (/Users/risharastogi/Desktop/DRIFT-AI-ML-Platform/server/db.ts:145:5)
+      at async startServer (/Users/risharastogi/Desktop/DRIFT-AI-ML-Platform/server/_core/index.ts:235:3) {
+    length: 104,
+    severity: 'ERROR',
+    code: '42P01',
+    detail: undefined,
+    hint: undefined,
+    position: undefined,
+    internalPosition: undefined,
+    internalQuery: undefined,
+    where: undefined,
+    schema: undefined,
+    table: undefined,
+    column: undefined,
+    dataType: undefined,
+    constraint: undefined,
+    file: 'namespace.c',
+    line: '433',
+    routine: 'RangeVarGetRelidExtended'
+  }
+}
+Port 3000 is busy, using port 3001 instead
+Server running on http://localhost:3001/
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`

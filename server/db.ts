@@ -19,6 +19,17 @@ import { analyzeGraphImpact, buildNextBestActions, buildWorldGraph, diffWorldGra
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
+export function buildDatabaseConfig(databaseUrl?: string) {
+  const value = databaseUrl ?? process.env.DATABASE_URL ?? process.env.POSTGRES_URL ?? process.env.POSTGRESQL_URL ?? "";
+  if (!value || !/^(postgres|postgresql):\/\//i.test(value)) return null;
+
+  const isRenderPostgres = /render\.com|\.postgres\.render\.com/i.test(value);
+  return {
+    connectionString: value,
+    ...(isRenderPostgres ? { ssl: { rejectUnauthorized: false } } : {}),
+  };
+}
+
 async function recordDomainEvent(input: { type: DomainEventType; actorId?: number | null; missionId?: number | null; assetId?: number | null; defectId?: number | null; evidenceId?: number | null; payload: Record<string, unknown> }) {
   const event = createDomainEvent(input);
   markDerivedDirty(event);
@@ -31,15 +42,14 @@ const { attachmentData: _evidenceAttachmentData, ...evidenceListColumns } = getT
 const { attachmentData: _reportAttachmentData, ...reportListColumns } = getTableColumns(reports);
 
 function postgresDatabaseUrl() {
-  const value = process.env.DATABASE_URL;
-  return value?.startsWith("postgres://") || value?.startsWith("postgresql://") ? value : undefined;
+  return buildDatabaseConfig()?.connectionString;
 }
 
 export async function getDb() {
-  const databaseUrl = postgresDatabaseUrl();
-  if (!_db && databaseUrl) {
+  const config = buildDatabaseConfig();
+  if (!_db && config) {
     try {
-      _db = drizzle(databaseUrl);
+      _db = drizzle({ connection: config });
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -65,7 +75,7 @@ export async function ensureReportsColumns(db: any): Promise<void> {
 
     // Use a fresh direct connection to run the migration
     const { Client } = await import("pg");
-    const client = new Client({ connectionString: databaseUrl });
+    const client = new Client(buildDatabaseConfig(databaseUrl) ?? { connectionString: databaseUrl });
     await client.connect();
     try {
       const colCheck = await client.query<{ column_name: string }>(
