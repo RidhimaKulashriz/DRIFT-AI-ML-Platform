@@ -189,7 +189,9 @@ async function startServer() {
       return res.redirect(307, signedUrl);
     } catch (error) {
       console.error("[DRIFT] Supabase evidence media proxy failed", error);
-      return res.status(404).send("Evidence unavailable");
+      const message = error instanceof Error ? error.message : "";
+      const missingObject = /not found|does not exist|object.*missing|no such file/i.test(message);
+      return res.status(missingObject ? 404 : 503).send(missingObject ? "Evidence not found" : "Evidence storage temporarily unavailable");
     }
   });
 

@@ -1,6 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 
 const SIGNED_URL_TTL_SECONDS = 15 * 60;
+const SIGNED_URL_ATTEMPTS = 3;
+
+async function waitForStorageRetry(attempt: number) {
+  if (attempt === 0) return;
+  await new Promise(resolve => setTimeout(resolve, attempt * 250));
+}
 
 function configuration() {
   const url = (process.env.SUPABASE_URL ?? "").trim();
@@ -62,7 +68,17 @@ export async function getSupabaseEvidenceSignedUrl(storageKey: string) {
   const decoded = decodeStorageKey(storageKey);
   const config = configuration();
   if (!decoded || !config || decoded.bucket !== config.bucket) throw new Error("Portable evidence storage key is unavailable.");
-  const { data, error } = await clientFor(config).storage.from(decoded.bucket).createSignedUrl(decoded.objectKey, SIGNED_URL_TTL_SECONDS);
-  if (error || !data?.signedUrl) throw new Error("A signed portable evidence URL could not be created.");
-  return data.signedUrl;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < SIGNED_URL_ATTEMPTS; attempt += 1) {
+    await waitForStorageRetry(attempt);
+    try {
+      const { data, error } = await clientFor(config).storage.from(decoded.bucket).createSignedUrl(decoded.objectKey, SIGNED_URL_TTL_SECONDS);
+      if (data?.signedUrl && !error) return data.signedUrl;
+      lastError = error;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  const detail = lastError instanceof Error ? `: ${lastError.message}` : "";
+  throw new Error(`A signed portable evidence URL could not be created${detail}`);
 }
