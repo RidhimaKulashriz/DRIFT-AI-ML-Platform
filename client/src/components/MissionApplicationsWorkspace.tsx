@@ -137,13 +137,13 @@ export default function MissionApplicationsWorkspace({ modeKey, missionId }: { m
   const hardwareQuery = trpc.drift.hardwareStatus.useQuery(undefined, { refetchInterval: 20000 });
   const liveDefects = useMemo(() => (overviewQuery.data?.defects ?? []).filter((defect: LiveDefectRow) => !missionId || defect.missionId === missionId), [overviewQuery.data, missionId]);
   const liveTelemetry = useMemo(() => (overviewQuery.data?.telemetry ?? []).filter((point: LiveTelemetryRow) => !missionId || point.missionId === missionId).slice().reverse(), [overviewQuery.data, missionId]);
-  const { isAuthenticated } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const result = useMemo(() => applyBackendSync(modeKey, computeModel(modeKey, waypoints, intensity), liveDefects, liveTelemetry), [modeKey, waypoints, intensity, liveDefects, liveTelemetry]);
   const graph = useMemo(() => buildObservationGraph(modeKey, waypoints, result), [modeKey, waypoints, result]);
-  // graphQuery is a protected endpoint (requires an authenticated admin/engineer/user role).
-  // Gate it the same way DriftConsole gates its own protected queries, otherwise signed-out
-  // visitors hit a "Please login" TRPCClientError as soon as they open this tab.
-  const persistedGraphQuery = trpc.drift.intelligence.graphQuery.useQuery({ hops: 2 }, { enabled: isAuthenticated, refetchInterval: isAuthenticated ? 15000 : false, retry: false });
+  // graphQuery is restricted to operational roles. Citizen/contractor users
+  // still get the local computed graph and must not trigger a forbidden request.
+  const canReadPersistedGraph = isAuthenticated && Boolean(user && ["admin", "engineer", "user"].includes(user.role));
+  const persistedGraphQuery = trpc.drift.intelligence.graphQuery.useQuery({ hops: 2 }, { enabled: canReadPersistedGraph, refetchInterval: canReadPersistedGraph ? 15000 : false, retry: false });
   const renderGraph = useMemo(() => {
     const persisted = persistedGraphQuery.data?.result;
     if (!persisted?.nodes?.length) return graph;
